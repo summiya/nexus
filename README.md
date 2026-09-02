@@ -322,6 +322,7 @@ Detailed product documentation lives in the `docs/` directory.
 |---|---|
 | [`00-project-plan.md`](docs/00-project-plan.md) | Product definition, scope, goals, non-goals, V1 boundary, and success criteria |
 | [`01-market-analysis.md`](docs/01-market-analysis.md) | UAE market, competitors, positioning, and differentiation |
+| [`01-capability-matrix.md`](docs/01-capability-matrix.md) | Detailed NEXUS capabilities, feature breakdown, V1/V1.5/V2 classification, and usage |
 
 ---
 
