@@ -25,6 +25,7 @@ The matrix is a product-planning source of truth. A feature should not be added 
 | Users / organizations | V1 | High | Multi-user platform foundation |
 | File upload | V1 | High | Bring user knowledge into NEXUS |
 | Projects | V1 | High | Organize conversations and work |
+| Workspace UI | V1 | Critical | Provide the actual NEXUS product experience |
 | Knowledge bases | V1 | High | Manage reusable knowledge |
 | Document processing | V1 | High | Prepare knowledge for retrieval |
 | Embeddings | V1 | High | Semantic representation |
@@ -35,8 +36,9 @@ The matrix is a product-planning source of truth. A feature should not be added 
 | MCP | V1.5 | High | Standardized tool/server connectivity |
 | Custom/private MCP | V1.5 | High | Connect company-owned capabilities |
 | Agents | V1.5 | Critical | Delegate multi-step work |
+| Human-in-the-loop | V1.5 | High | Control sensitive agent actions |
 | Memory | V1.5 | High | Preserve useful context over time |
-| Artifacts | V1.5 | Medium | Create structured outputs |
+| Artifacts | V1.5 | High | Create, edit, render, and refine structured outputs |
 | Evaluation | V1.5 | High | Measure AI quality |
 | Observability | V1.5 | High | Understand system and AI behavior |
 | Workflows | V2 | High | Repeatable multi-step automation |
@@ -44,7 +46,11 @@ The matrix is a product-planning source of truth. A feature should not be added 
 | Advanced governance | V2 | High | Enterprise-scale controls |
 | Agent teams / orchestration | V2 | High | Coordinate multiple agents |
 | Advanced model routing | V2 | Medium | Optimize model selection |
+| Developer platform | V1 | High | Allow applications to use NEXUS programmatically |
+| API keys / developer access | V1 | High | Secure programmatic access |
 | Advanced evaluation | V2 | High | Continuous agent/model testing |
+| Automation / events | V2 | High | Trigger AI work from schedules and events |
+| Notifications | V2 | Medium | Inform users about completed or blocked work |
 
 ---
 
@@ -70,8 +76,9 @@ Provide a simple interface where a user can communicate with AI and use NEXUS ca
 | Edit user message | V1 | Correct a previous instruction |
 | Retry failed request | V1 | Recover from temporary errors |
 | Stop generation | V1 | Allow user to stop long responses |
-| Conversation search | V1.5 | Find previous work |
+| Conversation search | V1 | Find previous work |
 | Conversation export | V1.5 | Save/share conversation data |
+| Conversation sharing | V1.5 | Share permitted conversation results |
 | Conversation branching | V2 | Explore alternative conversation paths |
 
 ---
@@ -86,7 +93,8 @@ Provide a simple interface where a user can communicate with AI and use NEXUS ca
 | Error during stream | V1 | Recover gracefully |
 | Tool-call streaming | V1.5 | Show agent/tool progress |
 | Structured event streaming | V1.5 | Display agent execution events |
-| Long-running task updates | V2 | Show progress for background work |
+| Long-running task updates | V1.5 | Show progress for background work |
+| Background execution status | V1.5 | Show queued/running/completed task state |
 
 ---
 
@@ -103,6 +111,7 @@ NEXUS should remain model-provider agnostic.
 | Model metadata | V1 | Display capabilities and limits |
 | Provider API keys/secrets | V1 | Secure provider configuration |
 | Model-specific parameters | V1 | Control temperature, tokens, etc. |
+| Extended thinking controls | V1.5 | Expose supported reasoning controls |
 | Provider error handling | V1 | Handle provider failures |
 | Fallback model | V1.5 | Continue when primary model fails |
 | Automatic model routing | V2 | Select model based on task |
@@ -172,9 +181,13 @@ Projects organize work around a goal or topic.
 | Rename project | V1 | Identify project |
 | Delete project | V1 | Remove project |
 | Project instructions | V1 | Define project-specific context |
+| Project workspace | V1 | Provide a dedicated project working environment |
 | Conversations inside project | V1 | Keep work together |
 | Project files | V1 | Attach knowledge |
 | Project metadata | V1 | Store project information |
+| Project files area | V1 | Browse and manage project knowledge |
+| Project knowledge configuration | V1 | Define which knowledge the project can use |
+| Project artifacts | V1.5 | Keep generated work attached to the project |
 | Project permissions | V1 | Control access |
 | Project search | V1.5 | Find project information |
 | Project templates | V1.5 | Start common work faster |
@@ -200,6 +213,8 @@ A knowledge base is a managed collection of information that NEXUS can retrieve.
 | Knowledge refresh | V1.5 | Reprocess changed content |
 | Source connectors | V1.5 | Bring information from external systems |
 | Knowledge versioning | V1.5 | Track changes |
+| Knowledge ingestion status | V1 | Show processing and readiness |
+| Project-scoped knowledge | V1 | Restrict retrieval to authorized project knowledge |
 | Knowledge quality status | V2 | Measure source quality |
 | Knowledge lifecycle policies | V2 | Automatically manage stale data |
 
@@ -285,6 +300,7 @@ Tools allow AI to interact with systems rather than only generate text.
 | Tool timeout | V1 | Prevent hanging operations |
 | Tool error handling | V1 | Recover from failures |
 | Tool confirmation | V1.5 | Ask user before sensitive actions |
+| Tool execution streaming | V1.5 | Show tool activity while execution is running |
 | Tool execution logs | V1.5 | Audit actions |
 | Tool sandboxing | V2 | Isolate risky execution |
 | Dynamic tool discovery | V2 | Find tools based on task |
@@ -304,6 +320,7 @@ MCP provides a standardized way to connect NEXUS to external capabilities.
 | MCP prompts | V1.5 | Use MCP-defined prompt capabilities |
 | MCP authentication | V1.5 | Secure server connections |
 | MCP permissions | V1.5 | Control agent access |
+| MCP connection management | V1.5 | Create, test, enable, and disable connections |
 | Custom MCP servers | V1.5 | Connect company-owned servers |
 | Private MCP servers | V1.5 | Use internal/private infrastructure |
 | Self-hosted MCP | V1.5 | Support customer-controlled deployment |
@@ -327,10 +344,13 @@ Agents are the major transition from AI chat to AI work execution.
 | Tool execution loop | V1.5 | Execute planned actions |
 | Agent state | V1.5 | Track current task |
 | Agent result | V1.5 | Return completed work |
+| Agent execution UI | V1.5 | Let users inspect active agent work |
+| Agent progress events | V1.5 | Show planning, tool, and execution progress |
 | Human approval | V1.5 | Pause before sensitive actions |
 | Agent retry | V1.5 | Recover from failures |
 | Agent limits | V1.5 | Restrict steps/time/tool calls |
 | Agent execution logs | V1.5 | Explain what happened |
+| Agent run history | V1.5 | Review previous agent executions |
 | Background agents | V2 | Continue work asynchronously |
 | Agent scheduling | V2 | Run agents at defined times |
 | Multi-agent orchestration | V2 | Coordinate multiple agents |
@@ -340,7 +360,26 @@ Agents are the major transition from AI chat to AI work execution.
 
 ---
 
-# 16. Memory
+# 16. Human-in-the-Loop
+
+Human approval provides controlled intervention when an agent or tool action requires user authorization.
+
+| Capability | Version | How it is used |
+|---|---|---|
+| Approval request | V1.5 | Ask a user to authorize a sensitive action |
+| Approval UI | V1.5 | Show the requested action and relevant context |
+| Approve action | V1.5 | Allow execution to continue |
+| Reject action | V1.5 | Prevent the requested action |
+| Modify and continue | V1.5 | Let the user adjust an action before execution where supported |
+| Execution pause | V1.5 | Pause agent execution while waiting for a decision |
+| Execution resume | V1.5 | Continue an approved task |
+| Approval permissions | V1.5 | Restrict who can approve actions |
+| Approval audit trail | V1.5 | Record approval and rejection decisions |
+| Approval timeout | V2 | Handle approvals that remain unresolved |
+| Delegated approval | V2 | Route approval to an authorized reviewer |
+
+
+# 17. Memory
 
 Memory allows NEXUS to preserve useful information across interactions.
 
@@ -359,7 +398,7 @@ Memory allows NEXUS to preserve useful information across interactions.
 
 ---
 
-# 17. Workflows
+# 18. Workflows
 
 Workflows turn repeated work into structured processes.
 
@@ -380,7 +419,7 @@ Workflows turn repeated work into structured processes.
 
 ---
 
-# 18. Artifacts
+# 19. Artifacts
 
 Artifacts are structured outputs produced during AI work.
 
@@ -394,11 +433,23 @@ Artifacts are structured outputs produced during AI work.
 | Artifact versioning | V1.5 | Track changes |
 | Artifact editing | V1.5 | User modifies AI output |
 | Artifact sharing | V2 | Collaborate on outputs |
+| Artifact detection | V1.5 | Identify when a response should become an artifact |
+| Artifact side panel | V1.5 | Display generated work beside the conversation |
+| Artifact preview | V1.5 | Render artifacts in a safe preview surface |
+| Artifact refinement | V1.5 | Ask AI to modify an existing artifact |
+| Artifact persistence | V1.5 | Keep artifacts available after the conversation |
+| Artifact versioning | V1.5 | Track artifact revisions |
+| Code artifacts | V1.5 | Generate and edit code |
+| Markdown artifacts | V1.5 | Create structured documents |
+| HTML artifacts | V1.5 | Create previewable web content |
+| SVG artifacts | V1.5 | Create vector graphics |
+| Mermaid artifacts | V1.5 | Create diagrams |
+| Artifact sandboxing | V2 | Safely execute or render active content |
 | Rich interactive artifacts | V2 | Build interactive results |
 
 ---
 
-# 19. Evaluation
+# 20. Evaluation
 
 Evaluation ensures that NEXUS actually produces useful AI results.
 
@@ -414,11 +465,13 @@ Evaluation ensures that NEXUS actually produces useful AI results.
 | Model comparison | V1.5 | Compare models |
 | Automated evaluations | V2 | Run evaluations continuously |
 | Production evaluation | V2 | Evaluate real-world behavior |
+| Agent trajectory evaluation | V1.5 | Evaluate the sequence of agent actions |
+| Tool-use evaluation | V1.5 | Measure correct tool selection and execution |
 | Evaluation dashboards | V2 | Monitor quality over time |
 
 ---
 
-# 20. Observability
+# 21. Observability
 
 Observability makes AI systems understandable and debuggable.
 
@@ -437,10 +490,12 @@ Observability makes AI systems understandable and debuggable.
 | Distributed tracing | V2 | Trace complex workflows |
 | Production dashboards | V2 | Monitor system health |
 | Alerting | V2 | Notify operators of failures |
+| Agent run tracing | V1.5 | Trace multi-step agent execution |
+| Model cost attribution | V1.5 | Associate model usage with requests and runs |
 
 ---
 
-# 21. Security
+# 22. Security
 
 Security is a cross-cutting capability rather than a single feature.
 
@@ -464,10 +519,12 @@ Security is a cross-cutting capability rather than a single feature.
 | Advanced policy engine | V2 | Centralized authorization policies |
 | Compliance tooling | V2 | Support enterprise requirements |
 | Data retention policies | V2 | Control lifecycle of data |
+| Approval audit trail | V1.5 | Record human decisions on sensitive actions |
+| Agent/tool authorization | V1.5 | Restrict execution capabilities |
 
 ---
 
-# 22. Cost Tracking
+# 23. Cost Tracking
 
 Cost tracking becomes important as model and agent usage grows.
 
@@ -487,7 +544,56 @@ Cost tracking becomes important as model and agent usage grows.
 
 ---
 
-# 23. Cross-Cutting Platform Capabilities
+# 24. Developer Platform
+
+NEXUS should be usable through APIs and an SDK, not only through the web workspace.
+
+| Capability | Version | How it is used |
+|---|---|---|
+| REST API | V1 | Expose core NEXUS resources |
+| Streaming API | V1 | Consume real-time model and execution events |
+| Conversations API | V1 | Create and manage conversations programmatically |
+| Messages API | V1 | Send and retrieve messages |
+| Models API | V1 | Discover available models |
+| Files API | V1 | Upload and manage files |
+| Projects API | V1 | Create and manage projects |
+| Artifacts API | V1.5 | Create and retrieve artifacts |
+| Agents API | V1.5 | Create and execute agents |
+| Workflows API | V2 | Manage workflow definitions and runs |
+| API keys | V1 | Authenticate applications |
+| Python SDK | V1 | Provide a first-class Python developer interface |
+| SDK examples | V1.5 | Show common integration patterns |
+| Webhooks | V2 | Deliver asynchronous execution events |
+| Developer documentation | V1.5 | Explain API and SDK usage |
+
+---
+
+# 25. NEXUS Workspace UI
+
+The workspace is the actual product surface through which users access NEXUS capabilities.
+
+| Capability | Version | How it is used |
+|---|---|---|
+| Application shell | V1 | Provide consistent NEXUS navigation |
+| Sidebar navigation | V1 | Navigate conversations, projects, and product areas |
+| Chat workspace | V1 | Main conversational experience |
+| Model selector UI | V1 | Select available models |
+| File attachment UI | V1 | Upload files into conversations |
+| Project workspace UI | V1 | Work inside a project |
+| Project file UI | V1 | Browse project files |
+| Project knowledge UI | V1 | Manage project knowledge |
+| Artifact side panel | V1.5 | Inspect generated artifacts beside chat |
+| Agent execution UI | V1.5 | Inspect active agent work |
+| Tool activity UI | V1.5 | Show tool execution state |
+| Approval UI | V1.5 | Review and approve sensitive actions |
+| Settings UI | V1 | Manage user and workspace configuration |
+| Integration UI | V1.5 | Manage external integrations |
+| Usage UI | V1.5 | View AI usage |
+| Administration UI | V2 | Manage enterprise configuration |
+
+---
+
+# 26. Cross-Cutting Platform Capabilities
 
 These capabilities support the entire platform.
 
@@ -509,7 +615,7 @@ These capabilities support the entire platform.
 
 ---
 
-# 24. Example Capability Interaction
+# 27. Example Capability Interaction
 
 The capabilities should not operate as isolated features.
 
@@ -559,7 +665,7 @@ This is the core idea behind the platform: **individual capabilities combine to 
 
 ---
 
-# 25. V1 Boundary
+# 28. V1 Boundary
 
 V1 should establish the foundation for the complete platform without attempting to build the entire agentic system immediately.
 
@@ -585,19 +691,21 @@ V1 should establish the foundation for the complete platform without attempting 
 ## V1 Should Prove
 
 1. A user can enter NEXUS.
-2. A user can create a project.
+2. A user can navigate the core workspace.
+3. A user can use the chat experience as a real product, not only through an API.
+4. A user can create a project.
 3. A user can upload knowledge.
 4. NEXUS can process and index that knowledge.
-5. NEXUS can retrieve relevant information.
-6. An LLM can answer using that information.
-7. The response can show sources.
-8. A model can use a controlled tool.
-9. User permissions are respected.
-10. The system is stable enough to build agents on top of it.
+7. NEXUS can retrieve relevant information.
+8. An LLM can answer using that information.
+9. The response can show sources.
+10. A model can use a controlled tool.
+11. User permissions are respected.
+12. The system is stable enough to build agents on top of it.
 
 ---
 
-# 26. V1.5 Boundary
+# 29. V1.5 Boundary
 
 V1.5 turns the stable AI foundation into a more capable connected AI platform.
 
@@ -622,7 +730,7 @@ The key outcome is:
 
 ---
 
-# 27. V2 Boundary
+# 30. V2 Boundary
 
 V2 focuses on advanced agentic work and platform scale.
 
@@ -647,7 +755,7 @@ The key outcome is:
 
 ---
 
-# 28. Feature Decision Rules
+# 31. Feature Decision Rules
 
 Every future feature should be evaluated against these questions:
 
@@ -666,7 +774,7 @@ If a feature does not pass these tests, it should not automatically enter the ro
 
 ---
 
-# 29. Release Strategy
+# 32. Release Strategy
 
 ```text
                          NEXUS
@@ -691,7 +799,7 @@ The releases should build on each other rather than becoming separate products.
 
 ---
 
-# 30. Final Product Capability Model
+# 33. Final Product Capability Model
 
 The long-term NEXUS capability model is:
 
