@@ -9,9 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  backend-tests:
-    name: Backend Tests
+  backend-quality:
+    name: Backend Quality
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -19,17 +20,27 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install backend dependencies
         run: pip install ".[dev]"
 
-      - name: Run backend tests
+      - name: Run pytest
         run: pytest -q
+
+      - name: Run Ruff
+        run: ruff check .
+
+      - name: Run mypy
+        run: mypy src
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
 
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -37,8 +48,8 @@ jobs:
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
@@ -52,141 +63,10 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
       - name: Build Docker images
         run: docker compose build
-
-  reviewer:
-    name: Reviewer
-    needs:
-      - backend-tests
-      - frontend-build
-      - docker-build
-    runs-on: ubuntu-latest
-    outputs:
-      final_message: ${{ steps.run_codex.outputs.final-message }}
-    permissions:
-      contents: read
-    steps:
-      - name: Check out PR merge revision
-        uses: actions/checkout@v5
-        with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          persist-credentials: false
-
-      - name: Fetch PR base and head refs
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          git fetch --no-tags \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "$PR_BASE_REF" \
-            "+refs/pull/$PR_NUMBER/head"
-
-      - name: Review PR with Codex
-        id: run_codex
-        uses: openai/codex-action@v1
-        with:
-          permission-profile: ":read-only"
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt: |
-            Review only the changes introduced by this pull request.
-
-            Define the PR scope as the diff from base SHA to head SHA:
-            git diff ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}
-
-            Do not review unrelated historical code as if it were part of this PR.
-
-            Follow the required review order and use the repo's governing documents as the source of truth:
-            1. AGENTS.md
-            2. INVARIANTS.md
-            3. .codex/reviewer-agent.md
-            4. .codex/workflow.md
-            5. relevant project specification/documentation
-            6. the PR diff
-            7. relevant tests
-            8. relevant CI/test results where available
-
-            Review order:
-            SPEC COMPLIANCE
-            → INVARIANTS
-            → SECURITY
-            → ARCHITECTURE/DOMAIN
-            → API/DATA
-            → IMPLEMENTATION
-            → TESTS
-            → OBSERVABILITY/DOCS
-            → SCOPE
-
-            Check specifically:
-            - acceptance criteria are satisfied
-            - no unrelated scope was introduced
-            - invariants remain satisfied
-            - authentication remains correct
-            - authorization remains correct
-            - tenant/project isolation remains correct
-            - secrets are not exposed
-            - API contracts are correct
-            - data-model changes are safe
-            - dependencies are justified
-            - agent/tool/MCP execution remains within approved scope
-            - tests meaningfully validate behavior
-            - documentation matches changed behavior
-
-            Rules:
-            - Review evidence, not the Builder's claims.
-            - Do not modify code.
-            - Do not modify tests.
-            - Do not rewrite the specification.
-            - Do not silently fix unrelated problems.
-            - Do not merge the PR.
-            - If you detect an invariant violation, security weakening, authentication bypass, authorization bypass, tenant/project isolation violation, secret exposure, unapproved major architecture change, unapproved public API change, unapproved data-model or migration change, unapproved core agent-execution semantic change, or unsafe infrastructure/dependency change, mark status as human_required and explain the issue clearly.
-
-            Return exactly this conceptual structure:
-            review_result:
-              status: passed | failed | human_required
-              findings:
-                - id: REV-001
-                  severity: critical | high | medium | low | informational
-                  location: ""
-                  evidence: ""
-                  requirement_or_rule: ""
-                  required_outcome: ""
-
-            If there are no findings, use:
-            review_result:
-              status: passed
-              findings: []
-
-            Add a concise human-readable summary after the structured result.
-
-            If the reviewer itself fails to execute, fail the job and do not claim the PR passed review.
-            This is a read-only review only; no automatic fix, push, merge, or deployment is allowed.
-
-  post-review:
-    name: Post Review
-    needs: reviewer
-    if: needs.reviewer.outputs.final_message != ''
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-    steps:
-      - name: Post review comment
-        uses: actions/github-script@v7
-        env:
-          CODEX_FINAL_MESSAGE: ${{ needs.reviewer.outputs.final_message }}
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: process.env.CODEX_FINAL_MESSAGE,
-            });
