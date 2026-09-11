@@ -102,9 +102,11 @@ NEXUS is designed around a multi-model architecture rather than being permanentl
         LLM A     LLM B   Private LLM
 ```
 
+NEXUS uses provider-independent interfaces so model providers can be added, replaced, or routed without coupling application-level agent logic to a specific vendor.
+
 ### 🤖 Agentic AI
 
-Agents will allow users to move from asking questions to delegating real work.
+Agents allow users to move from asking questions to delegating real work.
 
 An agent can eventually:
 
@@ -117,6 +119,8 @@ An agent can eventually:
 - Verify results
 - Request human approval
 - Report what it completed
+
+Agents operate within explicit permissions, project boundaries, execution limits, and tool policies.
 
 Example:
 
@@ -151,22 +155,42 @@ Company Systems
           AI Agent
 ```
 
+MCP integrations are subject to NEXUS authentication, authorization, tool permissions, project boundaries, and security policies.
+
 ### 🛠️ Tools & Integrations
 
-NEXUS should connect AI to the systems people already use, including APIs, cloud services, databases, developer tools, and business applications.
+NEXUS is designed to connect AI to the systems people already use, including:
+
+- APIs
+- Cloud services
+- Databases
+- Developer tools
+- Business applications
+- Internal systems
+- External services
+
+Tools are treated as controlled capabilities rather than unrestricted model actions.
 
 ### 🔐 Security & Permissions
 
-NEXUS should control:
+NEXUS is designed around security and control from the beginning.
+
+The platform controls:
 
 - Identity
 - Authentication
 - Authorization
+- Tenant isolation
+- Project isolation
 - Knowledge access
 - Tool permissions
 - Agent permissions
+- MCP permissions
 - Human approvals
 - Audit logs
+- Secret management
+
+LLM output is never treated as the final security authority.
 
 ---
 
@@ -174,18 +198,24 @@ NEXUS should control:
 
 | Layer | Direction |
 |---|---|
-| Backend | **Python** |
+| Frontend | **React + TypeScript** |
+| Backend | **Python + FastAPI** |
 | AI | **LLMs / Multi-model architecture** |
 | Knowledge | **RAG / Retrieval / Embeddings** |
 | Intelligence | **Agent orchestration** |
 | Connectivity | **MCP + APIs + integrations** |
+| Primary Database | **PostgreSQL** |
+| Vector Search | **pgvector** |
+| Object Storage | **Azure Blob Storage** |
+| Cache / Transient Infrastructure | **Azure Managed Redis** |
+| Secret Management | **Azure Key Vault** |
+| Cloud Platform | **Microsoft Azure** |
 | Security | **Authentication + Authorization + Permissions** |
-| Infrastructure | **Cloud-ready architecture** |
-| Quality | **Automated testing + evaluation** |
+| Quality | **Automated testing + linting + type checking** |
 | Observability | **Logging + auditability** |
 | Version Control | **Git / GitHub** |
 
-Specific frameworks and infrastructure choices will be finalized during technical architecture and implementation.
+NEXUS is designed to use provider-independent interfaces so infrastructure and AI providers can evolve without unnecessarily coupling the core platform to specific vendors.
 
 ---
 
@@ -234,6 +264,142 @@ Specific frameworks and infrastructure choices will be finalized during technica
                               USER
 ```
 
+The architecture separates:
+
+```text
+Frontend
+   ↓
+API / Transport
+   ↓
+Application Layer
+   ↓
+AI Platform / SDK
+   ↓
+AI Capabilities
+   ↓
+Infrastructure / External Providers
+```
+
+AI capabilities remain separated into clear boundaries such as:
+
+- Models
+- Retrieval
+- Agents
+- Tools
+- MCP
+- Memory
+- Workflows
+- Artifacts
+- Evaluation
+- Observability
+
+Infrastructure and vendor-specific implementations remain behind appropriate abstractions.
+
+---
+
+## 🔒 Security Architecture
+
+Security is enforced by trusted NEXUS components rather than relying on frontend checks or model instructions.
+
+```text
+User
+  |
+  v
+Authentication
+  |
+  v
+Tenant Membership
+  |
+  v
+Project Authorization
+  |
+  v
+Agent Authorization
+  |
+  v
+Tool / MCP Authorization
+  |
+  v
+Input Validation
+  |
+  v
+Policy Enforcement
+  |
+  v
+Execution Boundary
+  |
+  v
+External Service
+  |
+  v
+Output Validation
+  |
+  v
+Audit Logging
+```
+
+Important security boundaries include:
+
+- Tenant isolation
+- Project isolation
+- Role-based access control
+- Least privilege
+- Default deny
+- Server-side authorization
+- Tool permission enforcement
+- MCP permission enforcement
+- Prompt-injection resistance
+- Secret isolation
+- Auditability
+- Execution limits
+
+---
+
+## 🗄️ Data & Persistence
+
+NEXUS uses PostgreSQL as the authoritative system of record.
+
+```text
+                         PostgreSQL
+                             |
+          +------------------+------------------+
+          |                  |                  |
+          v                  v                  v
+       Domains            pgvector          Metadata
+          |
+          +-- Users
+          +-- Organizations
+          +-- Workspaces
+          +-- Projects
+          +-- Conversations
+          +-- Messages
+          +-- Files
+          +-- Documents
+          +-- Knowledge Bases
+          +-- Agents
+          +-- Tools
+          +-- MCP Servers
+          +-- Workflows
+          +-- Artifacts
+          +-- Audit Events
+          +-- Usage Records
+```
+
+Large binary objects are stored in Azure Blob Storage.
+
+Redis is used for transient infrastructure such as:
+
+- Caching
+- Rate limiting
+- Distributed locks
+- Idempotency
+- Job coordination
+- Temporary execution state
+
+Redis is not the source of truth.
+
+Production secrets are managed through Azure Key Vault or an equivalent managed secret system.
+
 ---
 
 ## 👥 Who Can Use NEXUS?
@@ -257,9 +423,11 @@ NEXUS is a general-purpose platform.
 
 ### Current Stage
 
-**Product Definition & Architecture Planning**
+**Week 1 Foundation Complete — Ready for First Real AI Feature**
 
 ### Completed
+
+#### Product & Architecture
 
 - Product vision
 - Target users
@@ -268,61 +436,117 @@ NEXUS is a general-purpose platform.
 - Non-goals
 - V1 boundary
 - Success criteria
-- UAE market analysis
-- Initial product positioning
-- Agentic AI direction
-- Knowledge-control direction
-- MCP direction
-- Custom/private MCP direction
-- Project documentation foundation
+- Capability matrix
+- System requirements
+- System architecture
+- Architecture review
+- Security baseline
+- Data model
+- API / SDK design
+- Domain ownership model
+- Engineering principles
 
-### Next
+#### Engineering Foundation
 
-1. Technical architecture
-2. V1 system design
-3. Repository foundation
-4. Core AI workspace
-5. Knowledge / RAG foundation
-6. MCP foundation
-7. Agent foundation
-8. Testing and evaluation
-9. Security and hardening
+- Repository foundation
+- Python 3.12+ backend foundation
+- FastAPI application foundation
+- Pydantic configuration
+- Centralized logging foundation
+- React + TypeScript frontend foundation
+- Frontend routing
+- Frontend API client foundation
+- PostgreSQL local development service
+- Redis local development service
+- Docker Compose development environment
+- Service health checks
+- Persistent local volumes
+- Backend unit tests
+- Integration test foundation
+- Ruff linting
+- mypy type checking
+- pre-commit hooks
+- GitHub Actions CI
+- Docker build validation
+
+### Current Development Foundation
+
+```text
+React + TypeScript
+        |
+        v
+     FastAPI
+        |
+        v
+ Application Layer
+        |
+        v
+ AI Platform / SDK
+        |
+        +----------------+
+        |                |
+        v                v
+   PostgreSQL          Redis
+        |
+      pgvector
+```
+
+The development environment can run the core local services together through Docker Compose.
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Next
 
-> **Detailed roadmap — coming soon**
+The project is now moving from architecture and foundation work into implementation of the first real AI capabilities.
 
-Expected product evolution:
+The next development stage includes:
 
-```text
-AI WORKSPACE
-     |
-     v
-CONTROLLED AI
-     |
-     v
-CONNECTED AI
-     |
-     v
-AGENTIC AI
-     |
-     v
-AGENTIC WORK PLATFORM
-```
+1. Authentication and identity foundation
+2. Model/provider integration
+3. Core AI conversation execution
+4. Streaming AI responses
+5. Knowledge and RAG foundation
+6. Continued V1 capability implementation
+7. Testing, evaluation, security hardening, and observability as capabilities are implemented
+
+Detailed implementation sequencing is governed by the project plan, capability matrix, system requirements, architecture, API/SDK specification, data model, security requirements, and engineering principles.
 
 ---
 
 ## 📚 Documentation
 
-Detailed product documentation lives in the `docs/` directory.
+Detailed technical and product documentation lives in the `docs/` directory.
 
 | Document | Purpose |
 |---|---|
 | [`00-project-plan.md`](docs/00-project-plan.md) | Product definition, scope, goals, non-goals, V1 boundary, and success criteria |
-| [`01-market-analysis.md`](docs/01-market-analysis.md) | UAE market, competitors, positioning, and differentiation |
 | [`01-capability-matrix.md`](docs/01-capability-matrix.md) | Detailed NEXUS capabilities, feature breakdown, V1/V1.5/V2 classification, and usage |
+| [`01-market-analysis.md`](docs/01-market-analysis.md) | UAE market, competitors, positioning, and differentiation |
+| [`03-system-requirements.md`](docs/03-system-requirements.md) | Functional and non-functional system requirements |
+| [`04-architecture.md`](docs/04-architecture.md) | Canonical system architecture and architectural boundaries |
+| [`05-api-sdk.md`](docs/05-api-sdk.md) | Canonical API and Python SDK interfaces |
+| [`06-data-model.md`](docs/06-data-model.md) | Canonical data model and persistence architecture |
+| [`07-security.md`](docs/07-security.md) | Security requirements and security architecture |
+| [`08-engineering-principles.md`](docs/08-engineering-principles.md) | Canonical engineering and implementation principles |
+| [`domain-map.md`](docs/domain-map.md) | Domain ownership and documentation routing |
+
+### AI Coding Agent Guidance
+
+AI coding agents should begin with:
+
+```text
+AGENTS.md
+    ↓
+INVARIANTS.md
+    ↓
+docs/08-engineering-principles.md
+    ↓
+docs/domain-map.md
+    ↓
+Relevant domain documentation
+```
+
+Agents should load only the documentation relevant to the task and must preserve the documented architecture, contracts, security requirements, data boundaries, and invariants.
 
 ---
 
@@ -336,6 +560,8 @@ Detailed product documentation lives in the `docs/` directory.
 | **Open Architecture** | Avoid unnecessary dependence on one model or vendor |
 | **Simple Experience** | Hide infrastructure complexity behind a simple interface |
 | **Platform Thinking** | Support different users, teams, and industries |
+| **Security by Default** | Security boundaries are enforced by trusted platform components |
+| **Reliable AI** | AI operations should have explicit limits, failures, and observable outcomes |
 
 ---
 
@@ -380,6 +606,24 @@ Cloud
 NEXUS
 ```
 
+NEXUS is designed to give users access to increasingly capable AI while keeping control over:
+
+```text
+Knowledge
+    +
+Models
+    +
+Tools
+    +
+Agents
+    +
+Permissions
+    +
+Data
+    +
+Execution
+```
+
 ---
 
 ## 🚀 NEXUS
@@ -388,4 +632,4 @@ NEXUS
 **AI that can use your tools.**  
 **AI that can help do the work.**
 
-**Status:** Early Development
+**Status:** Early Development — Week 1 Foundation Complete
