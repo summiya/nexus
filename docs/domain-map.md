@@ -208,11 +208,11 @@ Use the global specifications when the task concerns:
 | Concern | Primary Document |
 |---|---|
 | Project roadmap / delivery | `docs/00-project-plan.md` |
-| System requirements | `docs/01-system-requirements.md` |
-| Overall architecture | `docs/02-architecture.md` |
-| REST / streaming API | `docs/03-api-contract.md` |
-| Python SDK | `docs/04-python-sdk.md` |
-| Agent execution architecture | `docs/05-agent-runtime.md` |
+| System requirements | `docs/03-system-requirements.md` |
+| Overall architecture | `docs/04-architecture.md` |
+| REST / streaming API | `docs/05-api-sdk.md` |
+| Python SDK | `docs/05-api-sdk.md` |
+| Agent execution architecture | `docs/04-architecture.md` |
 | PostgreSQL / persistence / schema | `docs/06-data-model.md` |
 | Security | `docs/07-security.md` |
 | Engineering / implementation rules | `docs/08-engineering-principles.md` |
@@ -283,7 +283,7 @@ For API changes:
 ```text
 Owning domain
         ↓
-docs/03-api-contract.md
+docs/05-api-sdk.md
         ↓
 Domain API documentation
         ↓
@@ -295,7 +295,7 @@ API tests
 If the Python SDK is affected:
 
 ```text
-docs/04-python-sdk.md
+docs/05-api-sdk.md
 ```
 
 must also be considered.
@@ -311,7 +311,8 @@ Agent Runtime
     → docs/domains/agents/
     → src/nexus/agents/
     → tests/agents/
-    → docs/05-agent-runtime.md
+    → docs/04-architecture.md
+    → docs/05-api-sdk.md (runtime interfaces/contracts)
 ```
 
 For workflows:
