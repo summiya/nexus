@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     api_version: str = "v1"
     environment: str = "development"
 
-    database_url: str
-    redis_url: str
+    database_url: str = ""
+    redis_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
