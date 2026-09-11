@@ -78,7 +78,7 @@ SOLID MUST NOT be used as an excuse to create unnecessary layers or abstractions
 
 ## 8. API Contracts
 
-- Public APIs MUST follow `docs/03-api-contract.md`.
+- Public APIs MUST follow `docs/05-api-sdk.md`.
 - API input MUST be validated at the boundary.
 - API responses and errors SHOULD be predictable and consistent.
 - Breaking changes MUST NOT be introduced silently.

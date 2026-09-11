@@ -45,11 +45,11 @@ This applies to:
 | Document | Purpose |
 |---|---|
 | `docs/00-project-plan.md` | Project goals, milestones, and scope |
-| `docs/01-system-requirements.md` | System requirements |
-| `docs/02-architecture.md` | Global architecture |
-| `docs/03-api-contract.md` | REST and streaming API contracts |
-| `docs/04-python-sdk.md` | Python SDK interfaces |
-| `docs/05-agent-runtime.md` | Agent runtime architecture |
+| `docs/03-system-requirements.md` | System requirements |
+| `docs/04-architecture.md` | Global architecture |
+| `docs/05-api-sdk.md` | REST and streaming API contracts |
+| `docs/05-api-sdk.md` | Python SDK interfaces |
+| `docs/04-architecture.md` | Agent runtime architecture |
 | `docs/06-data-model.md` | Database and persistence model |
 | `docs/07-security.md` | Security requirements |
 | `docs/08-engineering-principles.md` | Engineering rules and coding principles |
