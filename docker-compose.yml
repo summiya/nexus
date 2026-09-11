@@ -10,7 +10,7 @@ services:
       API_VERSION: v1
       ENVIRONMENT: development
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import json, urllib.request, sys; response = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); payload = json.loads(response.read().decode()); sys.exit(0 if payload.get('status') == 'ok' else 1)\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
