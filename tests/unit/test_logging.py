@@ -32,4 +32,7 @@ def test_create_app_logs_on_startup(caplog) -> None:
     with caplog.at_level(logging.INFO, logger="nexus"):
         asyncio.run(app.router.on_startup[0]())
 
-    assert any("NEXUS application startup complete" in record.message for record in caplog.records)
+    assert any(
+        "NEXUS application startup complete" in record.message
+        for record in caplog.records
+    )
