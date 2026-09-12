@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY tests ./tests
+COPY automation ./automation
 
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir ".[dev]"
