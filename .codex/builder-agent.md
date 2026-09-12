@@ -9,7 +9,9 @@ The Builder implements requirements. It does not redefine them.
 ## Entry Conditions
 
 Start only when:
-- the GitHub task is `READY`;
+- the GitHub task is `READY` as a Project Status (NOT an issue label);
+- the task is explicitly assigned to the worker (GitHub Issue assignee == CODEX_WORKER_ID);
+- unassigned or assigned-to-other READY tasks must be ignored by discovery;
 - a specification exists;
 - the specification is clear enough to implement;
 - required human approval has been obtained when specified.
@@ -46,6 +48,13 @@ READ
 ## Planning (MANDATORY)
 
 The Builder MUST produce an explicit implementation plan before touching code. Planning is a mandatory gate and part of the Builder lifecycle rather than a separate agent.
+
+Project Status vs Labels
+------------------------
+
+- The `READY` condition referenced above is the GitHub Project Status column/value. Do NOT use an issue label named `READY` in production discovery logic.
+- Eligibility: `Project Status == READY` AND `Issue Assignee == CODEX_WORKER_ID`.
+- Discovery must be side-effect free. The worker must re-verify status and assignee immediately before performing any state-changing handoff.
 
 The plan MUST be concise and include at minimum:
 
