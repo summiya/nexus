@@ -1,0 +1,117 @@
+name: NEXUS Planner
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_key:
+        description: "Jira issue key (for example NEXUS-42)"
+        required: true
+        type: string
+      issue_summary:
+        description: "Jira issue summary"
+        required: true
+        type: string
+      issue_description:
+        description: "Jira issue description / acceptance criteria"
+        required: true
+        type: string
+  repository_dispatch:
+    types: [nexus_planning_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan Jira work item with Codex
+    runs-on: ubuntu-latest
+    outputs:
+      implementation_plan: ${{ steps.planner.outputs.final-message }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Build planner prompt
+        env:
+          ISSUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_key || github.event.client_payload.issue_key }}
+          ISSUE_SUMMARY: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_summary || github.event.client_payload.issue_summary }}
+          ISSUE_DESCRIPTION: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_description || github.event.client_payload.issue_description }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          required = {
+              "ISSUE_KEY": os.environ.get("ISSUE_KEY", "").strip(),
+              "ISSUE_SUMMARY": os.environ.get("ISSUE_SUMMARY", "").strip(),
+              "ISSUE_DESCRIPTION": os.environ.get("ISSUE_DESCRIPTION", "").strip(),
+          }
+          missing = [name for name, value in required.items() if not value]
+          if missing:
+              raise SystemExit(f"Missing required Jira payload fields: {', '.join(missing)}")
+
+          template = Path('.codex/planner-prompt.md').read_text(encoding='utf-8')
+          replacements = {
+              '${ISSUE_KEY}': required['ISSUE_KEY'],
+              '${ISSUE_SUMMARY}': required['ISSUE_SUMMARY'],
+              '${ISSUE_DESCRIPTION}': required['ISSUE_DESCRIPTION'],
+          }
+          for marker, value in replacements.items():
+              template = template.replace(marker, value)
+          Path('/tmp/nexus-planner-prompt.md').write_text(template, encoding='utf-8')
+          PY
+
+      # Codex is intentionally the final step in this job. The following
+      # validation/upload work runs in a separate job, following OpenAI's
+      # security guidance for codex-action.
+      - name: Run read-only Planner Agent
+        id: planner
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":read-only"
+          prompt-file: /tmp/nexus-planner-prompt.md
+          output-schema-file: .codex/schemas/implementation-plan.json
+
+  publish:
+    name: Validate and publish implementation plan
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Write structured Planner output
+        env:
+          IMPLEMENTATION_PLAN: ${{ needs.plan.outputs.implementation_plan }}
+        run: |
+          if [ -z "$IMPLEMENTATION_PLAN" ]; then
+            echo "Planner returned no structured output." >&2
+            exit 1
+          fi
+          printf '%s' "$IMPLEMENTATION_PLAN" > implementation-plan.json
+
+      - name: Validate planner output
+        run: python -m json.tool implementation-plan.json > /dev/null
+
+      - name: Upload implementation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-implementation-plan-${{ github.run_id }}
+          path: implementation-plan.json
+          if-no-files-found: error
+
+      - name: Publish planner summary
+        run: |
+          {
+            echo '## NEXUS Planner Result'
+            echo
+            echo 'The Planner completed in read-only mode.'
+            echo
+            echo '```json'
+            cat implementation-plan.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -2,46 +2,63 @@
 
 ## Goal
 
-Provide a simple, controlled engineering loop for NEXUS while minimizing unnecessary Codex usage.
+Provide a controlled multi-agent engineering loop for NEXUS with explicit planning, human approval, independent verification, and bounded remediation.
 
-The specification is prepared by the human and/or ChatGPT.
-A separate Specification Agent is **not** part of the default automated loop.
+Jira is the engineering state source of truth. GitHub is the code, pull-request, and CI system. Codex agents are specialized workers. GitHub Actions provides execution/orchestration.
 
 ## Main Flow
 
 ```text
-┌──────────────┐
-│ HUMAN        │
-│ Define task  │
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ SPECIFICATION│
-│ Human/ChatGPT│
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ READY        │
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ BUILDER      │
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ TESTER       │
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ REVIEWER     │
-└──────┬───────┘
-       ↓
-┌──────────────┐
-│ HUMAN REVIEW │
-└──────┬───────┘
-       ↓
-     MERGE
+JIRA READY
+   ↓
+JIRA PLANNING
+   ↓
+PLANNER (read-only)
+   ↓
+IMPLEMENTATION PLAN
+   ↓
+JIRA AWAITING APPROVAL
+   ↓
+HUMAN APPROVAL
+   ↓
+JIRA BUILDING
+   ↓
+BUILDER (write)
+   ↓
+GITHUB PR
+   ↓
+JIRA TESTING
+   ↓
+TESTER (read-only)
+   ↓
+JIRA REVIEW
+   ↓
+REVIEWER (read-only)
+   ↓
+JIRA HUMAN REVIEW
+   ↓
+HUMAN MERGE
+   ↓
+JIRA DONE
 ```
+
+## Planning Gate
+
+### PLANNING
+
+The Planner:
+- reads the Jira requirement;
+- reads repository instructions and invariants;
+- identifies the owning domain;
+- inspects relevant documentation, source, and tests;
+- produces `.codex/schemas/implementation-plan.json` output;
+- makes no repository changes.
+
+### AWAITING APPROVAL
+
+The plan is presented as the implementation handoff. A human must approve the plan before the task can enter `BUILDING`.
+
+The Builder MUST NOT treat the transition into `PLANNING` as implementation authorization.
 
 ## Failure Loops
 
@@ -67,7 +84,7 @@ TESTER
 REVIEWER
 ```
 
-The Tester always verifies a Fixer change before the Reviewer gets final control.
+The Tester always verifies a Fixer change before the Reviewer receives final control.
 
 ## Maximum Remediation
 
@@ -91,62 +108,80 @@ PR REMAINS OPEN
 
 There is never an automatic round 4.
 
-## Recommended GitHub Project States
+## Jira States
 
 | State | Owner | Meaning |
 |---|---|---|
-| BACKLOG | Human | Task exists but is not ready |
-| READY | Human | Specification is complete and task can be built |
-| BUILDING | Builder | Implementation in progress |
+| TO DO | Human | Task exists but is not ready |
+| READY | Human | Requirement is ready for planning |
+| PLANNING | Planner | Repository-grounded implementation plan is being produced |
+| AWAITING APPROVAL | Human | Plan exists and awaits implementation approval |
+| BUILDING | Builder | Approved implementation is in progress |
 | TESTING | Tester | Independent verification |
-| REVIEWING | Reviewer | Engineering review |
+| REVIEW | Reviewer | Independent engineering review |
 | FIXING | Fixer | Confirmed finding is being remediated |
-| HUMAN REVIEW | Human | Final approval required |
-| BLOCKED | Human/Agent | Cannot safely continue |
-| AUTOMATION STOPPED | System/Human | Three remediation rounds exhausted or hard stop |
+| HUMAN REVIEW | Human | Final approval and merge decision |
 | DONE | Human | PR merged/accepted |
 
 ## Gates
 
-### READY → BUILDING
+### READY → PLANNING
 
 Requires:
-- specification exists;
-- acceptance criteria are clear;
-- required approvals exist;
-- no known invariant conflict.
+- Jira requirement is present;
+- the task is ready for repository-grounded planning.
 
-Note: The implementation uses the GitHub ProjectV2 READY → BUILDING transition
-as the authoritative ownership boundary. This transition is authoritative for
-handoff but is NOT a server-side conditional compare-and-set (CAS). The GitHub
-mutation can be raced by concurrent workers; the system does not provide
-guarantees of exactly-once claiming or distributed locking. If strict
-mutual-exclusion or CAS semantics are required, an additional coordination
-mechanism (outside the scope of W1-24) must be introduced and approved.
+### PLANNING → AWAITING APPROVAL
+
+Requires:
+- Planner completed read-only investigation;
+- structured implementation plan was produced;
+- recommendation is `ready_for_approval`;
+- no unresolved hard stop exists.
+
+If the Planner returns `needs_clarification` or `blocked`, the task must not proceed to implementation.
+
+### AWAITING APPROVAL → BUILDING
+
+Requires:
+- human approval of the implementation plan;
+- required task/assignment controls are satisfied.
 
 ### BUILDING → TESTING
 
 Requires:
 - Builder implementation complete;
 - relevant tests executed;
-- Builder handoff produced.
+- Builder handoff produced;
+- GitHub PR exists.
 
-### TESTING → REVIEWING
+### TESTING → REVIEW
 
 Requires:
 - Tester passes;
 - no unresolved blocking findings.
 
-### REVIEWING → HUMAN REVIEW
+### REVIEW → FIXING
+
+Requires:
+- Reviewer has an actionable finding.
+
+### FIXING → TESTING
+
+Requires:
+- Fixer reports a confirmed fix;
+- remediation round is 1, 2, or 3.
+
+### REVIEW → HUMAN REVIEW
 
 Requires:
 - Reviewer passes;
 - no unresolved blocking findings.
 
-### HUMAN REVIEW → MERGE
+### HUMAN REVIEW → DONE
 
 Requires:
-- human approval.
+- human approves and merges the PR.
 
 Agents must not merge automatically.
 
@@ -162,7 +197,8 @@ Stop automation immediately for:
 - unapproved public API change;
 - unapproved data-model/migration change;
 - unapproved core agent-execution semantic change;
-- unsafe infrastructure/dependency change.
+- unsafe infrastructure/dependency change;
+- materially ambiguous or contradictory requirements.
 
 A hard stop requires human intervention.
 
@@ -175,8 +211,8 @@ Platform/System Safety
 → INVARIANTS.md
 → AGENTS.md
 → Approved Architecture/Security/Global Docs
-→ Task Specification
-→ GitHub Task Details
+→ Approved Implementation Plan
+→ Jira Task Details
 → Assumptions
 ```
 
@@ -207,19 +243,10 @@ Every agent must report truthful evidence:
 
 Never claim validation that did not occur.
 
-## GitHub Automation Boundary
+## Automation Boundary
 
-GitHub Projects/Issues can represent state and trigger orchestration.
+Jira Automation may trigger the Planner when an issue enters `PLANNING` and may later trigger other workers on state changes.
 
-The workflow documents define what each agent is allowed to do.
+GitHub Actions executes Codex workers and stores structured artifacts.
 
-Separate automation may later connect:
-- Project state changes;
-- Codex execution;
-- PR creation;
-- CI/test results;
-- review events;
-- remediation counters;
-- human escalation.
-
-These documents alone do not create those integrations.
+Jira transitions remain the authoritative lifecycle state; GitHub PR/CI state remains the authoritative code-delivery evidence.
