@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NEXUS Implementation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_key",
+    "recommendation",
+    "task_understanding",
+    "acceptance_criteria",
+    "constraints",
+    "non_goals",
+    "domains",
+    "relevant_files",
+    "implementation_steps",
+    "architecture_impact",
+    "api_impact",
+    "data_model_impact",
+    "security_impact",
+    "test_strategy",
+    "dependencies",
+    "risks",
+    "human_approval_required",
+    "evidence"
+  ],
+  "properties": {
+    "issue_key": { "type": "string" },
+    "recommendation": {
+      "type": "string",
+      "enum": ["ready_for_approval", "needs_clarification", "blocked"]
+    },
+    "task_understanding": { "type": "string" },
+    "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "non_goals": { "type": "array", "items": { "type": "string" } },
+    "domains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owning", "affected"],
+      "properties": {
+        "owning": { "type": "string" },
+        "affected": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "relevant_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reason"],
+        "properties": {
+          "path": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "implementation_steps": { "type": "array", "items": { "type": "string" } },
+    "architecture_impact": { "type": "string" },
+    "api_impact": { "type": "string" },
+    "data_model_impact": { "type": "string" },
+    "security_impact": { "type": "string" },
+    "test_strategy": { "type": "array", "items": { "type": "string" } },
+    "dependencies": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "human_approval_required": { "type": "boolean" },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "finding"],
+        "properties": {
+          "path": { "type": "string" },
+          "finding": { "type": "string" }
+        }
+      }
+    }
+  }
+}
