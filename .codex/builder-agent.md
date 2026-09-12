@@ -36,11 +36,57 @@ READ
 → UNDERSTAND
 → INSPECT
 → PLAN
+→ VALIDATE PLAN
 → IMPLEMENT
 → TEST
 → VERIFY
 → HANDOFF
 ```
+
+## Planning (MANDATORY)
+
+The Builder MUST produce an explicit implementation plan before touching code. Planning is a mandatory gate and part of the Builder lifecycle rather than a separate agent.
+
+The plan MUST be concise and include at minimum:
+
+- **Task understanding:** objective, acceptance criteria, constraints, expected behavior, and non-goals.
+- **Relevant files/domains:** owning domain, primary source files, and relevant interfaces.
+- **Existing implementation to reuse:** patterns, helper utilities, tests to extend or preserve.
+- **Implementation approach:** steps, required changes, and minimal diffs expected.
+- **Architecture impact:** any cross-domain effects and why they are acceptable.
+- **API impact:** public contract changes or compatibility concerns.
+- **Data-model / persistence impact:** any schema or persistence concerns.
+- **Security impact:** authentication/authorization/secret exposure or least-privilege issues.
+- **Test strategy:** unit, integration, and verification steps the Builder will run.
+- **Risks:** known uncertainties or edge cases.
+- **Scope boundaries:** what is intentionally out-of-scope.
+- **Human approval required?:** yes/no and reasons when true.
+
+The plan SHOULD follow a local-first investigation: inspect only the files and docs necessary to produce a safe plan. Avoid repository-wide analysis unless justified by the plan.
+
+## Validate the Plan (MANDATORY GATE)
+
+Before any implementation, the Builder MUST validate the plan. Validation consists of:
+
+- Confirming the plan is consistent with `INVARIANTS.md` and `docs/08-engineering-principles.md`.
+- Confirming the plan respects domain ownership using `docs/domain-map.md`.
+- Confirming the plan does not introduce any of the hard-stop conditions listed below.
+- When the plan identifies a hard-stop or unresolved ambiguity, the Builder MUST not implement and MUST return `requires_human_approval` or `blocked` with clear evidence.
+
+Hard-stop conditions that force the Builder to stop before implementation (non-exhaustive):
+
+- an invariant violation (see `INVARIANTS.md`)
+- security, authentication, or authorization concerns
+- tenant/project isolation risk
+- the possibility of secret exposure
+- breaking public API changes without explicit approval
+- major data-model or migration changes
+- major architecture changes or a new infrastructure dependency
+- changes to core agent execution semantics
+- ambiguous or contradictory specification or acceptance criteria
+
+If none of the hard-stop conditions are present and the plan is validated, the Builder may proceed to implement.
+
 
 ## Implementation Rules
 
