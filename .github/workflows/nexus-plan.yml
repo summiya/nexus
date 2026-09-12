@@ -1,0 +1,88 @@
+name: NEXUS Planner
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_key:
+        description: "Jira issue key (for example NEXUS-42)"
+        required: true
+        type: string
+      issue_summary:
+        description: "Jira issue summary"
+        required: true
+        type: string
+      issue_description:
+        description: "Jira issue description / acceptance criteria"
+        required: true
+        type: string
+  repository_dispatch:
+    types: [nexus_planning_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan Jira work item with Codex
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build planner prompt
+        env:
+          ISSUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_key || github.event.client_payload.issue_key }}
+          ISSUE_SUMMARY: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_summary || github.event.client_payload.issue_summary }}
+          ISSUE_DESCRIPTION: ${{ github.event_name == 'workflow_dispatch' && inputs.issue_description || github.event.client_payload.issue_description }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          template = Path('.codex/planner-prompt.md').read_text(encoding='utf-8')
+          replacements = {
+              '${ISSUE_KEY}': os.environ['ISSUE_KEY'],
+              '${ISSUE_SUMMARY}': os.environ['ISSUE_SUMMARY'],
+              '${ISSUE_DESCRIPTION}': os.environ['ISSUE_DESCRIPTION'],
+          }
+          for marker, value in replacements.items():
+              template = template.replace(marker, value)
+          Path('/tmp/nexus-planner-prompt.md').write_text(template, encoding='utf-8')
+          PY
+
+      - name: Run read-only Planner Agent
+        id: planner
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":read-only"
+          prompt-file: /tmp/nexus-planner-prompt.md
+          output-file: implementation-plan.json
+          output-schema-file: .codex/schemas/implementation-plan.json
+
+      - name: Validate planner output is valid JSON
+        run: python -m json.tool implementation-plan.json > /dev/null
+
+      - name: Upload implementation plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-implementation-plan-${{ github.run_id }}
+          path: implementation-plan.json
+          if-no-files-found: error
+
+      - name: Publish planner summary
+        env:
+          PLAN: ${{ steps.planner.outputs.final-message }}
+        run: |
+          {
+            echo '## NEXUS Planner Result'
+            echo
+            echo 'The Planner completed in read-only mode.'
+            echo
+            echo '```json'
+            cat implementation-plan.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
