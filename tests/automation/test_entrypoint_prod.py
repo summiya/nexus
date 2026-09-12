@@ -24,9 +24,15 @@ class FakeAPI:
         ]
 
     def get_project_item(self, project_number: int, project_item_id: int):
-        return {"project_item_id": project_item_id, "status": "READY", "assignee": "worker1"}
+        return {
+            "project_item_id": project_item_id,
+            "status": "READY",
+            "assignee": "worker1",
+        }
 
-    def transition_project_item_status(self, project_number: int, project_item_id: int, new_status: str):
+    def transition_project_item_status(
+        self, project_number: int, project_item_id: int, new_status: str
+    ):
         self.transition_called = True
 
 

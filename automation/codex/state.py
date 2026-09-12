@@ -37,18 +37,40 @@ class WorkflowState(str, Enum):
 _VALID_TRANSITIONS: dict[WorkflowState, set[WorkflowState]] = {
     WorkflowState.BACKLOG: {WorkflowState.READY, WorkflowState.BLOCKED},
     WorkflowState.READY: {WorkflowState.BUILDING, WorkflowState.BLOCKED},
-    WorkflowState.BUILDING: {WorkflowState.TESTING, WorkflowState.BLOCKED, WorkflowState.FIXING},
-    WorkflowState.TESTING: {WorkflowState.REVIEWING, WorkflowState.FIXING, WorkflowState.BLOCKED},
-    WorkflowState.REVIEWING: {WorkflowState.HUMAN_REVIEW, WorkflowState.FIXING, WorkflowState.BLOCKED},
-    WorkflowState.FIXING: {WorkflowState.TESTING, WorkflowState.AUTOMATION_STOPPED, WorkflowState.BLOCKED},
-    WorkflowState.HUMAN_REVIEW: {WorkflowState.DONE, WorkflowState.BLOCKED, WorkflowState.READY},
+    WorkflowState.BUILDING: {
+        WorkflowState.TESTING,
+        WorkflowState.BLOCKED,
+        WorkflowState.FIXING,
+    },
+    WorkflowState.TESTING: {
+        WorkflowState.REVIEWING,
+        WorkflowState.FIXING,
+        WorkflowState.BLOCKED,
+    },
+    WorkflowState.REVIEWING: {
+        WorkflowState.HUMAN_REVIEW,
+        WorkflowState.FIXING,
+        WorkflowState.BLOCKED,
+    },
+    WorkflowState.FIXING: {
+        WorkflowState.TESTING,
+        WorkflowState.AUTOMATION_STOPPED,
+        WorkflowState.BLOCKED,
+    },
+    WorkflowState.HUMAN_REVIEW: {
+        WorkflowState.DONE,
+        WorkflowState.BLOCKED,
+        WorkflowState.READY,
+    },
     WorkflowState.BLOCKED: {WorkflowState.READY, WorkflowState.AUTOMATION_STOPPED},
     WorkflowState.AUTOMATION_STOPPED: set(),
     WorkflowState.DONE: set(),
 }
 
 
-def is_valid_transition(from_state: WorkflowState | str, to_state: WorkflowState | str) -> bool:
+def is_valid_transition(
+    from_state: WorkflowState | str, to_state: WorkflowState | str
+) -> bool:
     src = WorkflowState.coerce(from_state)
     tgt = WorkflowState.coerce(to_state)
     return tgt in _VALID_TRANSITIONS.get(src, set())
@@ -70,11 +92,15 @@ class WorkflowTask:
 
     MAX_REMEDIATION_ROUNDS: int = 3
 
-    def transition_to(self, next_state: WorkflowState | str, *, reason: str | None = None) -> WorkflowTask:
+    def transition_to(
+        self, next_state: WorkflowState | str, *, reason: str | None = None
+    ) -> WorkflowTask:
         target = WorkflowState.coerce(next_state)
 
         if not is_valid_transition(self.state, target):
-            raise WorkflowStateError(f"Invalid transition: {self.state.value} -> {target.value}")
+            raise WorkflowStateError(
+                f"Invalid transition: {self.state.value} -> {target.value}"
+            )
 
         # Remediation logic: entering FIXING increments remediation counter.
         if target == WorkflowState.FIXING:
@@ -106,21 +132,31 @@ class WorkflowTask:
                 self.run_id = run_id
                 self.claim_id = run_id
                 # Transition to BUILDING
-                return self.transition_to(WorkflowState.BUILDING, reason=f"claimed by {claimant}")
+                return self.transition_to(
+                    WorkflowState.BUILDING, reason=f"claimed by {claimant}"
+                )
             # if owner present
             if self.owner == claimant and self.run_id == run_id:
                 # idempotent retry: re-affirm claim
                 self.updated_at = datetime.now(UTC)
                 return self
             # already claimed by someone else
-            raise WorkflowStateError(f"task {self.task_id} already claimed by {self.owner}")
+            raise WorkflowStateError(
+                f"task {self.task_id} already claimed by {self.owner}"
+            )
 
         # If already BUILDING and matches claimant/run -> idempotent
-        if self.state == WorkflowState.BUILDING and self.owner == claimant and self.run_id == run_id:
+        if (
+            self.state == WorkflowState.BUILDING
+            and self.owner == claimant
+            and self.run_id == run_id
+        ):
             self.updated_at = datetime.now(UTC)
             return self
 
-        raise WorkflowStateError(f"task {self.task_id} is not READY and cannot be newly claimed")
+        raise WorkflowStateError(
+            f"task {self.task_id} is not READY and cannot be newly claimed"
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

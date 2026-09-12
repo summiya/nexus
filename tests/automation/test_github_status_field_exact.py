@@ -37,7 +37,9 @@ def test_status_field_exact_match(monkeypatch):
     except RuntimeError as e:
         assert "Status field not found" in str(e)
     else:
-        raise AssertionError("get_project_statuses() should have failed without exact 'Status' field")
+        raise AssertionError(
+            "get_project_statuses() should have failed without exact 'Status' field"
+        )
 
 
 def test_transition_uses_exact_status_field(monkeypatch):
@@ -73,8 +75,15 @@ def test_transition_uses_exact_status_field(monkeypatch):
             }
 
         # For the items query used later (simple items fetch), return a node
-        if "items(first: 100) { nodes { id databaseId } }" in query or "items(first: 100)" in query:
-            return {"user": {"projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}}}
+        if (
+            "items(first: 100) { nodes { id databaseId } }" in query
+            or "items(first: 100)" in query
+        ):
+            return {
+                "user": {
+                    "projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}
+                }
+            }
 
         # mutation: if called, return empty success shape
         if "updateProjectV2ItemFieldValue" in query:
@@ -90,7 +99,9 @@ def test_transition_uses_exact_status_field(monkeypatch):
     except RuntimeError as e:
         assert "status field or option not found" in str(e)
     else:
-        raise AssertionError("transition_project_item_status() should have failed when exact 'Status' field is missing")
+        raise AssertionError(
+            "transition_project_item_status() should have failed when exact 'Status' field is missing"
+        )
 
     # Case B: add a proper Status field and ensure mutation is invoked
     def fake_graphql_with_status(query, variables=None):
@@ -115,11 +126,22 @@ def test_transition_uses_exact_status_field(monkeypatch):
                     }
                 }
             }
-        if "items(first: 100) { nodes { id databaseId } }" in query or "items(first: 100)" in query:
-            return {"user": {"projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}}}
+        if (
+            "items(first: 100) { nodes { id databaseId } }" in query
+            or "items(first: 100)" in query
+        ):
+            return {
+                "user": {
+                    "projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}
+                }
+            }
         if "updateProjectV2ItemFieldValue" in query:
             # indicate mutation was invoked
-            return {"data": {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "N1"}}}}
+            return {
+                "data": {
+                    "updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "N1"}}
+                }
+            }
         return {}
 
     monkeypatch.setattr(api, "_graphql", fake_graphql_with_status)

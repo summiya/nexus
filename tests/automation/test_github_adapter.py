@@ -33,9 +33,31 @@ def test_transition_mutation_invoked(monkeypatch):
         calls.append((query, variables))
         # emulate responses:
         if "fields(first" in query:
-            return {"user": {"projectV2": {"id": "P1", "fields": {"nodes": [{"id": "F1", "name": "Status", "options": [{"id": "O1", "name": "BUILDING"}, {"id": "O2", "name": "READY"}] }]}}}}
+            return {
+                "user": {
+                    "projectV2": {
+                        "id": "P1",
+                        "fields": {
+                            "nodes": [
+                                {
+                                    "id": "F1",
+                                    "name": "Status",
+                                    "options": [
+                                        {"id": "O1", "name": "BUILDING"},
+                                        {"id": "O2", "name": "READY"},
+                                    ],
+                                }
+                            ]
+                        },
+                    }
+                }
+            }
         if "items(first: 100) { nodes { id databaseId } }" in query:
-            return {"user": {"projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}}}
+            return {
+                "user": {
+                    "projectV2": {"items": {"nodes": [{"id": "N1", "databaseId": 99}]}}
+                }
+            }
         # mutation call returns empty data
         return {}
 

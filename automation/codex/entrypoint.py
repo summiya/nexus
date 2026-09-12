@@ -85,7 +85,9 @@ def process_once(
     # authoritative ownership boundary). Do not perform a second local claim
     # that could invalidate a successful GitHub handoff.
     try:
-        api.transition_project_item_status(project_number, cand.project_item_id, "BUILDING")
+        api.transition_project_item_status(
+            project_number, cand.project_item_id, "BUILDING"
+        )
     except RuntimeError as e:
         return {"outcome": "github_error", "reason": str(e)}
 
@@ -106,9 +108,17 @@ def process_once(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True)
-    parser.add_argument("--claimant", default=None, help="Optional claimant for tests; production uses CODEX_WORKER_ID env")
+    parser.add_argument(
+        "--claimant",
+        default=None,
+        help="Optional claimant for tests; production uses CODEX_WORKER_ID env",
+    )
     parser.add_argument("--run-id", default=os.getenv("CODER_RUN_ID", "run-local"))
-    parser.add_argument("--execute", action="store_true", help="If set, perform READY -> BUILDING handoff")
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="If set, perform READY -> BUILDING handoff",
+    )
     _args = parser.parse_args(argv)
 
     # If executing (production mode), construct the GraphQL adapter from
@@ -161,7 +171,11 @@ def main(argv: list[str] | None = None) -> int:
             repo=_args.repo,
         )
         print(result)
-        return 0 if result.get("outcome") in ("claimed", "candidate", "no_candidates") else 1
+        return (
+            0
+            if result.get("outcome") in ("claimed", "candidate", "no_candidates")
+            else 1
+        )
 
     # Discovery-only mode: do not perform GitHub mutations. Use provided
     # claimant (useful for tests) or fall back to CODEX_WORKER_ID if set.
@@ -180,12 +194,17 @@ def main(argv: list[str] | None = None) -> int:
     if gh_repo and gh_token:
         api = build_graphql_api(repository=gh_repo, token=gh_token)
     else:
-        print("ERROR: discovery mode requires GITHUB_REPOSITORY and GITHUB_TOKEN in env or a test adapter", flush=True)
+        print(
+            "ERROR: discovery mode requires GITHUB_REPOSITORY and GITHUB_TOKEN in env or a test adapter",
+            flush=True,
+        )
         raise SystemExit(2)
 
     # If a valid project_number env var was provided, use it; otherwise fail
     if not project_number:
-        print("ERROR: GITHUB_PROJECT_NUMBER not set or invalid for discovery", flush=True)
+        print(
+            "ERROR: GITHUB_PROJECT_NUMBER not set or invalid for discovery", flush=True
+        )
         raise SystemExit(2)
 
     result = process_once(
@@ -203,7 +222,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit("The entrypoint is intended to be invoked by a wrapper that provides a GitHubAPI implementation.")
+    raise SystemExit(
+        "The entrypoint is intended to be invoked by a wrapper that provides a GitHubAPI implementation."
+    )
 
 
 __all__ = ["main", "process_once"]

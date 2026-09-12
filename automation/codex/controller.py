@@ -24,7 +24,9 @@ class StageResult:
 
 
 class StageHandler(Protocol):
-    def __call__(self, task: WorkflowTask) -> StageResult:  # pragma: no cover - typing only
+    def __call__(
+        self, task: WorkflowTask
+    ) -> StageResult:  # pragma: no cover - typing only
         ...
 
 
@@ -75,13 +77,41 @@ class Orchestrator:
         # BUILDING -> call builder
         builder_res = self.builder(task)
         if builder_res.outcome == StageOutcome.BLOCKED:
-            return ControllerResult(task.state, False, False, False, task.remediation_round, builder_res.message)
+            return ControllerResult(
+                task.state,
+                False,
+                False,
+                False,
+                task.remediation_round,
+                builder_res.message,
+            )
         if builder_res.outcome == StageOutcome.SPEC_GAP:
-            return ControllerResult(task.state, False, True, False, task.remediation_round, builder_res.message)
+            return ControllerResult(
+                task.state,
+                False,
+                True,
+                False,
+                task.remediation_round,
+                builder_res.message,
+            )
         if builder_res.outcome == StageOutcome.INVARIANT_VIOLATION:
-            return ControllerResult(task.state, False, True, False, task.remediation_round, builder_res.message)
+            return ControllerResult(
+                task.state,
+                False,
+                True,
+                False,
+                task.remediation_round,
+                builder_res.message,
+            )
         if builder_res.outcome != StageOutcome.SUCCESS:
-            return ControllerResult(task.state, False, False, False, task.remediation_round, builder_res.message)
+            return ControllerResult(
+                task.state,
+                False,
+                False,
+                False,
+                task.remediation_round,
+                builder_res.message,
+            )
 
         # Transition to TESTING
         task.transition_to(WorkflowState.TESTING)
@@ -99,24 +129,80 @@ class Orchestrator:
                 # call fixer
                 fixer_res = self.fixer(task)
                 if fixer_res.outcome == StageOutcome.BLOCKED:
-                    return ControllerResult(task.state, False, False, False, task.remediation_round, fixer_res.message)
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        False,
+                        False,
+                        task.remediation_round,
+                        fixer_res.message,
+                    )
                 if fixer_res.outcome == StageOutcome.HUMAN_REQUIRED:
-                    return ControllerResult(task.state, False, True, False, task.remediation_round, fixer_res.message)
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        True,
+                        False,
+                        task.remediation_round,
+                        fixer_res.message,
+                    )
                 if fixer_res.outcome == StageOutcome.INVARIANT_VIOLATION:
-                    return ControllerResult(task.state, False, True, False, task.remediation_round, fixer_res.message)
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        True,
+                        False,
+                        task.remediation_round,
+                        fixer_res.message,
+                    )
                 # After Fixer, always go back to TESTING
                 if task.state == WorkflowState.AUTOMATION_STOPPED:
-                    return ControllerResult(task.state, False, False, True, task.remediation_round, "remediation limit reached")
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        False,
+                        True,
+                        task.remediation_round,
+                        "remediation limit reached",
+                    )
                 task.transition_to(WorkflowState.TESTING)
                 continue
             if tester_res.outcome == StageOutcome.BLOCKED:
-                return ControllerResult(task.state, False, False, False, task.remediation_round, tester_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    False,
+                    False,
+                    task.remediation_round,
+                    tester_res.message,
+                )
             if tester_res.outcome == StageOutcome.HUMAN_REQUIRED:
-                return ControllerResult(task.state, False, True, False, task.remediation_round, tester_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    True,
+                    False,
+                    task.remediation_round,
+                    tester_res.message,
+                )
             if tester_res.outcome == StageOutcome.INVARIANT_VIOLATION:
-                return ControllerResult(task.state, False, True, False, task.remediation_round, tester_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    True,
+                    False,
+                    task.remediation_round,
+                    tester_res.message,
+                )
             # Other outcomes -> fail
-            return ControllerResult(task.state, False, False, False, task.remediation_round, tester_res.message)
+            return ControllerResult(
+                task.state,
+                False,
+                False,
+                False,
+                task.remediation_round,
+                tester_res.message,
+            )
 
         # REVIEWING -> Reviewer
         while True:
@@ -124,17 +210,40 @@ class Orchestrator:
             if reviewer_res.outcome == StageOutcome.SUCCESS:
                 # stop at HUMAN_REVIEW (do not auto-complete to DONE)
                 task.transition_to(WorkflowState.HUMAN_REVIEW)
-                return ControllerResult(task.state, True, False, False, task.remediation_round, None)
+                return ControllerResult(
+                    task.state, True, False, False, task.remediation_round, None
+                )
             if reviewer_res.outcome == StageOutcome.FINDING:
                 # reviewer found issues -> FIXING
                 task.transition_to(WorkflowState.FIXING)
                 fixer_res = self.fixer(task)
                 if fixer_res.outcome == StageOutcome.BLOCKED:
-                    return ControllerResult(task.state, False, False, False, task.remediation_round, fixer_res.message)
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        False,
+                        False,
+                        task.remediation_round,
+                        fixer_res.message,
+                    )
                 if fixer_res.outcome == StageOutcome.HUMAN_REQUIRED:
-                    return ControllerResult(task.state, False, True, False, task.remediation_round, fixer_res.message)
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        True,
+                        False,
+                        task.remediation_round,
+                        fixer_res.message,
+                    )
                 if task.state == WorkflowState.AUTOMATION_STOPPED:
-                    return ControllerResult(task.state, False, False, True, task.remediation_round, "remediation limit reached")
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        False,
+                        True,
+                        task.remediation_round,
+                        "remediation limit reached",
+                    )
                 # After fixing, must go through testing then reviewing again
                 task.transition_to(WorkflowState.TESTING)
                 # loop back to testing stage (call tester in outer loop pattern)
@@ -148,21 +257,76 @@ class Orchestrator:
                         task.transition_to(WorkflowState.FIXING)
                         fixer_res = self.fixer(task)
                         if task.state == WorkflowState.AUTOMATION_STOPPED:
-                            return ControllerResult(task.state, False, False, True, task.remediation_round, "remediation limit reached")
+                            return ControllerResult(
+                                task.state,
+                                False,
+                                False,
+                                True,
+                                task.remediation_round,
+                                "remediation limit reached",
+                            )
                         task.transition_to(WorkflowState.TESTING)
                         continue
                     if tester_res.outcome == StageOutcome.BLOCKED:
-                        return ControllerResult(task.state, False, False, False, task.remediation_round, tester_res.message)
-                    return ControllerResult(task.state, False, False, False, task.remediation_round, tester_res.message)
+                        return ControllerResult(
+                            task.state,
+                            False,
+                            False,
+                            False,
+                            task.remediation_round,
+                            tester_res.message,
+                        )
+                    return ControllerResult(
+                        task.state,
+                        False,
+                        False,
+                        False,
+                        task.remediation_round,
+                        tester_res.message,
+                    )
                 # after passing tester, continue reviewer loop
                 continue
             if reviewer_res.outcome == StageOutcome.BLOCKED:
-                return ControllerResult(task.state, False, False, False, task.remediation_round, reviewer_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    False,
+                    False,
+                    task.remediation_round,
+                    reviewer_res.message,
+                )
             if reviewer_res.outcome == StageOutcome.HUMAN_REQUIRED:
-                return ControllerResult(task.state, False, True, False, task.remediation_round, reviewer_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    True,
+                    False,
+                    task.remediation_round,
+                    reviewer_res.message,
+                )
             if reviewer_res.outcome == StageOutcome.INVARIANT_VIOLATION:
-                return ControllerResult(task.state, False, True, False, task.remediation_round, reviewer_res.message)
-            return ControllerResult(task.state, False, False, False, task.remediation_round, reviewer_res.message)
+                return ControllerResult(
+                    task.state,
+                    False,
+                    True,
+                    False,
+                    task.remediation_round,
+                    reviewer_res.message,
+                )
+            return ControllerResult(
+                task.state,
+                False,
+                False,
+                False,
+                task.remediation_round,
+                reviewer_res.message,
+            )
 
 
-__all__ = ["ControllerResult", "Orchestrator", "StageHandler", "StageOutcome", "StageResult"]
+__all__ = [
+    "ControllerResult",
+    "Orchestrator",
+    "StageHandler",
+    "StageOutcome",
+    "StageResult",
+]

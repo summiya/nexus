@@ -10,7 +10,9 @@ class DiscoveryError(RuntimeError):
 ACTIVE_STATUSES = {"BUILDING", "TESTING", "REVIEWING", "FIXING", "HUMAN_REVIEW"}
 
 
-def discover_ready_candidates(api: GitHubAPI, project_number: int, worker_id: str) -> list[GitHubProjectItem]:
+def discover_ready_candidates(
+    api: GitHubAPI, project_number: int, worker_id: str
+) -> list[GitHubProjectItem]:
     """Discover project items that are in Project Status == READY and assigned to `worker_id`.
 
     This function is side-effect free. It validates that the project contains a

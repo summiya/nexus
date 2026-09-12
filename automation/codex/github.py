@@ -9,17 +9,15 @@ from typing import Protocol
 
 
 class GitHubAPI(Protocol):
-    def get_project_statuses(self, project_number: int) -> list[str]:
-        ...
+    def get_project_statuses(self, project_number: int) -> list[str]: ...
 
-    def list_project_items(self, project_number: int) -> Iterable[dict]:
-        ...
+    def list_project_items(self, project_number: int) -> Iterable[dict]: ...
 
-    def get_project_item(self, project_number: int, project_item_id: int) -> dict:
-        ...
+    def get_project_item(self, project_number: int, project_item_id: int) -> dict: ...
 
-    def transition_project_item_status(self, project_number: int, project_item_id: int, new_status: str) -> None:
-        ...
+    def transition_project_item_status(
+        self, project_number: int, project_item_id: int, new_status: str
+    ) -> None: ...
 
 
 @dataclass
@@ -37,12 +35,14 @@ class GitHubProjectItem:
 __all__ = ["GitHubAPI", "GitHubProjectItem"]
 
 
-def build_graphql_api(repository: str | None = None, token: str | None = None) -> GraphQLGitHubAPI:
-  """Construct a GraphQLGitHubAPI using provided values or environment.
+def build_graphql_api(
+    repository: str | None = None, token: str | None = None
+) -> GraphQLGitHubAPI:
+    """Construct a GraphQLGitHubAPI using provided values or environment.
 
-  Raises RuntimeError if required environment variables are missing.
-  """
-  return GraphQLGitHubAPI(repository=repository, token=token)
+    Raises RuntimeError if required environment variables are missing.
+    """
+    return GraphQLGitHubAPI(repository=repository, token=token)
 
 
 __all__.extend(["GraphQLGitHubAPI", "build_graphql_api"])
@@ -165,7 +165,12 @@ class GraphQLGitHubAPI:
         while True:
             vars = {"owner": self.owner, "number": project_number, "cursor": cursor}
             data = self._graphql(q, vars)
-            nodes = data.get("user", {}).get("projectV2", {}).get("items", {}).get("nodes", [])
+            nodes = (
+                data.get("user", {})
+                .get("projectV2", {})
+                .get("items", {})
+                .get("nodes", [])
+            )
             for n in nodes:
                 project_item_id = n.get("databaseId") or n.get("id")
                 content = n.get("content") or {}
@@ -182,21 +187,32 @@ class GraphQLGitHubAPI:
                 status = None
                 for fv in n.get("fieldValues", {}).get("nodes", []):
                     field = fv.get("field", {})
-                    if field and field.get("name") and field.get("name").strip().lower() == "status":
+                    if (
+                        field
+                        and field.get("name")
+                        and field.get("name").strip().lower() == "status"
+                    ):
                         status = fv.get("name")
                         break
 
-                items.append({
-                    "project_item_id": project_item_id,
-                    "issue_number": issue_number,
-                    "status": status,
-                    "assignee": assignee,
-                    "repo": repo,
-                    "title": content.get("title"),
-                    "body": content.get("body"),
-                })
+                items.append(
+                    {
+                        "project_item_id": project_item_id,
+                        "issue_number": issue_number,
+                        "status": status,
+                        "assignee": assignee,
+                        "repo": repo,
+                        "title": content.get("title"),
+                        "body": content.get("body"),
+                    }
+                )
 
-            page_info = data.get("user", {}).get("projectV2", {}).get("items", {}).get("pageInfo", {})
+            page_info = (
+                data.get("user", {})
+                .get("projectV2", {})
+                .get("items", {})
+                .get("pageInfo", {})
+            )
             if page_info.get("hasNextPage"):
                 cursor = page_info.get("endCursor")
                 if not cursor:
@@ -213,7 +229,9 @@ class GraphQLGitHubAPI:
                 return dict(i)
         raise RuntimeError("no such project item")
 
-    def transition_project_item_status(self, project_number: int, project_item_id: int, new_status: str) -> None:
+    def transition_project_item_status(
+        self, project_number: int, project_item_id: int, new_status: str
+    ) -> None:
         # Find project id and field/option ids
         q_fields = """
         query ($owner: String!, $number: Int!) {
@@ -231,16 +249,19 @@ class GraphQLGitHubAPI:
         status_field_id = None
         option_id = None
         for f in fields:
-          # Authoritative Status field is identified by exact name match
-          # (case-insensitive). Do NOT treat fields that merely contain
-          # the substring "status" as the Status field.
-          name = f.get("name")
-          if name and name.strip().lower() == "status":
-            status_field_id = f.get("id")
-            for opt in f.get("options", []):
-              if opt.get("name") and str(opt.get("name")).upper() == str(new_status).upper():
-                option_id = opt.get("id")
-                break
+            # Authoritative Status field is identified by exact name match
+            # (case-insensitive). Do NOT treat fields that merely contain
+            # the substring "status" as the Status field.
+            name = f.get("name")
+            if name and name.strip().lower() == "status":
+                status_field_id = f.get("id")
+                for opt in f.get("options", []):
+                    if (
+                        opt.get("name")
+                        and str(opt.get("name")).upper() == str(new_status).upper()
+                    ):
+                        option_id = opt.get("id")
+                        break
         if not status_field_id or not option_id:
             raise RuntimeError("status field or option not found in project")
 
@@ -261,7 +282,9 @@ class GraphQLGitHubAPI:
         }
         """
         page = self._graphql(simple_q, {"owner": self.owner, "number": project_number})
-        nodes = page.get("user", {}).get("projectV2", {}).get("items", {}).get("nodes", [])
+        nodes = (
+            page.get("user", {}).get("projectV2", {}).get("items", {}).get("nodes", [])
+        )
         node_id = None
         if not nodes:
             cursor = None
@@ -275,12 +298,24 @@ class GraphQLGitHubAPI:
                     """,
                     vars,
                 )
-                nodes = page.get("user", {}).get("projectV2", {}).get("items", {}).get("nodes", [])
+                nodes = (
+                    page.get("user", {})
+                    .get("projectV2", {})
+                    .get("items", {})
+                    .get("nodes", [])
+                )
                 for n in nodes:
-                    if str(n.get("databaseId")) == str(project_item_id) or str(n.get("id")) == str(project_item_id):
+                    if str(n.get("databaseId")) == str(project_item_id) or str(
+                        n.get("id")
+                    ) == str(project_item_id):
                         node_id = n.get("id")
                         break
-                page_info = page.get("user", {}).get("projectV2", {}).get("items", {}).get("pageInfo", {})
+                page_info = (
+                    page.get("user", {})
+                    .get("projectV2", {})
+                    .get("items", {})
+                    .get("pageInfo", {})
+                )
                 if node_id:
                     break
                 if page_info.get("hasNextPage"):
@@ -291,11 +326,21 @@ class GraphQLGitHubAPI:
                 break
         else:
             for n in nodes:
-                if str(n.get("databaseId")) == str(project_item_id) or str(n.get("id")) == str(project_item_id):
+                if str(n.get("databaseId")) == str(project_item_id) or str(
+                    n.get("id")
+                ) == str(project_item_id):
                     node_id = n.get("id")
                     break
 
         if not node_id:
             raise RuntimeError("project item node not found")
 
-        self._graphql(mut, {"projectId": project_id, "itemId": node_id, "fieldId": status_field_id, "optionId": option_id})
+        self._graphql(
+            mut,
+            {
+                "projectId": project_id,
+                "itemId": node_id,
+                "fieldId": status_field_id,
+                "optionId": option_id,
+            },
+        )

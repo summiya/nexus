@@ -20,7 +20,9 @@ class InMemoryTaskStore:
     def create_if_missing(self, task_id: str) -> WorkflowTask:
         if task_id not in self._store:
             # New tasks discovered from GitHub start in READY
-            self._store[task_id] = WorkflowTask(task_id=task_id, state=WorkflowState.READY)
+            self._store[task_id] = WorkflowTask(
+                task_id=task_id, state=WorkflowState.READY
+            )
         return self._store[task_id]
 
     def all(self) -> dict[str, WorkflowTask]:
