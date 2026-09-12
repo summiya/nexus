@@ -116,6 +116,14 @@ Requires:
 - required approvals exist;
 - no known invariant conflict.
 
+Note: The implementation uses the GitHub ProjectV2 READY → BUILDING transition
+as the authoritative ownership boundary. This transition is authoritative for
+handoff but is NOT a server-side conditional compare-and-set (CAS). The GitHub
+mutation can be raced by concurrent workers; the system does not provide
+guarantees of exactly-once claiming or distributed locking. If strict
+mutual-exclusion or CAS semantics are required, an additional coordination
+mechanism (outside the scope of W1-24) must be introduced and approved.
+
 ### BUILDING → TESTING
 
 Requires:

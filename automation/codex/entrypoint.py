@@ -9,7 +9,7 @@ from automation.codex.discovery import (
     discover_ready_candidates,
     worker_has_active_task,
 )
-from automation.codex.github import GitHubAPI, GraphQLGitHubAPI
+from automation.codex.github import GitHubAPI, build_graphql_api
 from automation.codex.state import WorkflowState, WorkflowTask
 from automation.codex.store import InMemoryTaskStore
 
@@ -146,8 +146,8 @@ def main(argv: list[str] | None = None) -> int:
             print("ERROR: GITHUB_PROJECT_NUMBER must be a positive integer", flush=True)
             raise SystemExit(2)
 
-        # Construct production GraphQL adapter
-        api = GraphQLGitHubAPI(repository=gh_repo, token=gh_token)
+        # Construct production GraphQL adapter (delegated to github helper)
+        api = build_graphql_api(repository=gh_repo, token=gh_token)
 
         # Run with authoritative worker identity from env (do not use --claimant)
         result = process_once(
@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     gh_repo = os.getenv("GITHUB_REPOSITORY")
     gh_token = os.getenv("GITHUB_TOKEN")
     if gh_repo and gh_token:
-        api = GraphQLGitHubAPI(repository=gh_repo, token=gh_token)
+        api = build_graphql_api(repository=gh_repo, token=gh_token)
     else:
         print("ERROR: discovery mode requires GITHUB_REPOSITORY and GITHUB_TOKEN in env or a test adapter", flush=True)
         raise SystemExit(2)

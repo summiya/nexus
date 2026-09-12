@@ -37,6 +37,17 @@ class GitHubProjectItem:
 __all__ = ["GitHubAPI", "GitHubProjectItem"]
 
 
+def build_graphql_api(repository: str | None = None, token: str | None = None) -> GraphQLGitHubAPI:
+  """Construct a GraphQLGitHubAPI using provided values or environment.
+
+  Raises RuntimeError if required environment variables are missing.
+  """
+  return GraphQLGitHubAPI(repository=repository, token=token)
+
+
+__all__.extend(["GraphQLGitHubAPI", "build_graphql_api"])
+
+
 class GraphQLGitHubAPI:
     """Minimal GitHub GraphQL adapter implementing the `GitHubAPI` Protocol.
 
@@ -220,12 +231,16 @@ class GraphQLGitHubAPI:
         status_field_id = None
         option_id = None
         for f in fields:
-            if f.get("name") and "status" in f.get("name").lower():
-                status_field_id = f.get("id")
-                for opt in f.get("options", []):
-                    if opt.get("name") and str(opt.get("name")).upper() == str(new_status).upper():
-                        option_id = opt.get("id")
-                        break
+          # Authoritative Status field is identified by exact name match
+          # (case-insensitive). Do NOT treat fields that merely contain
+          # the substring "status" as the Status field.
+          name = f.get("name")
+          if name and name.strip().lower() == "status":
+            status_field_id = f.get("id")
+            for opt in f.get("options", []):
+              if opt.get("name") and str(opt.get("name")).upper() == str(new_status).upper():
+                option_id = opt.get("id")
+                break
         if not status_field_id or not option_id:
             raise RuntimeError("status field or option not found in project")
 

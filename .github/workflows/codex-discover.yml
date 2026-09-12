@@ -1,15 +1,36 @@
-name: Codex Ready Discovery
+name: Codex Ready Discovery (discovery-only)
 
 on:
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  issues: read
+
 jobs:
   discover:
     runs-on: ubuntu-latest
+    env:
+      # These should be provided via repository secrets or variables.
+      CODEX_WORKER_ID: ${{ secrets.CODEX_WORKER_ID }}
+      GITHUB_PROJECT_NUMBER: ${{ secrets.GITHUB_PROJECT_NUMBER }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run discovery (no execution)
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Run discovery-only entrypoint
         run: |
-          python -c "import automation.codex.entrypoint as e; print('discovery entrypoint available')"
+          python - <<'PY'
+import os, sys
+from automation.codex import entrypoint as e
+
+required = ["CODEX_WORKER_ID", "GITHUB_REPOSITORY", "GITHUB_PROJECT_NUMBER", "GITHUB_TOKEN"]
+missing = [v for v in required if not os.getenv(v)]
+if missing:
+    print("ERROR: missing required environment variables:", ",".join(missing))
+    sys.exit(2)
+
+# Run discovery-only (do NOT perform READY -> BUILDING handoff)
+rc = e.main(["--repo", os.getenv("GITHUB_REPOSITORY")])
+sys.exit(rc)
+PY

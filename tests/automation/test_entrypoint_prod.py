@@ -83,7 +83,7 @@ def test_main_constructs_graphql_and_passes_authoritative_worker(monkeypatch):
         called["kwargs"] = k
         return {"outcome": "claimed"}
 
-    monkeypatch.setattr(entrypoint, "GraphQLGitHubAPI", fake_ctor)
+    monkeypatch.setattr(entrypoint, "build_graphql_api", fake_ctor)
     monkeypatch.setattr(entrypoint, "process_once", fake_process_once)
 
     rc = entrypoint.main(["--repo", "owner/repo", "--execute"])
