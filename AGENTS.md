@@ -445,6 +445,220 @@ Before declaring a task complete, verify:
 - [ ] Documentation is updated where required.
 - [ ] No unrelated changes were introduced.
 
-## 20. Golden Rule
+## 20. React + TypeScript Frontend Engineering Standard
+
+The NEXUS frontend is **React + TypeScript**. All agents making frontend changes MUST follow this section in addition to the general engineering rules above.
+
+### 20.1 Before Frontend Implementation
+
+The agent MUST:
+
+1. Read `AGENTS.md` and `docs/08-engineering-principles.md`.
+2. Inspect the existing `frontend/` structure.
+3. Inspect existing React components, routes, hooks, API clients/services, state management, styling/design-system components, utilities, and tests relevant to the task.
+4. Reuse existing patterns and components before creating new ones.
+5. Confirm the task's API and security contracts before implementing client behavior.
+
+The agent MUST NOT introduce a new frontend library, framework, state-management solution, UI system, or data-fetching library unless the repository genuinely requires it and the change is justified.
+
+### 20.2 React Architecture
+
+- MUST use React + TypeScript; do not introduce Vue or another frontend framework.
+- Components MUST have a clear and coherent responsibility.
+- UI/presentation SHOULD be separated from business logic and API communication.
+- Reusable behavior SHOULD live in appropriately scoped hooks or services.
+- API calls SHOULD use the existing API client/service layer rather than being scattered through presentational components.
+- Authentication/session handling MUST be centralized rather than reimplemented independently by pages.
+- Frontend authorization checks are for UX only; the backend remains the authoritative security boundary.
+- Prefer composition over deeply nested or monolithic components.
+- Avoid giant page components containing layout, API calls, business logic, validation, and state management together.
+- Do not split code into many files merely to appear architecturally clean; create boundaries when they improve ownership, reuse, testing, or readability.
+- Preserve the existing frontend architecture unless a concrete requirement justifies changing it.
+
+### 20.3 NEXUS Application Shell
+
+The NEXUS authenticated application should be structured as a reusable application shell rather than a single monolithic dashboard component.
+
+The shell should conceptually separate:
+
+```text
+App Shell
+├── Sidebar / Primary Navigation
+├── Header / Workspace Controls
+├── Main Workspace
+├── Composer / Contextual Actions
+└── Account / Organization Menu
+```
+
+Major feature areas should remain independently maintainable:
+
+```text
+Chat
+Projects
+Artifacts
+Knowledge
+Tools
+Agents
+Workflows
+Settings
+```
+
+The application shell owns shared layout and navigation. Each feature owns its page-level UI and behavior.
+
+Familiar interaction patterns from products such as ChatGPT or Claude MAY be used as UX inspiration, but NEXUS MUST maintain its own branding, product identity, components, and implementation.
+
+### 20.4 TypeScript
+
+- MUST use strict TypeScript practices consistent with the repository configuration.
+- MUST NOT use `any` unless there is a documented and unavoidable reason.
+- API responses, component props, forms, and important domain objects MUST have explicit types.
+- Frontend types MUST remain aligned with the backend API contract.
+- MUST NOT use unsafe casts simply to suppress type errors.
+- Prefer discriminated unions and narrow types when they make state or API behavior clearer.
+
+### 20.5 State Management
+
+- Keep state local when only one component or feature needs it.
+- Use shared/global state only when multiple areas genuinely require the same state.
+- Do not duplicate the same source of truth across components or stores.
+- Keep server state conceptually separate from local UI state.
+- Loading, success, empty, error, and unauthorized states MUST be handled explicitly where applicable.
+- Avoid global state as a default solution for every problem.
+
+### 20.6 Authentication and Session Security
+
+- The React client MUST NOT be treated as a security authority.
+- The client MUST NOT trust browser-supplied organization IDs, user IDs, roles, permissions, membership status, or ownership as proof of authorization.
+- Long-lived refresh tokens MUST NOT be stored in `localStorage` or `sessionStorage`.
+- Access credentials MUST use the approved ephemeral/runtime mechanism defined by the NEXUS authentication architecture.
+- Authentication/session handling SHOULD be centralized through the existing client architecture.
+- Session expiry and unauthorized responses MUST be handled consistently.
+- The UI MAY hide or disable controls based on effective permissions for usability, but protected backend operations MUST still be enforced server-side.
+- Secrets, OTPs, tokens, and sensitive authentication information MUST NOT be logged or embedded in client bundles.
+
+### 20.7 API Integration
+
+- MUST use the existing typed API client/service abstraction when one exists.
+- MUST NOT scatter ad-hoc `fetch`/HTTP calls throughout components when an existing API layer is available.
+- API contracts MUST be represented with appropriate TypeScript types.
+- API errors MUST be handled consistently.
+- UI components SHOULD not depend directly on backend implementation details.
+- Client behavior MUST follow the documented REST/streaming API contracts.
+
+### 20.8 Routing
+
+- Authenticated routes MUST be protected through centralized session/authentication logic.
+- Unauthenticated, loading, expired-session, and unauthorized route states MUST be handled intentionally.
+- Navigation visibility MUST NOT be treated as an authorization mechanism.
+- Route structure SHOULD reflect the product's domain/feature boundaries.
+
+### 20.9 Components and Reuse
+
+- Reuse existing components, primitives, and design-system patterns whenever appropriate.
+- Components SHOULD remain readable and reasonably sized.
+- Extract logic when a component becomes difficult to understand, reuse, or test.
+- Avoid creating generic components whose only purpose is theoretical future reuse.
+- Avoid duplicate versions of the same button, modal, form control, layout, or navigation pattern without a documented reason.
+- Follow existing naming, folder, import, and component conventions.
+
+### 20.10 Forms and User Input
+
+- Forms MUST provide clear labels and validation feedback.
+- Loading/submission states MUST be represented.
+- Duplicate submissions SHOULD be prevented where appropriate.
+- User-facing validation MUST NOT replace backend validation for security-sensitive rules.
+- Authentication and organization-management forms MUST handle API errors without exposing internal implementation details.
+
+### 20.11 UI/UX and Accessibility
+
+- Reuse the established NEXUS design language and components.
+- Interfaces SHOULD be responsive and usable across supported screen sizes.
+- Use semantic HTML wherever appropriate.
+- Interactive elements MUST be keyboard accessible.
+- Focus states MUST remain visible and usable.
+- Form controls MUST have accessible labels.
+- Use ARIA only when semantic HTML does not provide the required meaning.
+- Loading, error, empty, disabled, and success states SHOULD be visually and semantically clear.
+- Do not copy proprietary branding, assets, or source code from other products.
+
+### 20.12 Performance
+
+- Avoid unnecessary renders and network requests.
+- Do not add memoization, caching, virtualization, or other optimization purely speculatively.
+- Use route-level or feature-level lazy loading where it provides a clear benefit and fits the existing architecture.
+- Optimize after identifying an actual performance concern rather than complicating simple code prematurely.
+
+### 20.13 Frontend Testing
+
+For meaningful frontend behavior changes, the agent MUST add or update appropriate automated tests.
+
+Tests SHOULD prioritize user-visible behavior and contracts over implementation details.
+
+Where applicable, test:
+
+- successful user flows;
+- loading states;
+- error states;
+- empty states;
+- validation;
+- authentication/session transitions;
+- permission-denied behavior;
+- important navigation behavior;
+- API integration boundaries.
+
+The agent MUST NOT:
+
+- delete tests to make the suite pass;
+- weaken assertions without justification;
+- replace meaningful tests with snapshots or implementation-detail assertions merely for convenience;
+- claim a feature is complete without running the relevant tests.
+
+Before completion, run the applicable:
+
+- TypeScript/type checks;
+- linting;
+- frontend automated tests;
+- production build.
+
+### 20.14 Frontend Dependencies
+
+Before adding a frontend dependency:
+
+1. Search the repository for an existing solution.
+2. Check whether the current React/tooling stack already provides the capability.
+3. Confirm the dependency is required by the task.
+4. Consider bundle size, maintenance, security, and compatibility.
+5. Document or surface significant architectural dependency changes.
+
+Do not add libraries for trivial helpers or duplicate an existing capability.
+
+### 20.15 Frontend Scope Control
+
+Frontend tasks MUST remain scoped to the assigned Jira issue.
+
+If a task requires a backend/API change, the agent MUST identify it as a cross-domain dependency and follow the cross-domain rules rather than silently expanding the task.
+
+If unrelated frontend problems are discovered, report them unless they directly block the assigned task.
+
+### 20.16 Frontend Completion Checklist
+
+Before declaring a frontend task complete, verify:
+
+- [ ] React + TypeScript architecture is preserved.
+- [ ] Existing components/patterns were inspected and reused where appropriate.
+- [ ] No unnecessary frontend dependencies were added.
+- [ ] Components have clear responsibilities.
+- [ ] Business logic/API access is not unnecessarily embedded in presentational components.
+- [ ] Authentication/session handling follows the approved security architecture.
+- [ ] Backend authorization remains authoritative.
+- [ ] Important loading/error/empty/unauthorized states are handled.
+- [ ] Accessibility requirements are satisfied for changed UI.
+- [ ] TypeScript checks pass.
+- [ ] Linting passes.
+- [ ] Relevant automated tests pass.
+- [ ] Production build passes.
+- [ ] No debug code or unrelated changes remain.
+
+## 21. Golden Rule
 
 > **Understand first. Scope locally. Follow the documented architecture. Make the smallest safe change. Test it. Expand only when evidence requires it.**
