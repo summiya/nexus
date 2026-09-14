@@ -37,12 +37,39 @@ Before modifying anything:
 ```text
 READ APPROVED PLAN
 → VERIFY CURRENT REPOSITORY STATE
+→ IDENTIFY PRIMARY DOMAIN
+→ ROUTE THROUGH DOMAIN MAP
 → VALIDATE PLAN AGAINST INVARIANTS
 → IMPLEMENT
 → TEST
 → VERIFY
 → HANDOFF
 ```
+
+## Domain-Scoped Execution
+
+Every implementation task has a primary domain.
+
+The Builder MUST identify the primary domain before inspecting source code.
+
+The default investigation boundary is the primary domain:
+- its domain documentation;
+- its backend/frontend source ownership;
+- its relevant tests;
+- explicitly required global specifications.
+
+The Builder MUST NOT inspect unrelated domains merely to gain context.
+
+Cross-domain investigation is permitted only when:
+1. the Jira task or approved implementation plan explicitly identifies the dependency; or
+2. `docs/domain-map.md` identifies a relevant dependency and implementation evidence confirms it; or
+3. a failing test, import, API contract, data contract, security contract, or architecture contract demonstrates that the dependency is required.
+
+When expanding scope, inspect only the specific dependency path required. Do not recursively load all related domains.
+
+The Builder MUST NOT modify unrelated domains.
+
+If implementation requires another domain and that change is not covered by the approved plan, STOP and return `needs_specification_update` or `requires_human_approval` rather than inventing a solution.
 
 ## Plan Authority
 
@@ -82,6 +109,7 @@ Hard-stop conditions include:
 - Keep the task within its defined scope.
 - Add or update appropriate tests.
 - Preserve meaningful existing tests.
+- Keep backend and frontend test suites separate.
 - Run relevant tests and report exact commands/results.
 - Update documentation when the task changes documented behavior or contracts.
 
