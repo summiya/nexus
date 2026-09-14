@@ -23,15 +23,19 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend dependencies
+        working-directory: backend
         run: pip install ".[dev]"
 
-      - name: Run pytest
+      - name: Run backend tests
+        working-directory: backend
         run: pytest -q
 
       - name: Run Ruff
+        working-directory: backend
         run: ruff check .
 
       - name: Run mypy
+        working-directory: backend
         run: mypy src
 
       - name: Run pre-commit
