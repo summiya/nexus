@@ -1,364 +1,190 @@
-# Nexus AI — Domain Map
+# NEXUS — Domain Map
 
-**File:** `docs/domain-map.md`  
-**Status:** Canonical AI navigation and routing map  
-**Purpose:** Tell AI agents where to go without requiring them to read the entire repository.
+**Status:** Canonical AI navigation and ownership map
 
----
+## Purpose
 
-# 1. How to Use This Map
+This file tells AI agents **where to go** in the repository. It is a routing map, not a complete technical specification.
 
-The domain map is a **router**, not a complete technical specification.
+The rule is:
 
-An AI agent MUST use this file after reading:
+> **Start narrow. Expand only when evidence requires it.**
 
-1. `AGENTS.md`
-2. `INVARIANTS.md`
-3. `docs/08-engineering-principles.md`
+## Mandatory Routing
 
-Then identify the smallest relevant domain.
-
-The normal path is:
+For every implementation task:
 
 ```text
-Issue / Task
-    ↓
-domain-map.md
-    ↓
-Owning domain
-    ↓
-Domain documentation
-    ↓
-Domain source
-    ↓
-Domain tests
-```
-
-The agent MUST NOT read every domain's documentation by default.
-
----
-
-# 2. Domain Model
-
-A Nexus domain normally has three connected parts:
-
-```text
-Domain
-├── Documentation
-├── Source
-└── Tests
-```
-
-Example:
-
-```text
-Authentication
-├── docs/domains/authentication/
-├── src/nexus/auth/
-└── tests/auth/
-```
-
-These are three views of the same bounded area:
-
-- Documentation = what the domain is supposed to do.
-- Source = how it is implemented.
-- Tests = evidence that it works.
-
----
-
-# 3. Routing Table
-
-| Domain | Typical Problems / Behaviors | Documentation | Source | Tests | Related Domains | Dependency Reason |
-|---|---|---|---|---|---|---|
-| Authentication | login, logout, sessions, credentials, tokens, identity verification | `docs/domains/authentication/` | `src/nexus/auth/` | `tests/auth/` | Tenants, Authorization | identity/scope and access decisions |
-| Authorization | permissions, roles, policies, access decisions | `docs/domains/authorization/` | `src/nexus/authorization/` | `tests/authorization/` | Authentication, Tenants, Projects | authenticated identity and resource scope |
-| Tenants | tenant lifecycle, tenant scope, isolation | `docs/domains/tenants/` | `src/nexus/tenants/` | `tests/tenants/` | Authentication, Projects, Authorization | ownership and tenant-scoped access |
-| Projects | project lifecycle, project scope, ownership | `docs/domains/projects/` | `src/nexus/projects/` | `tests/projects/` | Tenants, Authorization, Conversations | project ownership and access |
-| Conversations | conversations, messages, participants, conversation state | `docs/domains/conversations/` | `src/nexus/conversations/` | `tests/conversations/` | Projects, Agents, Streaming, Files | conversation scope, execution, transport, attachments |
-| Models | LLM providers, model configuration, model selection | `docs/domains/models/` | `src/nexus/models/` | `tests/models/` | Agents, Configuration | model selection and runtime configuration |
-| Agent Runtime | agent lifecycle, execution, context, tool invocation, runs | `docs/domains/agents/` | `src/nexus/agents/` | `tests/agents/` | Models, Tools, Memory, Authorization, Streaming | model execution, capabilities, context, permissions, output delivery |
-| Workflows | workflow definitions, steps, orchestration, execution | `docs/domains/workflows/` | `src/nexus/workflows/` | `tests/workflows/` | Agents, Tools, Authorization | workflow execution and controlled capabilities |
-| Tools | tool registration, invocation, permissions, execution | `docs/domains/tools/` | `src/nexus/tools/` | `tests/tools/` | Authorization, MCP, Agents | permission checks, MCP integration, agent execution |
-| MCP | MCP clients, servers, resources, permissions, protocol integration | `docs/domains/mcp/` | `src/nexus/mcp/` | `tests/mcp/` | Authentication, Authorization, Tools | server/client identity, permissions, tool/resource integration |
-| Memory | short/long-term memory, storage, retrieval of memories | `docs/domains/memory/` | `src/nexus/memory/` | `tests/memory/` | Agents, Retrieval, Tenants, Projects | agent context, search, and scoped persistence |
-| Retrieval | RAG, indexing, search, embeddings, retrieval pipelines | `docs/domains/retrieval/` | `src/nexus/retrieval/` | `tests/retrieval/` | Memory, Files, Models, Tenants, Projects | indexed content, embeddings, model use, and data scope |
-| Files | upload, storage, metadata, file lifecycle, access | `docs/domains/files/` | `src/nexus/files/` | `tests/files/` | Projects, Conversations, Retrieval, Authorization | ownership, attachments, indexing, and access |
-| Streaming | streaming responses, events, transport, stream lifecycle | `docs/domains/streaming/` | `src/nexus/streaming/` | `tests/streaming/` | Conversations, Agents, Workflows | delivery of execution and conversation events |
-| Observability | logs, metrics, traces, correlation, instrumentation | `docs/domains/observability/` | `src/nexus/observability/` | `tests/observability/` | All domains as applicable | instrumentation and operational visibility |
-| Configuration | application configuration, environment, feature configuration | `docs/domains/configuration/` | `src/nexus/config/` | `tests/configuration/` | All domains as applicable | runtime configuration |
-| Audit | audit events, security records, compliance history | `docs/domains/audit/` | `src/nexus/audit/` | `tests/audit/` | Authentication, Authorization, Tenants, Projects, MCP, Tools | security-sensitive and ownership-sensitive events |
-
-## Dependency Routing Rule
-
-The **Related Domains** column describes potential dependency paths. It does **not** mean the agent must read every listed domain.
-
-Agents MUST use dependency relationships as **routing hints**:
-
-```text
-Task
+Jira task
   ↓
-Owning domain
+AGENTS.md / INVARIANTS.md / engineering principles
   ↓
-Investigate source/docs/tests
+docs/domain-map.md
   ↓
-Dependency actually relevant?
-  ├── NO  → stay within current scope
-  └── YES → follow the relevant dependency
-```
-
-Agents MUST NOT recursively load every related domain.
-
-A dependency should be followed when:
-
-- the task explicitly names the dependency;
-- the relevant domain documentation says the behavior is delegated to that dependency;
-- source code calls or imports the dependency for the behavior being investigated;
-- tests demonstrate that the dependency is part of the failing path;
-- an API, data, security, or architecture contract requires the dependency.
-
-### Example: MCP Authentication
-
-For:
-
-> "MCP server authentication is failing."
-
-Start with:
-
-```text
-MCP
-├── docs/domains/mcp/
-├── src/nexus/mcp/
-└── tests/mcp/
-```
-
-If investigation shows that MCP authentication delegates to Nexus Authentication:
-
-```text
-MCP
+Primary domain
   ↓
-Authentication
-```
-
-Then load only the relevant Authentication context:
-
-```text
-docs/domains/authentication/
-src/nexus/auth/
-tests/auth/
-```
-
-If the investigation then shows that authorization is also involved:
-
-```text
-MCP
+Relevant domain documentation
   ↓
-Authentication
-  ↓
-Authorization
-```
-
-Load the relevant Authorization context as well.
-
-Do **not** automatically load Workflows, Retrieval, Memory, Conversations, or other unrelated domains.
-
-### Example: MCP Tool Permission
-
-For:
-
-> "An MCP tool can execute without the required permission."
-
-The likely routing path is:
-
-```text
-MCP
-  ↓
-Authorization
-  ↓
-Tools
-```
-
-The agent should confirm the actual dependency from documentation/source/tests before expanding.
-
-### Example: MCP Display Bug
-
-For:
-
-> "The MCP tool description is displayed incorrectly."
-
-The agent may only need:
-
-```text
-MCP
-  ↓
-src/nexus/mcp/
-  ↓
-tests/mcp/
-```
-
-There is no reason to load Authentication or Authorization unless investigation shows that they participate in the failing behavior.
-
----
-
-# 4. Global Documentation Routing
-
-Not every task belongs to one domain.
-
-Use the global specifications when the task concerns:
-
-| Concern | Primary Document |
-|---|---|
-| Project roadmap / delivery | `docs/00-project-plan.md` |
-| System requirements | `docs/03-system-requirements.md` |
-| Overall architecture | `docs/04-architecture.md` |
-| REST / streaming API | `docs/05-api-sdk.md` |
-| Python SDK | `docs/05-api-sdk.md` |
-| Agent execution architecture | `docs/04-architecture.md` |
-| PostgreSQL / persistence / schema | `docs/06-data-model.md` |
-| Security | `docs/07-security.md` |
-| Engineering / implementation rules | `docs/08-engineering-principles.md` |
-| Architectural rationale | `docs/decisions/` |
-
-Global documents SHOULD be loaded only when relevant, except for the small mandatory documents specified in `AGENTS.md`.
-
----
-
-# 5. Security Routing
-
-Security-sensitive work MUST additionally consult:
-
-```text
-docs/07-security.md
-```
-
-Examples:
-
-```text
-Authentication
-    → authentication domain docs
-    → security.md
-
-Authorization
-    → authorization domain docs
-    → security.md
-
-Tenant isolation
-    → tenants domain docs
-    → data model
-    → security.md
-
-MCP permissions
-    → MCP domain docs
-    → tools/authorization docs as needed
-    → security.md
-```
-
-Do not assume that reading only a domain document is sufficient for security-sensitive changes.
-
----
-
-# 6. Data Routing
-
-For persistence-related changes:
-
-```text
-Domain documentation
-        ↓
-docs/06-data-model.md
-        ↓
 Relevant source
-        ↓
-Migration(s)
-        ↓
+  ↓
 Relevant tests
+  ↓
+Dependencies only when actually required
 ```
 
-Database changes MUST remain consistent with the canonical data model.
+Agents MUST NOT inspect every domain by default.
 
----
+## Repository Ownership
 
-# 7. API Routing
-
-For API changes:
+### Backend
 
 ```text
-Owning domain
-        ↓
-docs/05-api-sdk.md
-        ↓
-Domain API documentation
-        ↓
-API source
-        ↓
-API tests
+backend/
+├── src/nexus/
+│   ├── api/             # HTTP/FastAPI transport
+│   ├── application/     # use cases and orchestration
+│   ├── domain/          # business rules and contracts
+│   ├── infrastructure/  # external systems and adapters
+│   ├── security/        # security boundary and security services
+│   ├── config/          # application configuration
+│   ├── errors/          # framework-independent NEXUS errors
+│   ├── logging/         # request/context logging support
+│   ├── events/          # event contracts/publishing
+│   └── main.py          # application entrypoint
+└── tests/
+    ├── unit/
+    ├── api/
+    ├── integration/
+    └── fixtures/
 ```
 
-If the Python SDK is affected:
+Backend tests are independent from frontend tests.
+
+### Frontend
 
 ```text
-docs/05-api-sdk.md
+frontend/
+├── src/
+│   ├── app/             # application shell/bootstrap
+│   ├── features/        # feature/domain-owned UI and behavior
+│   ├── components/      # genuinely shared UI
+│   ├── pages/           # route-level composition
+│   ├── services/        # shared API/service layer
+│   ├── hooks/           # shared hooks
+│   ├── stores/          # shared client state
+│   ├── types/           # shared TypeScript types
+│   └── lib/             # small shared utilities/integrations
+└── tests/
+    ├── unit/
+    ├── components/
+    ├── integration/
+    └── e2e/
 ```
 
-must also be considered.
+Frontend does not mirror backend layers.
 
----
+## Domain Routing Table
 
-# 8. Agent / Workflow Routing
+| Domain | Backend ownership | Frontend ownership | Tests | Primary concern |
+|---|---|---|---|---|
+| Authentication | `backend/src/nexus/security/` and authentication-specific application/domain code | `frontend/src/features/authentication/` | `backend/tests/` + `frontend/tests/` | identity, sessions, credentials, tokens |
+| Authorization | `backend/src/nexus/security/` and authorization-specific application/domain code | `frontend/src/features/authorization/` | `backend/tests/` + `frontend/tests/` | permissions and access decisions |
+| Tenants | `backend/src/nexus/` tenant domain | `frontend/src/features/tenants/` | domain-focused tests | tenant lifecycle and isolation |
+| Projects | `backend/src/nexus/` project domain | `frontend/src/features/projects/` | domain-focused tests | project lifecycle and ownership |
+| Conversations | `backend/src/nexus/` conversation domain | `frontend/src/features/conversations/` | domain-focused tests | conversations and messages |
+| Models | `backend/src/nexus/` model domain | `frontend/src/features/models/` | domain-focused tests | providers and model selection |
+| Agents | `backend/src/nexus/` agent domain | `frontend/src/features/agents/` | domain-focused tests | agent execution and runs |
+| Workflows | `backend/src/nexus/` workflow domain | `frontend/src/features/workflows/` | domain-focused tests | workflow definitions and execution |
+| Tools | `backend/src/nexus/` tool domain | `frontend/src/features/tools/` | domain-focused tests | tool registration and execution |
+| MCP | `backend/src/nexus/` MCP domain | `frontend/src/features/mcp/` when needed | domain-focused tests | MCP integration |
+| Memory | `backend/src/nexus/` memory domain | `frontend/src/features/memory/` when needed | domain-focused tests | memory lifecycle and retrieval |
+| Retrieval / RAG | `backend/src/nexus/` retrieval domain | `frontend/src/features/retrieval/` when needed | domain-focused tests | indexing, search, embeddings, ranking |
+| Files | `backend/src/nexus/` file domain | `frontend/src/features/files/` | domain-focused tests | uploads, metadata, storage, access |
+| Streaming | `backend/src/nexus/` streaming domain | feature-specific streaming UI | domain-focused tests | event delivery and stream lifecycle |
+| Observability | `backend/src/nexus/logging/` and observability code | frontend error reporting only where explicitly required | separate backend/frontend tests | operational visibility |
+| Configuration | `backend/src/nexus/config/` | frontend application configuration | focused tests | runtime configuration |
+| Audit | `backend/src/nexus/` audit domain | feature-specific admin UI when needed | domain-focused tests | security/admin audit history |
 
-For agent execution:
+The table describes ownership, not a requirement to create every domain immediately.
 
-```text
-Agent Runtime
-    → docs/domains/agents/
-    → src/nexus/agents/
-    → tests/agents/
-    → docs/04-architecture.md
-    → docs/05-api-sdk.md (runtime interfaces/contracts)
-```
+## Domain Investigation Rule
 
-For workflows:
-
-```text
-Workflows
-    → docs/domains/workflows/
-    → src/nexus/workflows/
-    → tests/workflows/
-```
-
-If workflows execute agents or tools, expand into those domains only when the implementation actually crosses those boundaries.
-
----
-
-# 9. Cross-Domain Routing
-
-Some features naturally cross domains.
-
-For example:
+If a task concerns Authorization:
 
 ```text
-"User sends a message and an agent executes a tool."
-```
-
-Possible path:
-
-```text
-Conversations
-    ↓
-Agent Runtime
-    ↓
-Tools
-    ↓
 Authorization
+  ↓
+relevant authorization docs
+  ↓
+backend authorization code
+frontend authorization code
+  ↓
+authorization tests
 ```
 
-The agent SHOULD start with the domain that owns the reported behavior and expand only along the actual dependency path.
+Do NOT inspect Retrieval, Models, MCP, Agents, Memory, or Workflows unless a real dependency requires it.
 
-Do not read all four domains automatically.
+If a dependency is required:
 
----
+```text
+Primary domain
+  ↓
+prove dependency
+  ↓
+inspect only that dependency
+  ↓
+return to primary domain
+```
 
-# 10. Domain Documentation Structure
+Do not recursively load all related domains.
 
-When a domain is being defined, its documentation MAY contain:
+## Cross-Domain Expansion Is Allowed Only When
+
+- the Jira task explicitly identifies the dependency;
+- the approved implementation plan identifies it;
+- domain documentation delegates the behavior to it;
+- source imports/calls it for the behavior under investigation;
+- tests demonstrate that it participates in the failing path;
+- an API, data, security, or architecture contract requires it.
+
+If another domain must be **modified** and the approved task does not cover that change, stop and request specification/human approval.
+
+## Global Documentation Routing
+
+Use only when relevant:
+
+| Concern | Document |
+|---|---|
+| Project scope | `docs/00-project-plan.md` |
+| Requirements | `docs/03-system-requirements.md` |
+| Architecture | `docs/04-architecture.md` |
+| REST/streaming/SDK contracts | `docs/05-api-sdk.md` |
+| Data model | `docs/06-data-model.md` |
+| Security | `docs/07-security.md` |
+| Engineering rules | `docs/08-engineering-principles.md` |
+| Domain routing | `docs/domain-map.md` |
+
+Security-sensitive work MUST additionally consult `docs/07-security.md`.
+Persistence changes MUST additionally consult `docs/06-data-model.md`.
+API changes MUST additionally consult `docs/05-api-sdk.md`.
+
+## Error and Logging Ownership
+
+Backend operational errors and server-side logging belong to the backend platform.
+
+```text
+Backend
+├── errors/   → canonical NEXUS error contract
+└── logging/  → request/context/server logging
+```
+
+The frontend MUST still implement client-side error handling and user-facing error states, but it does not duplicate the backend error/logging platform.
+
+Frontend MUST NOT log secrets, tokens, credentials, or sensitive request/response content.
+
+## Domain Documentation
+
+When a domain is ready for implementation, its detailed documentation MAY live under:
 
 ```text
 docs/domains/<domain>/
@@ -373,203 +199,34 @@ docs/domains/<domain>/
 └── debugging.md
 ```
 
-These files are created only when useful.
+Create only files that are useful. `README.md` should be the AI entry point.
 
-Do not create empty documentation files merely to satisfy a template.
+## Local Agent Instructions
 
----
-
-# 11. Local Source Instructions
-
-A domain MAY have:
+A domain may contain:
 
 ```text
-src/nexus/<domain>/AGENTS.md
+backend/src/nexus/<domain>/AGENTS.md
 ```
 
-This file contains only rules that are genuinely local to that source tree.
+or an equivalent local instruction file when genuinely necessary.
 
-It is not a duplicate of the root `AGENTS.md`.
+Local instructions may tighten but must not weaken root rules.
 
-Nested instructions inherit and tighten the root rules.
+## Maintenance
 
----
-
-# 12. Example: Authentication
-
-For:
-
-> "Refresh tokens are not invalidated after logout."
-
-The agent should follow:
-
-```text
-AGENTS.md
-    ↓
-INVARIANTS.md
-    ↓
-docs/08-engineering-principles.md
-    ↓
-docs/domain-map.md
-    ↓
-Authentication
-    ↓
-docs/domains/authentication/
-    ├── README.md
-    ├── requirements.md
-    ├── architecture.md
-    ├── flows.md
-    ├── api.md
-    └── security.md
-    ↓
-src/nexus/auth/
-    └── AGENTS.md   (if present)
-    ↓
-Relevant source files
-    ↓
-tests/auth/
-    ↓
-Implement + test
-```
-
-It does NOT need to read:
-
-```text
-docs/domains/mcp/
-docs/domains/workflows/
-docs/domains/retrieval/
-src/nexus/mcp/
-src/nexus/workflows/
-...
-```
-
-unless the investigation proves they are involved.
-
----
-
-# 13. Example: MCP Permission Bug
-
-For:
-
-> "An MCP tool can be executed without the required permission."
-
-Route:
-
-```text
-AGENTS.md
-    ↓
-INVARIANTS.md
-    ↓
-08-engineering-principles.md
-    ↓
-domain-map.md
-    ↓
-MCP
-    ↓
-docs/domains/mcp/
-    ↓
-src/nexus/mcp/
-    ↓
-tests/mcp/
-    ↓
-Authorization / Tools only if the dependency requires it
-    ↓
-docs/07-security.md
-```
-
----
-
-# 14. Example: Database Schema Change
-
-For:
-
-> "Add a project-level setting to the database."
-
-Route:
-
-```text
-AGENTS.md
-    ↓
-INVARIANTS.md
-    ↓
-08-engineering-principles.md
-    ↓
-domain-map.md
-    ↓
-Projects
-    ↓
-docs/domains/projects/
-    ↓
-docs/06-data-model.md
-    ↓
-src/nexus/projects/
-    ↓
-migrations/
-    ↓
-tests/projects/
-```
-
----
-
-# 15. Routing Principle
-
-The domain map follows one rule:
-
-> **Start narrow. Expand only when evidence requires it.**
-
-The agent should never treat the repository as one undifferentiated context window.
-
-The preferred investigation path is:
-
-```text
-Global rules
-    ↓
-Map
-    ↓
-Domain
-    ↓
-Local documentation
-    ↓
-Source
-    ↓
-Tests
-    ↓
-Dependencies only when needed
-```
-
----
-
-# 16. Ownership Rule
-
-When unsure where new behavior belongs, determine:
-
-1. Which domain owns the business rule?
-2. Which domain owns the data?
-3. Which domain owns the public behavior?
-4. Which domain should be responsible for testing it?
-
-Prefer one clear owner over duplicated responsibility.
-
-If ownership is genuinely ambiguous and affects architecture, consult the relevant architecture documentation and ADRs before inventing a new boundary.
-
----
-
-# 17. Maintenance Rule
-
-Whenever a new major Nexus domain is introduced:
+When a new major domain is introduced:
 
 1. Add it to this map.
-2. Define its source location.
-3. Define its test location.
-4. Create domain documentation when the domain is ready to be implemented.
-5. Add local `AGENTS.md` only if genuinely necessary.
+2. Define backend ownership.
+3. Define frontend ownership when applicable.
+4. Define tests.
+5. Add domain documentation when implementation begins.
 
-The domain map itself MUST remain concise and navigational.
+Keep this file navigational. It should answer:
 
-It should answer:
-
-> **"Where do I go?"**
+> **Where do I go?**
 
 not:
 
-> **"Tell me everything about this domain."**
+> **Tell me everything about the domain.**
