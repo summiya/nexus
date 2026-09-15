@@ -33,7 +33,7 @@ NEXUS follows a layered architecture:
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│                     Vue.js Frontend                      │
+│            React + TypeScript Frontend                  │
 │              UI / State / Streaming Client               │
 └────────────────────────────┬─────────────────────────────┘
                              │ HTTP / SSE
@@ -83,9 +83,9 @@ The frontend and transport layers must not directly depend on databases, model p
 
 # 3. Architectural Layers
 
-## 3.1 Vue.js Frontend
+## 3.1 React + TypeScript Frontend
 
-The Vue.js frontend is responsible for presentation and client-side interaction.
+The React + TypeScript frontend is responsible for presentation and client-side interaction. The current implementation uses Vite for the frontend toolchain.
 
 Responsibilities:
 
@@ -934,7 +934,7 @@ Conceptually:
                           SSE
                            │
                            ▼
-                         Vue.js
+                 React + TypeScript
 ```
 
 The event model remains independent of the transport.
@@ -1008,7 +1008,7 @@ Short tool executions
 Flow:
 
 ```text
-Vue
+React
  │
  ▼
 FastAPI
@@ -1051,7 +1051,7 @@ Scheduled work
 Conceptual flow:
 
 ```text
-Vue
+React
  │
  ▼
 FastAPI
@@ -1119,7 +1119,7 @@ Long-running operations should support cancellation where technically possible.
 Conceptual flow:
 
 ```text
-Vue
+React
  │
  ▼
 FastAPI
@@ -1188,7 +1188,7 @@ A typical interactive AI request follows:
 User
  │
  ▼
-Vue.js
+React + TypeScript
  │
  ▼
 FastAPI
@@ -1219,7 +1219,7 @@ Agent / Workflow
        FastAPI
           │
           ▼
-        Vue.js
+React + TypeScript
 ```
 
 The exact path depends on the execution.
@@ -1635,7 +1635,7 @@ Every significant request and execution should be traceable across architectural
 Correlation context should propagate through:
 
 ```text
-Vue
+React
   ↓
 FastAPI
   ↓
@@ -1938,13 +1938,13 @@ Modules must communicate through explicit contracts rather than hidden cross-mod
 The final conceptual model is:
 
 ```text
-                         ┌───────────────┐
-                         │    Vue.js     │
-                         └───────┬───────┘
-                                 │
-                              API/SSE
-                                 │
-                                 ▼
+                         ┌───────────────────────┐
+                         │ React + TypeScript    │
+                         └───────────┬───────────┘
+                                     │
+                                  API/SSE
+                                     │
+                                     ▼
                          ┌───────────────┐
                          │    FastAPI    │
                          └───────┬───────┘
@@ -1996,13 +1996,13 @@ The architecture supports three major execution patterns:
 
 ```text
 1. Synchronous request
-   Vue → API → Application → Platform → Response
+   React → API → Application → Platform → Response
 
 2. Streaming execution
-   Vue ← SSE ← API ← Events ← Platform Execution
+   React ← SSE ← API ← Events ← Platform Execution
 
 3. Asynchronous execution
-   Vue → API → Execution → Worker → Platform
+   React → API → Execution → Worker → Platform
 ```
 
 RAG, Agents, Tools, MCP, Memory, Workflows, Artifacts, Evaluation, and Observability operate as coordinated platform capabilities rather than independent application implementations.
@@ -2013,7 +2013,7 @@ RAG, Agents, Tools, MCP, Memory, Workflows, Artifacts, Evaluation, and Observabi
 
 | Area | Decision |
 |---|---|
-| Web client | Vue.js |
+| Web client | React + TypeScript + Vite |
 | Backend API | FastAPI |
 | Application orchestration | Dedicated Application Layer |
 | AI foundation | Modular AI Platform / SDK |
