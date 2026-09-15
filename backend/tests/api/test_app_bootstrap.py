@@ -14,6 +14,8 @@ def build_settings(**overrides: object) -> Settings:
         "cors_allowed_origins": ["https://nexus.example"],
         **overrides,
     }
+    if "debug" in values:
+        values["APP_DEBUG"] = values.pop("debug")
     return Settings(_env_file=None, **values)
 
 
