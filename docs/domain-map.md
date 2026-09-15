@@ -4,7 +4,7 @@
 
 ## Purpose
 
-This file tells AI agents **where to go** in the repository. It is a routing map, not a complete technical specification.
+This file tells human developers and AI agents exactly where each NEXUS capability belongs. It is an operational routing and ownership map, not a complete technical specification.
 
 The rule is:
 
@@ -45,7 +45,7 @@ backend/
 │   ├── application/     # use cases and orchestration
 │   ├── domain/          # business rules and contracts
 │   ├── infrastructure/  # external systems and adapters
-│   ├── security/        # security boundary and security services
+│   ├── security/        # authentication, authorization, security context/primitives
 │   ├── config/          # application configuration
 │   ├── errors/          # framework-independent NEXUS errors
 │   ├── logging/         # request/context logging support
@@ -83,71 +83,243 @@ frontend/
 
 Frontend does not mirror backend layers.
 
-## Domain Routing Table
+## Global Cross-Domain Rule
 
-| Domain | Backend ownership | Frontend ownership | Tests | Primary concern |
-|---|---|---|---|---|
-| Authentication | `backend/src/nexus/security/` and authentication-specific application/domain code | `frontend/src/features/authentication/` | `backend/tests/` + `frontend/tests/` | identity, sessions, credentials, tokens |
-| Authorization | `backend/src/nexus/security/` and authorization-specific application/domain code | `frontend/src/features/authorization/` | `backend/tests/` + `frontend/tests/` | permissions and access decisions |
-| Tenants | `backend/src/nexus/` tenant domain | `frontend/src/features/tenants/` | domain-focused tests | tenant lifecycle and isolation |
-| Projects | `backend/src/nexus/` project domain | `frontend/src/features/projects/` | domain-focused tests | project lifecycle and ownership |
-| Conversations | `backend/src/nexus/` conversation domain | `frontend/src/features/conversations/` | domain-focused tests | conversations and messages |
-| Models | `backend/src/nexus/` model domain | `frontend/src/features/models/` | domain-focused tests | providers and model selection |
-| Agents | `backend/src/nexus/` agent domain | `frontend/src/features/agents/` | domain-focused tests | agent execution and runs |
-| Workflows | `backend/src/nexus/` workflow domain | `frontend/src/features/workflows/` | domain-focused tests | workflow definitions and execution |
-| Tools | `backend/src/nexus/` tool domain | `frontend/src/features/tools/` | domain-focused tests | tool registration and execution |
-| MCP | `backend/src/nexus/` MCP domain | `frontend/src/features/mcp/` when needed | domain-focused tests | MCP integration |
-| Memory | `backend/src/nexus/` memory domain | `frontend/src/features/memory/` when needed | domain-focused tests | memory lifecycle and retrieval |
-| Retrieval / RAG | `backend/src/nexus/` retrieval domain | `frontend/src/features/retrieval/` when needed | domain-focused tests | indexing, search, embeddings, ranking |
-| Files | `backend/src/nexus/` file domain | `frontend/src/features/files/` | domain-focused tests | uploads, metadata, storage, access |
-| Streaming | `backend/src/nexus/` streaming domain | feature-specific streaming UI | domain-focused tests | event delivery and stream lifecycle |
-| Observability | `backend/src/nexus/logging/` and observability code | frontend error reporting only where explicitly required | separate backend/frontend tests | operational visibility |
-| Configuration | `backend/src/nexus/config/` | frontend application configuration | focused tests | runtime configuration |
-| Audit | `backend/src/nexus/` audit domain | feature-specific admin UI when needed | domain-focused tests | security/admin audit history |
+An AI agent may inspect another domain only when at least one of these conditions is true:
 
-The table describes ownership, not a requirement to create every domain immediately.
+1. the Jira task explicitly identifies the dependency;
+2. the approved implementation plan identifies it;
+3. this domain map identifies it as an allowed dependency required for the task;
+4. an existing import, API, data, or security contract proves it;
+5. a failing test proves that the other domain participates in the behavior.
 
-## Domain Investigation Rule
-
-If a task concerns Authorization:
-
-```text
-Authorization
-  ↓
-relevant authorization docs
-  ↓
-backend authorization code
-frontend authorization code
-  ↓
-authorization tests
-```
-
-Do NOT inspect Retrieval, Models, MCP, Agents, Memory, or Workflows unless a real dependency requires it.
-
-If a dependency is required:
-
-```text
-Primary domain
-  ↓
-prove dependency
-  ↓
-inspect only that dependency
-  ↓
-return to primary domain
-```
-
-Do not recursively load all related domains.
-
-## Cross-Domain Expansion Is Allowed Only When
-
-- the Jira task explicitly identifies the dependency;
-- the approved implementation plan identifies it;
-- domain documentation delegates the behavior to it;
-- source imports/calls it for the behavior under investigation;
-- tests demonstrate that it participates in the failing path;
-- an API, data, security, or architecture contract requires it.
+Shared/platform infrastructure may be inspected when required by an identified dependency. Unrelated product domains MUST NOT be inspected or modified.
 
 If another domain must be **modified** and the approved task does not cover that change, stop and request specification/human approval.
+
+## Domain Ownership Map
+
+Each domain entry defines purpose, ownership, tests, documentation, dependencies, explicitly unrelated areas, and when cross-domain inspection is permitted.
+
+### Authentication
+
+- **Purpose:** Establish and verify user identity, sessions, credentials, and authentication tokens.
+- **Backend ownership:** `backend/src/nexus/security/authentication/`, authentication-specific code under `backend/src/nexus/application/` and `backend/src/nexus/domain/`, and relevant API routes/dependencies.
+- **Frontend ownership:** `frontend/src/features/authentication/`.
+- **Tests:** Authentication-focused backend unit/API/integration tests and frontend authentication unit/component/integration/E2E tests.
+- **Documentation:** `docs/07-security.md` plus `docs/domains/authentication/` when domain-specific documentation exists.
+- **Shared dependencies:** configuration, canonical errors, logging, shared security primitives.
+- **Allowed dependencies:** Users; Organizations when tenant/organization context is required; Authorization for post-authentication access decisions.
+- **Explicitly unrelated domains:** Knowledge/RAG, Models, Agents, MCP, Memory, Workflows, Artifacts unless an approved task proves a dependency.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule; authentication work does not justify broad inspection of downstream product domains.
+
+### Authorization
+
+- **Purpose:** Make access decisions for authenticated principals and enforce permissions.
+- **Backend ownership:** `backend/src/nexus/security/authorization/`, `backend/src/nexus/application/authorization/`, `backend/src/nexus/domain/authorization/`, and relevant API routes/dependencies.
+- **Frontend ownership:** `frontend/src/features/authorization/`.
+- **Tests:** Authorization-focused backend unit/API/integration tests and frontend authorization tests.
+- **Documentation:** `docs/07-security.md` plus `docs/domains/authorization/` when present.
+- **Shared dependencies:** security context/primitives, canonical errors, logging, configuration.
+- **Allowed dependencies:** Authentication, Users, Organizations, Projects.
+- **Explicitly unrelated domains:** Knowledge/RAG, Models, Agents, MCP, Memory, Workflows unless an approved task proves a dependency.
+- **Cross-domain inspection conditions:** Only when a task, plan, existing contract, or failing test proves the dependency; otherwise remain inside Authorization.
+
+### Users
+
+- **Purpose:** Own user profile, lifecycle, identity-adjacent user data, and user-level business concepts that are not authentication mechanics.
+- **Backend ownership:** user-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** `frontend/src/features/users/` when user-facing functionality exists.
+- **Tests:** User-focused backend unit/API/integration tests and frontend user tests.
+- **Documentation:** `docs/domains/users/` when implementation begins; security-sensitive behavior also consults `docs/07-security.md`.
+- **Shared dependencies:** configuration, errors, logging, persistence adapters as required.
+- **Allowed dependencies:** Authentication, Authorization, Organizations, Projects where contracts require them.
+- **Explicitly unrelated domains:** Models, Agents, MCP, Memory, Workflows, Knowledge/RAG unless the task proves a direct relationship.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Organizations
+
+- **Purpose:** Own organization lifecycle, membership, organizational boundaries, and organization-level tenancy semantics.
+- **Backend ownership:** organization-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** `frontend/src/features/organizations/`.
+- **Tests:** Organization-focused backend unit/API/integration tests and frontend organization tests.
+- **Documentation:** `docs/domains/organizations/` when implementation begins; relevant security and data docs where required.
+- **Shared dependencies:** persistence, configuration, errors, logging.
+- **Allowed dependencies:** Users, Authentication, Authorization, Projects.
+- **Explicitly unrelated domains:** Models, Agents, MCP, Memory, Workflows, Knowledge/RAG unless the task proves a dependency.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Projects
+
+- **Purpose:** Own project lifecycle, ownership, membership/context, and project-scoped business state.
+- **Backend ownership:** project-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** `frontend/src/features/projects/`.
+- **Tests:** Project-focused backend and frontend tests.
+- **Documentation:** `docs/domains/projects/` when implementation begins; `docs/06-data-model.md` for persistence changes.
+- **Shared dependencies:** persistence, configuration, errors, logging.
+- **Allowed dependencies:** Users, Organizations, Authorization; product domains may reference project identity when their contracts are project-scoped.
+- **Explicitly unrelated domains:** Any product domain not explicitly participating in the current project-related contract.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Conversations
+
+- **Purpose:** Own conversation lifecycle, conversation state, participants/context, and conversation-level orchestration boundaries.
+- **Backend ownership:** conversation-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** `frontend/src/features/conversations/`.
+- **Tests:** Conversation-focused backend and frontend tests.
+- **Documentation:** `docs/domains/conversations/` when implementation begins; API/data docs when contracts change.
+- **Shared dependencies:** Projects when project-scoped, persistence, errors, logging, events where required.
+- **Allowed dependencies:** Messages, Models, Streaming/Runs, Authorization when contracts require them.
+- **Explicitly unrelated domains:** Files, Knowledge/RAG, Agents, MCP, Memory, Workflows unless an approved conversation feature explicitly depends on them.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Messages
+
+- **Purpose:** Own message entities, message lifecycle, roles/content metadata, and message-level persistence/contracts.
+- **Backend ownership:** message-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** message UI owned by `frontend/src/features/conversations/` unless a dedicated message feature is later justified.
+- **Tests:** Message-focused tests colocated with conversation/message test areas.
+- **Documentation:** `docs/domains/messages/` or conversation documentation when messages remain a conversation subdomain.
+- **Shared dependencies:** persistence, errors, logging.
+- **Allowed dependencies:** Conversations; Streaming/Runs for incremental output; Models when model-generated messages are involved.
+- **Explicitly unrelated domains:** Organizations, Files, MCP, Workflows, Artifacts unless a proven contract requires them.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Models
+
+- **Purpose:** Own model/provider selection contracts and model capability metadata; provider implementations belong to infrastructure.
+- **Backend ownership:** model-specific application/domain code under `backend/src/nexus/`; external provider adapters under `backend/src/nexus/infrastructure/`.
+- **Frontend ownership:** `frontend/src/features/models/`.
+- **Tests:** Model/provider contract unit/integration tests and frontend model-selection tests.
+- **Documentation:** `docs/domains/models/` when implementation begins; API docs for exposed model contracts.
+- **Shared dependencies:** configuration, errors, logging, infrastructure adapters.
+- **Allowed dependencies:** Conversations or Agents only when those domains explicitly invoke model contracts.
+- **Explicitly unrelated domains:** Authentication, Organizations, Files, Workflows, Artifacts unless a task proves a dependency.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule; do not inspect consumers merely because they may eventually use models.
+
+### Files
+
+- **Purpose:** Own file upload lifecycle, metadata, storage contracts, and file access behavior.
+- **Backend ownership:** file-specific application/domain/API code under `backend/src/nexus/`; storage adapters under `backend/src/nexus/infrastructure/`.
+- **Frontend ownership:** `frontend/src/features/files/`.
+- **Tests:** File-focused unit/API/integration tests and frontend file tests.
+- **Documentation:** `docs/domains/files/` when implementation begins; `docs/05-api-sdk.md`, `docs/06-data-model.md`, and `docs/07-security.md` when applicable.
+- **Shared dependencies:** persistence/storage adapters, authorization, errors, logging, configuration.
+- **Allowed dependencies:** Projects or Organizations for ownership scope; Knowledge/RAG when ingestion explicitly consumes files.
+- **Explicitly unrelated domains:** Models, Agents, MCP, Memory, Workflows unless an approved feature proves the relationship.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Knowledge / RAG
+
+- **Purpose:** Own ingestion, indexing, chunking, embeddings, retrieval, ranking, and knowledge-query contracts.
+- **Backend ownership:** knowledge/retrieval-specific application/domain code under `backend/src/nexus/`; vector stores, embedding providers, and external retrieval adapters under `backend/src/nexus/infrastructure/`.
+- **Frontend ownership:** `frontend/src/features/knowledge/`.
+- **Tests:** Knowledge/RAG unit/API/integration tests and frontend knowledge tests.
+- **Documentation:** `docs/domains/knowledge/` when implementation begins; data/API/security docs where contracts require them.
+- **Shared dependencies:** Files when file ingestion is used, persistence, infrastructure adapters, configuration, errors, logging.
+- **Allowed dependencies:** Files; Models only for embedding/reranking contracts where explicitly required; Projects/Authorization when knowledge is scoped.
+- **Explicitly unrelated domains:** Agents, MCP, Memory, Workflows, Artifacts unless the task explicitly integrates them.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Agents
+
+- **Purpose:** Own agent definitions, orchestration contracts, execution policy, and agent-specific lifecycle.
+- **Backend ownership:** agent-specific application/domain/API code under `backend/src/nexus/`; provider/tool adapters under infrastructure where appropriate.
+- **Frontend ownership:** `frontend/src/features/agents/`.
+- **Tests:** Agent-focused unit/API/integration tests and frontend agent tests.
+- **Documentation:** `docs/domains/agents/` when implementation begins.
+- **Shared dependencies:** errors, logging, configuration, events/runs as required.
+- **Allowed dependencies:** Models, MCP, Memory, Tools/integrations, Workflows, Streaming/Runs only when the agent contract explicitly uses them.
+- **Explicitly unrelated domains:** Users, Organizations, Files, Knowledge/RAG unless the current agent feature proves a dependency.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule; future capability adjacency is not sufficient evidence.
+
+### MCP
+
+- **Purpose:** Own Model Context Protocol integration contracts, MCP server/client connectivity, capability discovery, and MCP-specific execution boundaries.
+- **Backend ownership:** MCP-specific application/domain code under `backend/src/nexus/`; network/provider adapters under infrastructure.
+- **Frontend ownership:** `frontend/src/features/mcp/` when MCP configuration or visibility is exposed to users.
+- **Tests:** MCP-focused backend tests and frontend MCP tests when applicable.
+- **Documentation:** `docs/domains/mcp/` when implementation begins.
+- **Shared dependencies:** configuration, security, errors, logging, infrastructure adapters.
+- **Allowed dependencies:** Agents or Tools only when an approved contract integrates MCP with them.
+- **Explicitly unrelated domains:** Authentication, Organizations, Projects, Knowledge/RAG, Memory, Workflows unless proven by the task.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Memory
+
+- **Purpose:** Own durable/ephemeral memory concepts, storage/retrieval contracts, lifecycle, and memory policy.
+- **Backend ownership:** memory-specific application/domain/API code under `backend/src/nexus/`; persistence adapters under infrastructure.
+- **Frontend ownership:** `frontend/src/features/memory/` when user-visible memory controls exist.
+- **Tests:** Memory-focused backend tests and frontend memory tests when applicable.
+- **Documentation:** `docs/domains/memory/` when implementation begins; data/security docs as required.
+- **Shared dependencies:** persistence, configuration, errors, logging.
+- **Allowed dependencies:** Agents or Conversations only when those consumers explicitly invoke memory contracts.
+- **Explicitly unrelated domains:** Files, MCP, Workflows, Artifacts, Organizations unless proven by the task.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Workflows
+
+- **Purpose:** Own workflow definitions, steps, lifecycle, orchestration, and execution state.
+- **Backend ownership:** workflow-specific application/domain/API code under `backend/src/nexus/`.
+- **Frontend ownership:** `frontend/src/features/workflows/`.
+- **Tests:** Workflow-focused backend and frontend tests.
+- **Documentation:** `docs/domains/workflows/` when implementation begins.
+- **Shared dependencies:** persistence, events, errors, logging, configuration, Streaming/Runs where execution is asynchronous or streamed.
+- **Allowed dependencies:** Agents, MCP, Models, Files, or other domains only when workflow step contracts explicitly reference them.
+- **Explicitly unrelated domains:** Any domain not used by the workflow contract under test or implementation.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Artifacts
+
+- **Purpose:** Own generated artifact metadata, lifecycle, persistence references, and artifact access contracts.
+- **Backend ownership:** artifact-specific application/domain/API code under `backend/src/nexus/`; storage adapters under infrastructure.
+- **Frontend ownership:** `frontend/src/features/artifacts/` when artifact browsing or interaction exists.
+- **Tests:** Artifact-focused backend and frontend tests.
+- **Documentation:** `docs/domains/artifacts/` when implementation begins; data/API/security docs as required.
+- **Shared dependencies:** storage/persistence, authorization, errors, logging.
+- **Allowed dependencies:** Conversations, Agents, Workflows, or Files only when they explicitly create, consume, or expose artifact contracts.
+- **Explicitly unrelated domains:** MCP, Memory, Knowledge/RAG, Organizations unless proven by the task.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Streaming / Runs
+
+- **Purpose:** Own run lifecycle and streaming/event-delivery contracts for long-running or incremental operations.
+- **Backend ownership:** run/streaming-specific application/domain/API code under `backend/src/nexus/`; event publisher abstractions under `backend/src/nexus/events/` and transport adapters under infrastructure where required.
+- **Frontend ownership:** feature-specific streaming/run UI, with genuinely shared client streaming support under shared frontend service/lib areas only when reusable.
+- **Tests:** Streaming/run backend unit/API/integration tests and relevant frontend integration/E2E tests.
+- **Documentation:** `docs/domains/streaming/` or `docs/domains/runs/` when implementation begins; `docs/05-api-sdk.md` for public streaming contracts.
+- **Shared dependencies:** events, errors, logging, configuration.
+- **Allowed dependencies:** Conversations, Agents, Workflows, Models only when those domains produce or consume run/stream contracts.
+- **Explicitly unrelated domains:** Organizations, Files, Knowledge/RAG, MCP, Memory unless a specific run contract proves involvement.
+- **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
+
+### Observability
+
+- **Purpose:** Own server-side operational visibility, logging context, metrics/tracing contracts when introduced, and diagnostics boundaries.
+- **Backend ownership:** `backend/src/nexus/logging/` and approved observability code under platform/shared infrastructure.
+- **Frontend ownership:** frontend error reporting/diagnostics only where explicitly required; do not mirror backend observability architecture.
+- **Tests:** Focused backend logging/observability tests and frontend diagnostics tests when applicable.
+- **Documentation:** platform/operations documentation plus `docs/08-engineering-principles.md` where relevant.
+- **Shared dependencies:** configuration, errors, request context, infrastructure integrations when approved.
+- **Allowed dependencies:** May observe any domain through stable logging/telemetry contracts but must not take ownership of domain business logic.
+- **Explicitly unrelated domains:** No product domain business implementation belongs here.
+- **Cross-domain inspection conditions:** Inspect a product domain only when diagnosing an identified logging/telemetry path or when a task explicitly names that domain.
+
+### Platform / Shared Infrastructure
+
+- **Purpose:** Own reusable technical capabilities that serve multiple domains without owning their business rules.
+- **Backend ownership:** `backend/src/nexus/infrastructure/`, `backend/src/nexus/config/`, `backend/src/nexus/errors/`, `backend/src/nexus/logging/`, `backend/src/nexus/events/`, application bootstrap in `backend/src/nexus/main.py`, and approved shared API plumbing.
+- **Frontend ownership:** `frontend/src/app/`, genuinely shared `components/`, `services/`, `hooks/`, `stores/`, `types/`, and `lib/` code that is not product-domain specific.
+- **Tests:** Shared backend/frontend unit/integration tests appropriate to the shared capability.
+- **Documentation:** `docs/04-architecture.md`, `docs/08-engineering-principles.md`, this domain map, and focused platform docs when needed.
+- **Shared dependencies:** By definition provides shared technical contracts; dependencies must point toward stable infrastructure abstractions rather than absorb product-domain behavior.
+- **Allowed dependencies:** Domain contracts only where infrastructure implements an explicit interface or adapter required by that domain.
+- **Explicitly unrelated domains:** Product business rules from Authentication, Authorization, Users, Organizations, Projects, Conversations, Messages, Models, Files, Knowledge/RAG, Agents, MCP, Memory, Workflows, or Artifacts.
+- **Cross-domain inspection conditions:** May inspect a product domain only to satisfy an explicit adapter/configuration/API contract proven by the task, plan, import, test, or documented dependency.
+
+## Additional Existing/Navigational Areas
+
+The repository may also contain navigational areas such as configuration, audit, tools/integrations, or tenant terminology. These do not replace the required domains above. If such an area becomes a first-class product domain, update this map with the same ownership fields and cross-domain restrictions.
 
 ## Global Documentation Routing
 
@@ -218,15 +390,15 @@ Local instructions may tighten but must not weaken root rules.
 When a new major domain is introduced:
 
 1. Add it to this map.
-2. Define backend ownership.
-3. Define frontend ownership when applicable.
-4. Define tests.
-5. Add domain documentation when implementation begins.
+2. Define its purpose.
+3. Define backend ownership.
+4. Define frontend ownership when applicable.
+5. Define test ownership.
+6. Define documentation ownership.
+7. Define shared and allowed dependencies.
+8. Define explicitly unrelated domains.
+9. Define cross-domain inspection conditions.
 
-Keep this file navigational. It should answer:
+Keep this file operational and navigational. It should answer:
 
-> **Where do I go?**
-
-not:
-
-> **Tell me everything about the domain.**
+> **Where do I go, what may I inspect, and what must I avoid?**
