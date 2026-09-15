@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
@@ -31,10 +32,6 @@ def _app() -> FastAPI:
         return {"ok": True}
 
     return app
-
-
-def _json_logs(capsys) -> list[dict[str, object]]:
-    return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
 
 
 def test_request_id_is_generated_and_available() -> None:
@@ -72,11 +69,16 @@ def test_error_response_uses_same_request_id() -> None:
     assert response.json()["error"]["request_id"] == "req_error_123"
 
 
-def test_lifecycle_logs_have_required_fields(capsys) -> None:
-    with TestClient(_app()) as client:
-        response = client.get("/ok", headers={"X-Request-ID": "req_log_123"})
+def test_lifecycle_logs_have_required_fields(caplog) -> None:
+    with caplog.at_level(logging.INFO, logger="nexus.request"):
+        with TestClient(_app()) as client:
+            response = client.get("/ok", headers={"X-Request-ID": "req_log_123"})
 
-    logs = _json_logs(capsys)
+    logs = [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "nexus.request" and record.getMessage().startswith("{")
+    ]
     completed = next(log for log in logs if log["event"] == "request_completed")
     assert completed["request_id"] == "req_log_123"
     assert completed["method"] == "GET"
