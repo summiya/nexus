@@ -37,6 +37,7 @@ include = ["nexus*"]
 
 [tool.ruff]
 src = ["src"]
+exclude = ["build"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["nexus"]
