@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { apiRequest } from './client';
-import { NexusApiError } from './error';
 
 describe('apiRequest', () => {
   it('serializes JSON requests through the configured API base URL', async () => {
@@ -34,7 +33,7 @@ describe('apiRequest', () => {
       ),
     );
 
-    await expect(apiRequest('/resource')).rejects.toMatchObject<NexusApiError>({
+    await expect(apiRequest('/resource')).rejects.toMatchObject({
       status: 403,
       code: 'FORBIDDEN',
       requestId: 'req_9',
