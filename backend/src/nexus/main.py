@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 
 from nexus.api.router import api_router
-from nexus.config.logging import configure_logging
 from nexus.config.settings import settings
 from nexus.errors.handlers import register_exception_handlers
+from nexus.logging import configure_logging, get_logger
+from nexus.middleware import RequestContextMiddleware
 
-logger = configure_logging(settings.log_level)
+configure_logging(settings.log_level)
+logger = get_logger("nexus")
 
 
 def create_app() -> FastAPI:
@@ -18,10 +20,11 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event() -> None:
-        logger.info("NEXUS application startup complete")
+        logger.info("application_started")
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.add_middleware(RequestContextMiddleware)
     return app
 
 
