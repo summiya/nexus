@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
@@ -95,7 +97,7 @@ def test_event_publisher_can_be_injected_and_resolved_through_fastapi() -> None:
 
     @app.get("/publisher-test")
     async def publisher_test(
-        resolved: EventPublisher = Depends(get_event_publisher),
+        resolved: Annotated[EventPublisher, Depends(get_event_publisher)],
     ) -> dict[str, bool]:
         return {"same_instance": resolved is publisher}
 
