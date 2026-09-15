@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from nexus.events.types import EventType
 
@@ -18,6 +18,14 @@ class EventEnvelope(BaseModel):
     timestamp: datetime
     request_id: str = Field(min_length=1)
     data: dict[str, Any]
+
+    @field_validator("timestamp")
+    @classmethod
+    def validate_timestamp(cls, value: datetime) -> datetime:
+        """Require an unambiguous timestamp for cross-system event correlation."""
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("timestamp must be timezone-aware")
+        return value
 
     @classmethod
     def create(
