@@ -8,6 +8,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+build/
 
 # Python build metadata
 *.egg-info/
