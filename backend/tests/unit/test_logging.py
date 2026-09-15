@@ -1,6 +1,7 @@
-import asyncio
 import json
 import logging
+
+from fastapi.testclient import TestClient
 
 from nexus.config.settings import Settings
 from nexus.main import create_app
@@ -24,11 +25,12 @@ def test_configure_logging_sets_level_and_emits_message(capsys) -> None:
     assert logging.getLogger().level == logging.DEBUG
 
 
-def test_create_app_logs_on_startup(caplog) -> None:
+def test_create_app_logs_startup_and_shutdown(caplog) -> None:
     app = create_app()
 
     with caplog.at_level(logging.INFO, logger="nexus"):
-        asyncio.run(app.router.on_startup[0]())
+        with TestClient(app):
+            pass
 
     events = [
         json.loads(record.getMessage())
@@ -36,3 +38,4 @@ def test_create_app_logs_on_startup(caplog) -> None:
         if record.name == "nexus" and record.getMessage().startswith("{")
     ]
     assert any(event["event"] == "application_started" for event in events)
+    assert any(event["event"] == "application_stopped" for event in events)
