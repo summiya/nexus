@@ -12,13 +12,14 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.api_version,
         description="NEXUS foundation application",
+        debug=settings.debug,
     )
 
     @app.on_event("startup")
     async def startup_event() -> None:
         logger.info("NEXUS application startup complete")
 
-    app.include_router(api_router)
+    app.include_router(api_router, prefix=settings.api_prefix)
     return app
 
 

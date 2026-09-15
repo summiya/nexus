@@ -7,10 +7,14 @@ services:
       - "8000:8000"
     environment:
       APP_NAME: ${APP_NAME}
+      APP_ENV: ${APP_ENV}
+      APP_DEBUG: ${APP_DEBUG}
       API_VERSION: ${API_VERSION}
-      ENVIRONMENT: ${ENVIRONMENT}
+      API_PREFIX: ${API_PREFIX}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      LOG_LEVEL: ${LOG_LEVEL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -20,7 +24,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import json, urllib.request, sys; response = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5); payload = json.loads(response.read().decode()); sys.exit(0 if payload.get('status') == 'ok' else 1)\" || exit 1"
+          "python -c \"import json, urllib.request, sys; response = urllib.request.urlopen('http://127.0.0.1:8000${API_PREFIX}/health', timeout=5); payload = json.loads(response.read().decode()); sys.exit(0 if payload.get('status') == 'ok' else 1)\" || exit 1"
         ]
       interval: 10s
       timeout: 5s
@@ -32,6 +36,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_APP_NAME: ${VITE_APP_NAME}
+        VITE_APP_ENV: ${VITE_APP_ENV}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     ports:
       - "5173:80"
     depends_on:

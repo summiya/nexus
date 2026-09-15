@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
+import { env } from '../../config/env';
 
 type ApiRequestOptions = Omit<RequestInit, 'body'> & {
   body?: BodyInit | Record<string, unknown> | null;
@@ -16,7 +16,7 @@ export async function apiRequest<T>(
     requestHeaders.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${env.apiBaseUrl}${path}`, {
     ...rest,
     body: body && typeof body !== 'string' && !(body instanceof FormData)
       ? JSON.stringify(body)
