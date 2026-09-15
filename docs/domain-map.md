@@ -60,6 +60,18 @@ backend/
 
 Backend tests are independent from frontend tests.
 
+Backend tests are organized first by test boundary, then by NEXUS domain when
+there are enough tests to justify a domain folder:
+
+```text
+backend/tests/unit/knowledge/
+backend/tests/api/knowledge/
+backend/tests/integration/knowledge/
+```
+
+Do not create empty domain test folders before tests exist. Each domain owns the
+unit, API, and integration tests that verify its behavior and contracts.
+
 ### Frontend
 
 ```text
@@ -75,13 +87,13 @@ frontend/
 │   ├── types/           # shared TypeScript types
 │   └── lib/             # small shared utilities/integrations
 └── tests/
-    ├── unit/
-    ├── components/
-    ├── integration/
     └── e2e/
 ```
 
-Frontend does not mirror backend layers.
+Frontend does not mirror backend layers. Unit and component tests stay
+colocated with the source they verify under `frontend/src/**/*.test.ts` and
+`frontend/src/**/*.test.tsx`. Playwright E2E tests live under
+`frontend/tests/e2e/`.
 
 ## Global Cross-Domain Rule
 

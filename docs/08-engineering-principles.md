@@ -121,11 +121,32 @@ SOLID MUST NOT be used as an excuse to create unnecessary layers or abstractions
 ## 12. Testing
 
 - Every meaningful behavior change SHOULD have automated tests.
-- Bugs SHOULD receive regression tests.
+- Reproducible bugs SHOULD receive regression tests that verify the corrected
+  behavior and remain in the suite.
 - Domain logic SHOULD have focused unit tests.
 - Boundary behavior SHOULD have integration/API tests where appropriate.
+- Tests MUST be isolated, order-independent, deterministic, and free from hidden
+  reliance on developer-specific local state or generated artifacts.
 - Tests MUST NOT be weakened or deleted simply to make an implementation pass.
+- Valid assertions MUST NOT be loosened, skipped, or hidden to make a quality
+  gate pass.
 - Tests SHOULD verify behavior and contracts rather than implementation details where practical.
+- Security-sensitive behavior SHOULD include relevant negative-path coverage,
+  such as unauthenticated, unauthorized, malformed input, cross-tenant access,
+  and sensitive-data leakage cases.
+- Coverage is a safety signal, not the goal itself. Tests MUST be meaningful and
+  MUST NOT be added merely to inflate coverage.
+- Backend quality gates MUST enforce at least 80% overall application-source
+  coverage with branch coverage enabled. This threshold applies to total backend
+  application coverage, not every individual package or module.
+- Frontend quality gates MUST enforce at least 80% overall lines, statements,
+  functions, and branches coverage.
+- Coverage exclusions MUST have a legitimate technical reason, such as generated
+  files, type-only declarations, or bootstrap files with no meaningful testable
+  behavior. Meaningful production code MUST NOT be excluded simply to improve
+  percentages.
+- Local and CI quality gates SHOULD remain logically equivalent. Required
+  dependency installation, configuration, and tests SHOULD be deterministic.
 
 ---
 
