@@ -70,9 +70,11 @@ def test_error_response_uses_same_request_id() -> None:
 
 
 def test_lifecycle_logs_have_required_fields(caplog) -> None:
-    with caplog.at_level(logging.INFO, logger="nexus.request"):
-        with TestClient(_app()) as client:
-            response = client.get("/ok", headers={"X-Request-ID": "req_log_123"})
+    with (
+        caplog.at_level(logging.INFO, logger="nexus.request"),
+        TestClient(_app()) as client,
+    ):
+        response = client.get("/ok", headers={"X-Request-ID": "req_log_123"})
 
     logs = [
         json.loads(record.getMessage())
