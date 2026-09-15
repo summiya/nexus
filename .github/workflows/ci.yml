@@ -16,61 +16,70 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install backend dependencies
         working-directory: backend
         run: pip install ".[dev]"
-
       - name: Backend Unit Tests
         working-directory: backend
         run: pytest tests/unit -q
-
       - name: Backend API Tests
         working-directory: backend
         run: pytest tests/api -q
-
       - name: Backend Integration Tests
         working-directory: backend
         run: pytest tests/integration -q
-
       - name: Run Ruff
         working-directory: backend
         run: ruff check src tests
-
       - name: Run mypy
         working-directory: backend
         run: mypy src
-
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-  frontend-build:
-    name: Frontend Build
+  frontend-quality:
+    name: Frontend Quality
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-
-      - name: Build frontend
+      - name: Frontend typecheck
         working-directory: frontend
+        run: npm run typecheck
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Frontend format check
+        working-directory: frontend
+        run: npm run format:check
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+      - name: Frontend production build
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
         run: npm run build
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Frontend browser smoke test
+        working-directory: frontend
+        run: npm run test:e2e
 
   docker-build:
     name: Docker Build
@@ -79,6 +88,5 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-
       - name: Build Docker images
         run: docker compose build

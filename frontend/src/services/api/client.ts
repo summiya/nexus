@@ -1,6 +1,7 @@
-import { env } from '../../config/env';
+import { env } from "../../config/env";
+import { toNexusApiError } from "./error";
 
-type ApiRequestOptions = Omit<RequestInit, 'body'> & {
+type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, unknown> | null;
 };
 
@@ -9,24 +10,25 @@ export async function apiRequest<T>(
   options: ApiRequestOptions = {},
 ): Promise<T> {
   const { body, headers, ...rest } = options;
-
   const requestHeaders = new Headers(headers);
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
 
-  if (body && !(body instanceof FormData) && !requestHeaders.has('Content-Type')) {
-    requestHeaders.set('Content-Type', 'application/json');
+  if (body && !isFormData && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
   }
 
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
     ...rest,
-    body: body && typeof body !== 'string' && !(body instanceof FormData)
-      ? JSON.stringify(body)
-      : (body as BodyInit | null),
+    body:
+      body && typeof body !== "string" && !isFormData
+        ? JSON.stringify(body)
+        : (body as BodyInit | null),
     headers: requestHeaders,
   });
 
   if (!response.ok) {
-    const message = await response.text().catch(() => 'Request failed');
-    throw new Error(message || `Request failed with status ${response.status}`);
+    throw await toNexusApiError(response);
   }
 
   if (response.status === 204) {
@@ -36,6 +38,6 @@ export async function apiRequest<T>(
   return (await response.json()) as T;
 }
 
-export async function getHealth() {
-  return apiRequest<{ status: string }>('/health');
+export function getHealth() {
+  return apiRequest<{ status: string }>("/health");
 }
