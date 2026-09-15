@@ -67,7 +67,9 @@ def test_event_envelope_validates_required_fields() -> None:
         ("event_type", "unknown.event"),
     ],
 )
-def test_event_envelope_rejects_invalid_required_values(field: str, value: object) -> None:
+def test_event_envelope_rejects_invalid_required_values(
+    field: str, value: object
+) -> None:
     payload = {
         "event_id": "evt_123",
         "event_type": EventType.RUN_STARTED,
