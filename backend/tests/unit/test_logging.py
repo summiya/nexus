@@ -24,14 +24,15 @@ def test_configure_logging_sets_level_and_emits_message(capsys) -> None:
     assert logging.getLogger().level == logging.DEBUG
 
 
-def test_create_app_logs_on_startup(capsys) -> None:
+def test_create_app_logs_on_startup(caplog) -> None:
     app = create_app()
 
-    asyncio.run(app.router.on_startup[0]())
+    with caplog.at_level(logging.INFO, logger="nexus"):
+        asyncio.run(app.router.on_startup[0]())
 
     events = [
-        json.loads(line)
-        for line in capsys.readouterr().out.splitlines()
-        if line.strip()
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "nexus" and record.getMessage().startswith("{")
     ]
     assert any(event["event"] == "application_started" for event in events)
