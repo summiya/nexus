@@ -10,15 +10,17 @@ export class NexusApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code = 'UNKNOWN_ERROR',
+    readonly code = "UNKNOWN_ERROR",
     readonly requestId?: string,
   ) {
     super(message);
-    this.name = 'NexusApiError';
+    this.name = "NexusApiError";
   }
 }
 
-export async function toNexusApiError(response: Response): Promise<NexusApiError> {
+export async function toNexusApiError(
+  response: Response,
+): Promise<NexusApiError> {
   let payload: ApiErrorPayload | undefined;
 
   try {
@@ -29,11 +31,12 @@ export async function toNexusApiError(response: Response): Promise<NexusApiError
 
   const error = payload?.error;
   const message =
-    typeof error?.message === 'string' && error.message.trim()
+    typeof error?.message === "string" && error.message.trim()
       ? error.message
       : `Request failed with status ${response.status}`;
-  const code = typeof error?.code === 'string' ? error.code : 'UNKNOWN_ERROR';
-  const requestId = typeof error?.request_id === 'string' ? error.request_id : undefined;
+  const code = typeof error?.code === "string" ? error.code : "UNKNOWN_ERROR";
+  const requestId =
+    typeof error?.request_id === "string" ? error.request_id : undefined;
 
   return new NexusApiError(message, response.status, code, requestId);
 }

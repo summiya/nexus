@@ -1,7 +1,7 @@
-import { env } from '../../config/env';
-import { toNexusApiError } from './error';
+import { env } from "../../config/env";
+import { toNexusApiError } from "./error";
 
-type ApiRequestOptions = Omit<RequestInit, 'body'> & {
+type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | Record<string, unknown> | null;
 };
 
@@ -11,16 +11,17 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const { body, headers, ...rest } = options;
   const requestHeaders = new Headers(headers);
-  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
 
-  if (body && !isFormData && !requestHeaders.has('Content-Type')) {
-    requestHeaders.set('Content-Type', 'application/json');
+  if (body && !isFormData && !requestHeaders.has("Content-Type")) {
+    requestHeaders.set("Content-Type", "application/json");
   }
 
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
     ...rest,
     body:
-      body && typeof body !== 'string' && !isFormData
+      body && typeof body !== "string" && !isFormData
         ? JSON.stringify(body)
         : (body as BodyInit | null),
     headers: requestHeaders,
@@ -38,5 +39,5 @@ export async function apiRequest<T>(
 }
 
 export function getHealth() {
-  return apiRequest<{ status: string }>('/health');
+  return apiRequest<{ status: string }>("/health");
 }

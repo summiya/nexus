@@ -1,6 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet } from "react-router-dom";
 
-import { env } from '../config/env';
+import { env } from "../config/env";
 
 export function AppLayout() {
   return (
