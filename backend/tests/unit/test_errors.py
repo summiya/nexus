@@ -3,7 +3,6 @@ import pytest
 from nexus.errors.codes import ERROR_STATUS_CODES, ErrorCode
 from nexus.errors.exceptions import NexusError
 
-
 EXPECTED_STATUS_CODES = {
     ErrorCode.VALIDATION_ERROR: 422,
     ErrorCode.BAD_REQUEST: 400,
