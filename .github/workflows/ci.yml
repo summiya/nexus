@@ -56,14 +56,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm install
-      - name: Temporary lockfile capture
-        working-directory: frontend
-        run: |
-          echo "LOCKFILE_BASE64_BEGIN"
-          base64 -w0 package-lock.json
-          echo
-          echo "LOCKFILE_BASE64_END"
+        run: npm ci
       - name: Frontend typecheck
         working-directory: frontend
         run: npm run typecheck
