@@ -1,5 +1,19 @@
 import { render, screen } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("./lib/query-client", () => ({
+  createQueryClient: () =>
+    new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          refetchOnWindowFocus: false,
+          staleTime: 0,
+        },
+      },
+    }),
+}));
 
 import App from "./App";
 
@@ -32,5 +46,32 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Application foundation" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the settings route inside the application shell", async () => {
+    window.history.replaceState({}, "", "/settings");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: "Foundation configuration" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the API error state when backend health fails", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: { message: "Backend unavailable" } }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Unhealthy")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Backend unavailable");
   });
 });

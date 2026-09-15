@@ -17,6 +17,7 @@ backend-check:
 	docker compose run --rm backend pytest tests/unit -q
 	docker compose run --rm backend pytest tests/api -q
 	docker compose run --rm backend pytest tests/integration -q
+	docker compose run --rm backend pytest tests --cov=nexus --cov-branch --cov-report=term-missing -q
 	docker compose run --rm backend ruff check src tests
 	docker compose run --rm backend mypy src
 
@@ -38,6 +39,7 @@ frontend-check:
 			npm run lint && \
 			npm run format:check && \
 			npm test && \
+			npm run test:coverage && \
 			rm -rf dist && \
 			VITE_API_BASE_URL=$${VITE_API_BASE_URL} npm run build && \
 			npx playwright install --with-deps chromium && \
