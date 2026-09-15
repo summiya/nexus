@@ -1,6 +1,6 @@
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
