@@ -170,16 +170,19 @@ def test_bootstrap_failure_rolls_back_with_callers_transaction(
 ) -> None:
     failed_slug = "bootstrap-rollback"
 
-    with pytest.raises(ValueError, match="Permission catalog is not seeded"):
-        with Session(migrated_engine) as session, session.begin():
-            organization = _create_organization(session, failed_slug)
-            missing_permission = session.scalar(
-                select(Permission).where(Permission.key == next(iter(PERMISSION_CATALOG)))
-            )
-            assert missing_permission is not None
-            session.delete(missing_permission)
-            session.flush()
-            provision_administrator_role(session, organization.id)
+    with (
+        pytest.raises(ValueError, match="Permission catalog is not seeded"),
+        Session(migrated_engine) as session,
+        session.begin(),
+    ):
+        organization = _create_organization(session, failed_slug)
+        missing_permission = session.scalar(
+            select(Permission).where(Permission.key == next(iter(PERMISSION_CATALOG)))
+        )
+        assert missing_permission is not None
+        session.delete(missing_permission)
+        session.flush()
+        provision_administrator_role(session, organization.id)
 
     with Session(migrated_engine) as session:
         organization_count = session.scalar(
