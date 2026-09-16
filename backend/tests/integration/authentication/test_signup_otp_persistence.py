@@ -76,6 +76,8 @@ def build_settings() -> Settings:
         redis_url="redis://localhost:6379/15",
         cors_allowed_origins=["http://localhost:5173"],
         otp_hmac_secret="test-secret-value-with-enough-length",
+        auth_token_secret="test-auth-token-secret-with-enough-length",
+        refresh_token_secret="test-refresh-token-secret-with-enough-length",
         signup_otp_ttl_seconds=600,
         signup_otp_max_attempts=5,
         signup_otp_length=6,
