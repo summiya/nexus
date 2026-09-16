@@ -21,7 +21,9 @@ def test_membership_table_defines_internal_and_public_ids() -> None:
 
 
 def test_membership_foreign_keys_follow_internal_id_convention() -> None:
-    organization_fk = next(iter(OrganizationMembership.__table__.c.organization_id.foreign_keys))
+    organization_fk = next(
+        iter(OrganizationMembership.__table__.c.organization_id.foreign_keys)
+    )
     user_fk = next(iter(OrganizationMembership.__table__.c.user_id.foreign_keys))
     inviter_fk = next(iter(OrganizationMembership.__table__.c.invited_by.foreign_keys))
 
