@@ -32,6 +32,17 @@ def test_user_table_defines_unique_public_id() -> None:
     assert public_id.default is not None
 
 
+def test_user_table_requires_organization_foreign_key() -> None:
+    organization_id = User.__table__.c.organization_id
+    organization_fk = next(iter(organization_id.foreign_keys))
+
+    assert isinstance(organization_id.type, BigInteger)
+    assert organization_id.nullable is False
+    assert organization_id.index is True
+    assert organization_fk.target_fullname == "organizations.id"
+    assert organization_fk.ondelete == "CASCADE"
+
+
 def test_user_table_defines_active_lifecycle_default() -> None:
     status = User.__table__.c.status
 
@@ -41,3 +52,8 @@ def test_user_table_defines_active_lifecycle_default() -> None:
 
 def test_user_table_enforces_unique_email() -> None:
     assert User.__table__.c.email.unique is True
+
+
+def test_user_organization_relationship_is_many_to_one() -> None:
+    assert User.organization.property.back_populates == "users"
+    assert User.organization.property.uselist is False

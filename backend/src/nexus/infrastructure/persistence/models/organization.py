@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import BigInteger, DateTime, String, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, validates
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from nexus.domain.organizations import normalize_slug
 from nexus.infrastructure.persistence.base import Base
+
+if TYPE_CHECKING:
+    from nexus.infrastructure.persistence.models.user import User
 
 
 class Organization(Base):
@@ -43,6 +46,8 @@ class Organization(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    users: Mapped[list[User]] = relationship(back_populates="organization")
 
     @validates("slug")
     def _normalize_slug(self, _key: str, value: str) -> str:
