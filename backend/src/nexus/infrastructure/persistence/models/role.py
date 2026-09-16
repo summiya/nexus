@@ -31,7 +31,9 @@ class Role(Base):
 
     __tablename__ = "roles"
     __table_args__ = (
-        UniqueConstraint("organization_id", "name", name="uq_roles_organization_id_name"),
+        UniqueConstraint(
+            "organization_id", "name", name="uq_roles_organization_id_name"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

@@ -25,13 +25,18 @@ class Permission(Base):
     public_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, nullable=False, unique=True, index=True, default=uuid.uuid4
     )
-    key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    key: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
     description: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
 
     role_permissions: Mapped[list[RolePermission]] = relationship(

@@ -20,7 +20,9 @@ class RolePermission(Base):
 
     __tablename__ = "role_permissions"
     __table_args__ = (
-        UniqueConstraint("role_id", "permission_id", name="uq_role_permissions_role_id_permission_id"),
+        UniqueConstraint(
+            "role_id", "permission_id", name="uq_role_permissions_role_id_permission_id"
+        ),
     )
 
     role_id: Mapped[int] = mapped_column(

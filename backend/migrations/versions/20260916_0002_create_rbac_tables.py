@@ -41,15 +41,29 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.String(length=512), nullable=True),
         sa.Column("is_system", sa.Boolean(), server_default=sa.false(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(
-            ["organization_id"], ["organizations.id"],
-            name="fk_roles_organization_id_organizations", ondelete="CASCADE"
+            ["organization_id"],
+            ["organizations.id"],
+            name="fk_roles_organization_id_organizations",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_roles"),
-        sa.UniqueConstraint("organization_id", "name", name="uq_roles_organization_id_name"),
+        sa.UniqueConstraint(
+            "organization_id", "name", name="uq_roles_organization_id_name"
+        ),
     )
     op.create_index("ix_roles_organization_id", "roles", ["organization_id"])
     op.create_index("ix_roles_public_id", "roles", ["public_id"], unique=True)
@@ -60,11 +74,23 @@ def upgrade() -> None:
         sa.Column("public_id", sa.Uuid(), nullable=False),
         sa.Column("key", sa.String(length=128), nullable=False),
         sa.Column("description", sa.String(length=512), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_permissions"),
     )
-    op.create_index("ix_permissions_public_id", "permissions", ["public_id"], unique=True)
+    op.create_index(
+        "ix_permissions_public_id", "permissions", ["public_id"], unique=True
+    )
     op.create_index("ix_permissions_key", "permissions", ["key"], unique=True)
 
     permissions = sa.table(
@@ -91,14 +117,23 @@ def upgrade() -> None:
         "role_permissions",
         sa.Column("role_id", sa.BigInteger(), nullable=False),
         sa.Column("permission_id", sa.BigInteger(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["permission_id"], ["permissions.id"],
-            name="fk_role_permissions_permission_id_permissions", ondelete="CASCADE"
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["role_id"], ["roles.id"],
-            name="fk_role_permissions_role_id_roles", ondelete="CASCADE"
+            ["permission_id"],
+            ["permissions.id"],
+            name="fk_role_permissions_permission_id_permissions",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["role_id"],
+            ["roles.id"],
+            name="fk_role_permissions_role_id_roles",
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("role_id", "permission_id", name="pk_role_permissions"),
         sa.UniqueConstraint(

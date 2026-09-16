@@ -114,9 +114,13 @@ def test_upgrade_creates_rbac_schema_and_seeds_permissions(
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
-    assert {"organizations", "users", "roles", "permissions", "role_permissions"}.issubset(
-        tables
-    )
+    assert {
+        "organizations",
+        "users",
+        "roles",
+        "permissions",
+        "role_permissions",
+    }.issubset(tables)
 
     role_columns = {column["name"]: column for column in inspector.get_columns("roles")}
     permission_columns = {
