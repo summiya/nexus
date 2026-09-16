@@ -1,4 +1,4 @@
-"""Stable NEXUS RBAC permission keys."""
+"""Stable NEXUS RBAC permission keys for implemented auth/organization capabilities."""
 
 PERMISSION_CATALOG: dict[str, str] = {
     "users.read": "View users in the organization",
@@ -8,10 +8,4 @@ PERMISSION_CATALOG: dict[str, str] = {
     "roles.read": "View roles",
     "roles.manage": "Manage roles and role permissions",
     "permissions.read": "View the permission catalog",
-    "conversations.read": "View conversations",
-    "conversations.create": "Create conversations",
-    "conversations.delete": "Delete conversations",
-    "files.read": "View files",
-    "files.upload": "Upload files",
-    "files.delete": "Delete files",
 }
