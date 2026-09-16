@@ -17,8 +17,8 @@ from nexus.ports.repositories.user import UserRepository
 from nexus.ports.transaction import TransactionManager
 from nexus.security.otp import digest_otp, generate_numeric_otp, keyed_digest
 from nexus.services.authentication_validation import (
+    normalize_auth_email,
     normalize_display_text,
-    normalize_signup_email,
 )
 
 logger = get_logger(__name__)
@@ -79,7 +79,7 @@ class SignupOtpService:
             "last_name",
             max_length=100,
         )
-        email = normalize_signup_email(request.email)
+        email = normalize_auth_email(request.email)
         del organization_name, first_name, last_name
 
         self._enforce_rate_limit(email)

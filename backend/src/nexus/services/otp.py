@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from nexus.application.authentication.signup import normalize_signup_email
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.ports.repositories.otp_challenge import OtpChallengeRepository
 from nexus.security.otp import digest_otp
+from nexus.services.authentication_validation import normalize_auth_email
 
 OtpPurpose = Literal["signup", "login"]
 
@@ -54,7 +54,7 @@ class OtpVerificationService:
         otp: str,
         purpose: OtpPurpose,
     ) -> VerifiedOtpChallenge:
-        normalized_email = normalize_signup_email(email)
+        normalized_email = normalize_auth_email(email)
         self._validate_otp_format(otp)
         challenge = self._otp_challenge_repository.get_latest_for_update(
             email=normalized_email,
