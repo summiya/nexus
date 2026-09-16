@@ -76,5 +76,5 @@ class Role(Base):
         back_populates="role", cascade="all, delete-orphan"
     )
     users: Mapped[list[User]] = relationship(
-        secondary="user_roles", back_populates="users", viewonly=True
+        secondary="user_roles", back_populates="roles", viewonly=True
     )
