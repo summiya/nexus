@@ -22,6 +22,18 @@ class SignupOtpEmailSender(Protocol):
         """Send a signup OTP email."""
 
 
+class WelcomeEmailSender(Protocol):
+    """Contract for sending signup welcome emails."""
+
+    def send_welcome_email(
+        self,
+        *,
+        email: str,
+        display_name: str,
+    ) -> None:
+        """Send a welcome email."""
+
+
 @dataclass(frozen=True)
 class DefaultSignupOtpEmailSender:
     """Compose Nexus signup OTP emails and delegate delivery."""
@@ -43,5 +55,25 @@ class DefaultSignupOtpEmailSender:
                 f"{otp}\n\n"
                 f"This code expires at {expires_at.isoformat()}."
             ),
+        )
+        self.email_provider.send(message)
+
+
+@dataclass(frozen=True)
+class DefaultWelcomeEmailSender:
+    """Compose Nexus welcome emails and delegate delivery."""
+
+    email_provider: EmailProvider
+
+    def send_welcome_email(
+        self,
+        *,
+        email: str,
+        display_name: str,
+    ) -> None:
+        message = EmailMessage(
+            to=email,
+            subject="Welcome to NEXUS",
+            text_body=f"Welcome to NEXUS, {display_name}.",
         )
         self.email_provider.send(message)
