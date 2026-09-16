@@ -13,9 +13,9 @@ jobs:
     name: Backend Quality
     runs-on: ubuntu-latest
     env:
-      POSTGRES_DB: nexus
-      POSTGRES_USER: nexus
-      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: ${{ vars.POSTGRES_DB }}
+      POSTGRES_USER: ${{ vars.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       NEXUS_REQUIRE_POSTGRES_TESTS: "true"
     services:
       postgres:
