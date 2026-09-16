@@ -1,6 +1,7 @@
 import os
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from nexus.config.settings import settings
+from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
@@ -60,6 +62,17 @@ def migrated_database() -> Iterator[tuple[Config, Engine]]:
         admin_engine.dispose()
 
 
+def test_otp_challenge_normalizes_email() -> None:
+    challenge = OtpChallenge(
+        email="  USER@Example.COM ",
+        purpose="signup",
+        code_digest="server-secret-bound-digest",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+
+    assert challenge.email == "user@example.com"
+
+
 def test_upgrade_creates_otp_challenge_schema(
     migrated_database: tuple[Config, Engine],
 ) -> None:
@@ -97,6 +110,17 @@ def test_upgrade_creates_otp_challenge_schema(
     index_names = {index["name"] for index in inspector.get_indexes("otp_challenges")}
     assert "ix_otp_challenges_email_purpose" in index_names
     assert "ix_otp_challenges_user_id" in index_names
+
+    constraint_names = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("otp_challenges")
+    }
+    assert {
+        "ck_otp_challenges_purpose",
+        "ck_otp_challenges_attempt_count_nonnegative",
+        "ck_otp_challenges_max_attempts_positive",
+        "ck_otp_challenges_attempt_count_within_limit",
+    } <= constraint_names
 
 
 def test_signup_challenge_allows_null_user_and_login_challenge_enforces_user_fk(
@@ -141,6 +165,44 @@ def test_signup_challenge_allows_null_user_and_login_challenge_enforces_user_fk(
                 "digest": "server-secret-bound-digest",
             },
         )
+
+
+def test_database_rejects_invalid_purpose_and_attempt_counts(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, "head")
+
+    invalid_values = [
+        ("unknown", 0, 5),
+        ("signup", -1, 5),
+        ("login", 0, 0),
+        ("login", 6, 5),
+    ]
+
+    for purpose, attempt_count, max_attempts in invalid_values:
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO otp_challenges (
+                        id, email, purpose, code_digest, expires_at,
+                        attempt_count, max_attempts
+                    ) VALUES (
+                        :id, :email, :purpose, :digest,
+                        now() + interval '5 minutes', :attempt_count, :max_attempts
+                    )
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "email": "constraint-test@example.com",
+                    "purpose": purpose,
+                    "digest": "server-secret-bound-digest",
+                    "attempt_count": attempt_count,
+                    "max_attempts": max_attempts,
+                },
+            )
 
 
 def test_downgrade_removes_otp_challenges(
