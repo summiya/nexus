@@ -90,7 +90,7 @@ def test_rbac_relationships_are_bidirectional() -> None:
     assert Permission.roles.property.secondary is RolePermission.__table__
 
 
-def test_initial_permission_catalog_contains_expected_keys() -> None:
+def test_initial_permission_catalog_contains_only_current_auth_keys() -> None:
     assert set(PERMISSION_CATALOG) == {
         "users.read",
         "users.manage",
@@ -99,11 +99,6 @@ def test_initial_permission_catalog_contains_expected_keys() -> None:
         "roles.read",
         "roles.manage",
         "permissions.read",
-        "conversations.read",
-        "conversations.create",
-        "conversations.delete",
-        "files.read",
-        "files.upload",
-        "files.delete",
     }
+    assert len(PERMISSION_CATALOG) == len(set(PERMISSION_CATALOG))
     assert all(description for description in PERMISSION_CATALOG.values())
