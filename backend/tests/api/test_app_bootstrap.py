@@ -15,6 +15,8 @@ def build_settings(**overrides: object) -> Settings:
         "redis_url": "redis://localhost:6379/15",
         "cors_allowed_origins": ["https://nexus.example"],
         "otp_hmac_secret": "test-secret-value-with-enough-length",
+        "auth_token_secret": "test-auth-token-secret-with-enough-length",
+        "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
         **overrides,
     }
     if "debug" in values:

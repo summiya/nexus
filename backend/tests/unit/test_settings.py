@@ -30,6 +30,11 @@ SETTINGS_ENV_KEYS = [
     "EMAIL_PROVIDER",
     "EMAIL_FROM_ADDRESS",
     "RESEND_API_KEY",
+    "AUTH_TOKEN_SECRET",
+    "REFRESH_TOKEN_SECRET",
+    "ACCESS_TOKEN_EXPIRES_SECONDS",
+    "REFRESH_TOKEN_EXPIRES_SECONDS",
+    "AUTH_TOKEN_ISSUER",
 ]
 
 
@@ -39,12 +44,29 @@ def clean_environment(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
+def set_required_settings_env(monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
+    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    monkeypatch.setenv(
+        "AUTH_TOKEN_SECRET",
+        "test-auth-token-secret-with-enough-length",
+    )
+    monkeypatch.setenv(
+        "REFRESH_TOKEN_SECRET",
+        "test-refresh-token-secret-with-enough-length",
+    )
+
+
 def build_settings(**overrides: object) -> Settings:
     values = {
         "database_url": "postgresql://test:test@localhost:5432/test",
         "redis_url": "redis://localhost:6379/15",
         "cors_allowed_origins": ["http://localhost:5173"],
         "otp_hmac_secret": "test-secret-value-with-enough-length",
+        "auth_token_secret": "test-auth-token-secret-with-enough-length",
+        "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
         **overrides,
     }
     return Settings(_env_file=None, **values)
@@ -67,6 +89,9 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.signup_otp_rate_limit_max_requests == 5
     assert settings.email_provider == "disabled"
     assert settings.resend_api_key is None
+    assert settings.access_token_expires_seconds == 900
+    assert settings.refresh_token_expires_seconds == 2_592_000
+    assert settings.auth_token_issuer is None
 
 
 def test_database_url_is_required(clean_environment) -> None:
@@ -113,6 +138,13 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("EMAIL_FROM_ADDRESS", "no-reply@example.com")
     monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
+    monkeypatch.setenv("AUTH_TOKEN_SECRET", "env-auth-token-secret-with-enough-length")
+    monkeypatch.setenv(
+        "REFRESH_TOKEN_SECRET", "env-refresh-token-secret-with-enough-length"
+    )
+    monkeypatch.setenv("ACCESS_TOKEN_EXPIRES_SECONDS", "123")
+    monkeypatch.setenv("REFRESH_TOKEN_EXPIRES_SECONDS", "456")
+    monkeypatch.setenv("AUTH_TOKEN_ISSUER", "nexus-test")
 
     reloaded = Settings(_env_file=None)
 
@@ -129,6 +161,13 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.email_provider == "resend"
     assert reloaded.email_from_address == "no-reply@example.com"
     assert reloaded.resend_api_key == "test-resend-key"
+    assert reloaded.auth_token_secret == "env-auth-token-secret-with-enough-length"
+    assert (
+        reloaded.refresh_token_secret == "env-refresh-token-secret-with-enough-length"
+    )
+    assert reloaded.access_token_expires_seconds == 123
+    assert reloaded.refresh_token_expires_seconds == 456
+    assert reloaded.auth_token_issuer == "nexus-test"
 
 
 @pytest.mark.parametrize(
@@ -141,10 +180,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
 def test_debug_boolean_values(
     monkeypatch, clean_environment, raw_value: str, expected: bool
 ) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    set_required_settings_env(monkeypatch)
     monkeypatch.setenv("APP_DEBUG", raw_value)
 
     settings = Settings(_env_file=None)
@@ -153,10 +189,7 @@ def test_debug_boolean_values(
 
 
 def test_invalid_debug_boolean_fails_validation(monkeypatch, clean_environment) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    set_required_settings_env(monkeypatch)
     monkeypatch.setenv("APP_DEBUG", "definitely")
 
     with pytest.raises(ValidationError):
@@ -164,9 +197,7 @@ def test_invalid_debug_boolean_fails_validation(monkeypatch, clean_environment) 
 
 
 def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    set_required_settings_env(monkeypatch)
     monkeypatch.setenv(
         "CORS_ALLOWED_ORIGINS",
         '["http://localhost:5173","https://nexus.example"]',
@@ -181,9 +212,7 @@ def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:
 
 
 def test_malformed_cors_configuration_fails(monkeypatch, clean_environment) -> None:
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    set_required_settings_env(monkeypatch)
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "not-json")
 
     with pytest.raises(SettingsError):
@@ -202,10 +231,7 @@ def test_application_settings_module_exposes_single_configuration(
     monkeypatch.setenv("APP_DEBUG", "false")
     monkeypatch.setenv("API_VERSION", "v2")
     monkeypatch.setenv("API_PREFIX", "/api/v2")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
+    set_required_settings_env(monkeypatch)
 
     importlib.reload(settings_module)
 
@@ -219,12 +245,9 @@ def test_application_settings_module_exposes_single_configuration(
 
 
 def test_create_app_uses_debug_and_api_prefix(monkeypatch, clean_environment) -> None:
+    set_required_settings_env(monkeypatch)
     monkeypatch.setenv("APP_DEBUG", "true")
     monkeypatch.setenv("API_PREFIX", "/api/test")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost:5432/test")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
-    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
-    monkeypatch.setenv("OTP_HMAC_SECRET", "test-secret-value-with-enough-length")
     importlib.reload(settings_module)
     reloaded_main = importlib.reload(main_module)
 

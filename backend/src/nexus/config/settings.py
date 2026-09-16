@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     email_provider: str = "disabled"
     email_from_address: str = "no-reply@nexus.local"
     resend_api_key: str | None = None
+    auth_token_secret: str = Field(min_length=32)
+    refresh_token_secret: str = Field(min_length=32)
+    access_token_expires_seconds: int = Field(default=900, gt=0)
+    refresh_token_expires_seconds: int = Field(default=2_592_000, gt=0)
+    auth_token_issuer: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,

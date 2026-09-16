@@ -21,6 +21,7 @@ from nexus.domain.users import normalize_email
 from nexus.infrastructure.persistence.base import Base
 
 if TYPE_CHECKING:
+    from nexus.infrastructure.persistence.models.auth_session import AuthSession
     from nexus.infrastructure.persistence.models.organization import Organization
     from nexus.infrastructure.persistence.models.role import Role
     from nexus.infrastructure.persistence.models.user_role import UserRole
@@ -71,6 +72,9 @@ class User(Base):
 
     organization: Mapped[Organization] = relationship(back_populates="users")
     user_roles: Mapped[list[UserRole]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    auth_sessions: Mapped[list[AuthSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
     roles: Mapped[list[Role]] = relationship(
