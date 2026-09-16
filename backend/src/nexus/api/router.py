@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from nexus.api.auth import router as auth_router
+from nexus.api.controllers.authentication import router as auth_router
 from nexus.api.health import router as health_router
 
 api_router = APIRouter()

@@ -6,8 +6,12 @@ from contextlib import contextmanager
 import pytest
 from fastapi.testclient import TestClient
 
-import nexus.api.auth as auth_module
-from nexus.api.auth import build_email_provider, get_signup_otp_service
+import nexus.api.composition.authentication as authentication_composition
+from nexus.api.composition.authentication import (
+    build_email_provider,
+    get_signup_otp_service,
+    get_signup_verification_service,
+)
 from nexus.application.authentication.signup import SignupOtpRequest
 from nexus.application.authentication.signup_verification import (
     SignupVerificationRequest,
@@ -18,12 +22,29 @@ from nexus.infrastructure.mailer.providers import ResendEmailProvider
 from nexus.main import app
 
 
+class FakeTransaction:
+    def commit(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
+
+
+class FakeUserRepository:
+    def exists_by_email(self, email: str) -> bool:
+        del email
+        return False
+
+
+class FakeOtpChallengeRepository:
+    pass
+
+
 class FakeSignupService:
     def __init__(self) -> None:
         self.requests: list[SignupOtpRequest] = []
 
-    def request_signup_otp(self, *, session: object, request: SignupOtpRequest) -> None:
-        del session
+    def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
         self.requests.append(request)
 
 
@@ -34,10 +55,8 @@ class FakeSignupVerificationService:
     def complete_signup(
         self,
         *,
-        session: object,
         request: SignupVerificationRequest,
     ) -> SignupVerificationResult:
-        del session
         self.requests.append(request)
         return SignupVerificationResult(
             status="completed",
@@ -61,14 +80,12 @@ def override_signup_service(service: FakeSignupService) -> Iterator[None]:
 def override_signup_verification_service(
     service: FakeSignupVerificationService,
 ) -> Iterator[None]:
-    app.dependency_overrides[auth_module.get_signup_verification_service] = lambda: (
-        service
-    )
+    app.dependency_overrides[get_signup_verification_service] = lambda: service
     try:
         yield
     finally:
         app.dependency_overrides.pop(
-            auth_module.get_signup_verification_service,
+            get_signup_verification_service,
             None,
         )
 
@@ -180,11 +197,17 @@ def test_signup_verify_endpoint_requires_all_fields(
 def test_build_email_provider_uses_resend_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth_module.settings, "email_provider", "resend")
+    monkeypatch.setattr(authentication_composition.settings, "email_provider", "resend")
     monkeypatch.setattr(
-        auth_module.settings, "email_from_address", "no-reply@example.com"
+        authentication_composition.settings,
+        "email_from_address",
+        "no-reply@example.com",
     )
-    monkeypatch.setattr(auth_module.settings, "resend_api_key", "test-resend-key")
+    monkeypatch.setattr(
+        authentication_composition.settings,
+        "resend_api_key",
+        "test-resend-key",
+    )
 
     provider = build_email_provider()
 
@@ -197,19 +220,23 @@ def test_build_email_provider_uses_resend_settings(
 def test_build_email_provider_fails_closed_without_resend_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth_module.settings, "email_provider", "resend")
-    monkeypatch.setattr(auth_module.settings, "resend_api_key", None)
+    monkeypatch.setattr(authentication_composition.settings, "email_provider", "resend")
+    monkeypatch.setattr(authentication_composition.settings, "resend_api_key", None)
 
-    with pytest.raises(auth_module.EmailDeliveryError):
+    with pytest.raises(authentication_composition.EmailDeliveryError):
         build_email_provider()
 
 
 def test_get_signup_otp_service_maps_email_configuration_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(auth_module.settings, "email_provider", "disabled")
+    monkeypatch.setattr(
+        authentication_composition.settings, "email_provider", "disabled"
+    )
 
     with pytest.raises(NexusError) as exc_info:
-        get_signup_otp_service()
+        get_signup_otp_service(
+            session=object(),  # type: ignore[arg-type]
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE

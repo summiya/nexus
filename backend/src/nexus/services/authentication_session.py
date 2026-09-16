@@ -1,4 +1,4 @@
-"""Authentication session orchestration."""
+"""Reusable authentication session service."""
 
 from __future__ import annotations
 
@@ -9,12 +9,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.user import User
+from nexus.ports.repositories.auth_session import AuthSessionRepository
 from nexus.security.authentication_tokens import (
     AccessTokenError,
     AccessTokenService,
@@ -40,9 +38,10 @@ class AuthenticationSessionService:
     access_token_service: AccessTokenService
     refresh_token_secret: str
     refresh_token_expires_seconds: int
+    auth_session_repository: AuthSessionRepository
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def create_session(self, session: Session, *, user: User) -> SessionTokenResult:
+    def create_session(self, *, user: User) -> SessionTokenResult:
         refresh_token = _generate_refresh_token()
         auth_session = AuthSession(
             user_id=user.id,
@@ -50,8 +49,7 @@ class AuthenticationSessionService:
             expires_at=self.clock()
             + timedelta(seconds=self.refresh_token_expires_seconds),
         )
-        session.add(auth_session)
-        session.flush()
+        self.auth_session_repository.add(auth_session)
 
         access_token = self._issue_access_token(user=user, auth_session=auth_session)
         return SessionTokenResult(
@@ -61,21 +59,14 @@ class AuthenticationSessionService:
             expires_in=self.access_token_service.expires_seconds,
         )
 
-    def refresh_session(
-        self,
-        session: Session,
-        *,
-        refresh_token: str,
-    ) -> SessionTokenResult:
+    def refresh_session(self, *, refresh_token: str) -> SessionTokenResult:
         auth_session = self._load_active_session_for_update(
-            session=session,
             refresh_token=refresh_token,
         )
 
         next_refresh_token = _generate_refresh_token()
         auth_session.refresh_token_hash = self._hash_refresh_token(next_refresh_token)
         auth_session.last_used_at = self.clock()
-        session.flush()
 
         access_token = self._issue_access_token(
             user=auth_session.user,
@@ -88,27 +79,21 @@ class AuthenticationSessionService:
             expires_in=self.access_token_service.expires_seconds,
         )
 
-    def revoke_session(self, session: Session, *, refresh_token: str) -> None:
+    def revoke_session(self, *, refresh_token: str) -> None:
         auth_session = self._load_active_session_for_update(
-            session=session,
             refresh_token=refresh_token,
         )
         auth_session.revoked_at = self.clock()
-        session.flush()
 
     def _load_active_session_for_update(
         self,
         *,
-        session: Session,
         refresh_token: str,
     ) -> AuthSession:
-        auth_session = session.scalar(
-            select(AuthSession)
-            .where(
-                AuthSession.refresh_token_hash
-                == self._hash_refresh_token(refresh_token)
+        auth_session = (
+            self.auth_session_repository.get_by_refresh_token_hash_for_update(
+                self._hash_refresh_token(refresh_token)
             )
-            .with_for_update()
         )
         now = self.clock()
         if (

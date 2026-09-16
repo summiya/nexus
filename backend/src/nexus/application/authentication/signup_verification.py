@@ -5,22 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from nexus.application.authentication.email import WelcomeEmailSender
-from nexus.application.authentication.otp_verification import (
-    OtpPurpose,
-    OtpVerificationFailed,
-    OtpVerificationService,
-    otp_verification_error,
-)
-from nexus.application.authentication.session import (
-    AuthenticationSessionService,
-    SessionTokenResult,
-)
-from nexus.application.authentication.signup import normalize_display_text
-from nexus.authorization.bootstrap import provision_administrator_role
 from nexus.domain.organizations import normalize_slug
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.mailer import EmailDeliveryError
@@ -28,6 +13,22 @@ from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.persistence.models.user_role import UserRole
 from nexus.logging import get_logger
+from nexus.ports.authorization import AdministratorRoleProvisioner
+from nexus.ports.repositories.organization import OrganizationRepository
+from nexus.ports.repositories.user import UserRepository
+from nexus.ports.repositories.user_role import UserRoleRepository
+from nexus.ports.transaction import TransactionManager
+from nexus.services.authentication_session import (
+    AuthenticationSessionService,
+    SessionTokenResult,
+)
+from nexus.services.authentication_validation import normalize_display_text
+from nexus.services.otp import (
+    OtpPurpose,
+    OtpVerificationFailed,
+    OtpVerificationService,
+    otp_verification_error,
+)
 
 logger = get_logger(__name__)
 
@@ -58,10 +59,20 @@ class SignupVerificationService:
     def __init__(
         self,
         *,
+        transaction: TransactionManager,
+        user_repository: UserRepository,
+        organization_repository: OrganizationRepository,
+        user_role_repository: UserRoleRepository,
+        administrator_role_provisioner: AdministratorRoleProvisioner,
         otp_verifier: OtpVerificationService,
         session_service: AuthenticationSessionService,
         welcome_email_sender: WelcomeEmailSender,
     ) -> None:
+        self._transaction = transaction
+        self._user_repository = user_repository
+        self._organization_repository = organization_repository
+        self._user_role_repository = user_role_repository
+        self._administrator_role_provisioner = administrator_role_provisioner
         self._otp_verifier = otp_verifier
         self._session_service = session_service
         self._welcome_email_sender = welcome_email_sender
@@ -69,7 +80,6 @@ class SignupVerificationService:
     def complete_signup(
         self,
         *,
-        session: Session,
         request: SignupVerificationRequest,
     ) -> SignupVerificationResult:
         organization_name = normalize_display_text(
@@ -92,21 +102,19 @@ class SignupVerificationService:
 
         try:
             verified = self._otp_verifier.verify(
-                session=session,
                 email=request.email,
                 otp=request.otp,
                 purpose=_SIGNUP_PURPOSE,
             )
-            self._reject_existing_user(session, verified.email)
-            self._reject_existing_organization(session, organization_slug)
+            self._reject_existing_user(verified.email)
+            self._reject_existing_organization(organization_slug)
 
             organization = Organization(
                 name=organization_name,
                 slug=organization_slug,
                 status="active",
             )
-            session.add(organization)
-            session.flush()
+            self._organization_repository.add(organization)
 
             user = User(
                 organization=organization,
@@ -115,14 +123,14 @@ class SignupVerificationService:
                 status="active",
                 email_verified_at=datetime.now(UTC),
             )
-            session.add(user)
-            session.flush()
+            self._user_repository.add(user)
 
-            administrator_role = provision_administrator_role(
-                session,
-                organization.id,
+            administrator_role = (
+                self._administrator_role_provisioner.provision_for_organization(
+                    organization.id,
+                )
             )
-            session.add(
+            self._user_role_repository.add(
                 UserRole(
                     organization_id=organization.id,
                     user_id=user.id,
@@ -131,21 +139,20 @@ class SignupVerificationService:
             )
             verified.challenge.consumed_at = datetime.now(UTC)
             token_result = self._session_service.create_session(
-                session,
                 user=user,
             )
-            session.commit()
+            self._transaction.commit()
         except OtpVerificationFailed as exc:
             if exc.persist_attempt_state:
-                session.commit()
+                self._transaction.commit()
             else:
-                session.rollback()
+                self._transaction.rollback()
             raise otp_verification_error() from exc
         except NexusError:
-            session.rollback()
+            self._transaction.rollback()
             raise
         except Exception:
-            session.rollback()
+            self._transaction.rollback()
             raise
 
         self._send_welcome_email(email=verified.email, display_name=display_name)
@@ -168,19 +175,15 @@ class SignupVerificationService:
             )
         return slug
 
-    def _reject_existing_user(self, session: Session, email: str) -> None:
-        user_exists = session.scalar(select(User.id).where(User.email == email))
-        if user_exists is not None:
+    def _reject_existing_user(self, email: str) -> None:
+        if self._user_repository.exists_by_email(email):
             raise NexusError(
                 ErrorCode.CONFLICT,
                 "The request conflicts with the current resource state.",
             )
 
-    def _reject_existing_organization(self, session: Session, slug: str) -> None:
-        organization_exists = session.scalar(
-            select(Organization.id).where(Organization.slug == slug)
-        )
-        if organization_exists is not None:
+    def _reject_existing_organization(self, slug: str) -> None:
+        if self._organization_repository.exists_by_slug(slug):
             raise NexusError(
                 ErrorCode.CONFLICT,
                 "The request conflicts with the current resource state.",

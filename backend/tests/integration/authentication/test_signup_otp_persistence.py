@@ -19,6 +19,11 @@ from sqlalchemy.orm import Session
 from nexus.application.authentication.signup import SignupOtpRequest, SignupOtpService
 from nexus.config.settings import Settings, settings
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
+from nexus.infrastructure.persistence.repositories.otp_challenge import (
+    SqlAlchemyOtpChallengeRepository,
+)
+from nexus.infrastructure.persistence.repositories.user import SqlAlchemyUserRepository
+from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
@@ -110,15 +115,16 @@ def test_signup_request_persists_secure_otp_challenge(
     migrated_engine: Engine,
 ) -> None:
     email_provider = FakeEmailProvider()
-    service = SignupOtpService(
-        settings=build_settings(),
-        email_sender=email_provider,
-        rate_limiter=AllowingRateLimiter(),
-    )
-
     with Session(migrated_engine) as session:
+        service = SignupOtpService(
+            settings=build_settings(),
+            transaction=SqlAlchemyTransactionManager(session),
+            user_repository=SqlAlchemyUserRepository(session),
+            otp_challenge_repository=SqlAlchemyOtpChallengeRepository(session),
+            email_sender=email_provider,
+            rate_limiter=AllowingRateLimiter(),
+        )
         service.request_signup_otp(
-            session=session,
             request=SignupOtpRequest(
                 organization_name="Acme AI",
                 first_name="Summiya",
