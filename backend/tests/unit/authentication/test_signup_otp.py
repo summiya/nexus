@@ -17,8 +17,8 @@ from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.security.otp import digest_otp, generate_numeric_otp
 from nexus.services.authentication_validation import (
+    normalize_auth_email,
     normalize_display_text,
-    normalize_signup_email,
 )
 
 
@@ -141,9 +141,9 @@ def test_normalizes_display_text_without_slugifying() -> None:
 
 
 def test_normalizes_and_validates_email() -> None:
-    assert normalize_signup_email("  PERSON@Example.COM  ") == "person@example.com"
+    assert normalize_auth_email("  PERSON@Example.COM  ") == "person@example.com"
     with pytest.raises(NexusError) as exc_info:
-        normalize_signup_email("not-an-email")
+        normalize_auth_email("not-an-email")
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
 
 

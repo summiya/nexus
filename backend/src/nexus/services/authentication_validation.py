@@ -20,7 +20,7 @@ def normalize_display_text(value: str, field_name: str, *, max_length: int) -> s
     return normalized
 
 
-def normalize_signup_email(value: str) -> str:
+def normalize_auth_email(value: str) -> str:
     email = normalize_email(value)
     if len(email) > 320 or _EMAIL_RE.fullmatch(email) is None:
         raise_validation_error("email")
