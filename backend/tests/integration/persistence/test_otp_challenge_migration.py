@@ -82,7 +82,9 @@ def test_upgrade_creates_otp_challenge_schema(
     inspector = inspect(engine)
     assert "otp_challenges" in inspector.get_table_names()
 
-    columns = {column["name"]: column for column in inspector.get_columns("otp_challenges")}
+    columns = {
+        column["name"]: column for column in inspector.get_columns("otp_challenges")
+    }
     assert set(columns) == {
         "id",
         "user_id",
