@@ -17,7 +17,9 @@ def _permission(permission_id: int, key: str) -> Permission:
     return permission
 
 
-def test_provision_administrator_role_creates_system_role_with_all_permissions() -> None:
+def test_provision_administrator_role_creates_system_role_with_all_permissions() -> (
+    None
+):
     session = MagicMock()
     permissions = [
         _permission(index, key) for index, key in enumerate(PERMISSION_CATALOG, start=1)
@@ -59,7 +61,10 @@ def test_provision_administrator_role_is_idempotent() -> None:
         _permission(index, key) for index, key in enumerate(PERMISSION_CATALOG, start=1)
     ]
     session.scalar.side_effect = [7, role]
-    session.scalars.side_effect = [permissions, [permission.id for permission in permissions]]
+    session.scalars.side_effect = [
+        permissions,
+        [permission.id for permission in permissions],
+    ]
 
     returned = provision_administrator_role(session, organization_id=7)
 
