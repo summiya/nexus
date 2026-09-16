@@ -41,6 +41,22 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "purpose IN ('signup', 'login')",
+            name="ck_otp_challenges_purpose",
+        ),
+        sa.CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_otp_challenges_attempt_count_nonnegative",
+        ),
+        sa.CheckConstraint(
+            "max_attempts > 0",
+            name="ck_otp_challenges_max_attempts_positive",
+        ),
+        sa.CheckConstraint(
+            "attempt_count <= max_attempts",
+            name="ck_otp_challenges_attempt_count_within_limit",
+        ),
         sa.ForeignKeyConstraint(
             ["user_id"],
             ["users.id"],
