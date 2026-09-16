@@ -14,9 +14,7 @@ from nexus.domain.organizations import normalize_slug
 from nexus.infrastructure.persistence.base import Base
 
 if TYPE_CHECKING:
-    from nexus.infrastructure.persistence.models.organization_membership import (
-        OrganizationMembership,
-    )
+    from nexus.infrastructure.persistence.models.user import User
 
 
 class Organization(Base):
@@ -49,9 +47,7 @@ class Organization(Base):
         DateTime(timezone=True), nullable=True
     )
 
-    memberships: Mapped[list[OrganizationMembership]] = relationship(
-        back_populates="organization"
-    )
+    users: Mapped[list[User]] = relationship(back_populates="organization")
 
     @validates("slug")
     def _normalize_slug(self, _key: str, value: str) -> str:
