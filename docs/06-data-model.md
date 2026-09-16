@@ -178,13 +178,6 @@ Rules:
 - Foreign keys SHOULD reference the internal `id` unless an explicit architecture decision requires otherwise.
 - New SQLAlchemy models MUST implement this dual-identifier pattern by default.
 
-Conceptually:
-
-```text
-id          BIGINT PRIMARY KEY
-public_id   UUID NOT NULL UNIQUE
-```
-
 ### Lifecycle fields
 
 Normal mutable domain tables MUST include:
@@ -497,8 +490,6 @@ deleted_at nullable
 
 ## Rules
 
-- `id` is internal-only and used for relational persistence.
-- `public_id` is the user identifier safe to expose outside the persistence layer.
 - Email uniqueness should be defined according to identity architecture.
 - A user can belong to multiple organizations.
 - A user is NOT a tenant.
@@ -616,15 +607,14 @@ status
 settings_json JSONB
 created_at
 updated_at
-deleted_at nullable
+deleted_at
 ```
 
 ## Rules
 
-- `id` is the internal tenant identifier used by foreign keys and joins.
-- `public_id` is the organization identifier safe to expose through APIs and external references.
-- An organization owns tenant-level configuration and resources.
-- All organization-owned data MUST be attributable to exactly one organization.
+An organization owns tenant-level configuration and resources.
+
+All organization-owned data MUST be attributable to exactly one organization.
 
 ## Relationships
 
@@ -1072,6 +1062,4 @@ credential_ref → Azure Key Vault
 
 ## Purpose
 
-Represents a selectable model configuration.
-
-The remainder of this canonical document continues to define the existing Nexus entities, relationship map, tenant isolation, database integrity, indexing, uniqueness, soft deletion, audit, usage, workflow, model/provider, tool/MCP, RAG, file, and artifact architecture. All such table definitions inherit the canonical table design conventions in Section 3.2 unless an entity section explicitly documents an exception.
+Represents a selectable model...
