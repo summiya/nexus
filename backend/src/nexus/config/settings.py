@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,11 @@ class Settings(BaseSettings):
     signup_otp_rate_limit_max_requests: int = Field(default=5, gt=0)
     email_provider: str = "disabled"
     email_from_address: str = "no-reply@nexus.local"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, gt=0, le=65535)
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,
