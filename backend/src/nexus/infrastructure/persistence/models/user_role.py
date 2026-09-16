@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, ForeignKeyConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nexus.infrastructure.persistence.base import Base
@@ -16,22 +16,30 @@ if TYPE_CHECKING:
 
 
 class UserRole(Base):
-    """Assignment of a role to a user."""
+    """Tenant-safe assignment of a role to a user."""
 
     __tablename__ = "user_roles"
     __table_args__ = (
-        UniqueConstraint("user_id", "role_id", name="uq_user_roles_user_id_role_id"),
+        ForeignKeyConstraint(
+            ["user_id", "organization_id"],
+            ["users.id", "users.organization_id"],
+            name="fk_user_roles_user_organization_users",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["role_id", "organization_id"],
+            ["roles.id", "roles.organization_id"],
+            name="fk_user_roles_role_organization_roles",
+            ondelete="CASCADE",
+        ),
     )
 
-    user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    role_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True
-    )
+    organization_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    role_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    user: Mapped[User] = relationship()
-    role: Mapped[Role] = relationship()
+    user: Mapped[User] = relationship(back_populates="user_roles", viewonly=True)
+    role: Mapped[Role] = relationship(back_populates="user_roles", viewonly=True)
