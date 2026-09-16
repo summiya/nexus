@@ -12,6 +12,26 @@ jobs:
   backend-quality:
     name: Backend Quality
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: nexus
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus -d nexus"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus
+      REDIS_URL: redis://localhost:6379/15
+      CORS_ALLOWED_ORIGINS: '["http://localhost:5173"]'
+      NEXUS_REQUIRE_POSTGRES_TESTS: "true"
 
     steps:
       - name: Check out code

@@ -9,7 +9,9 @@ description = "NEXUS application foundation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "alembic>=1.17.0,<2.0.0",
   "fastapi>=0.111.0",
+  "psycopg[binary]>=3.3.0,<4.0.0",
   "uvicorn>=0.30.0",
   "pydantic-settings>=2.2.1",
   "sqlalchemy>=2.0.53,<3.0.0",

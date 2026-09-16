@@ -1,5 +1,8 @@
 SHELL := /bin/bash
 
+-include .env
+export VITE_API_BASE_URL
+
 .PHONY: check backend-check frontend-check docker-check
 
 check: backend-check frontend-check docker-check
@@ -16,8 +19,8 @@ backend-check:
 	docker compose build backend
 	docker compose run --rm backend pytest tests/unit -q
 	docker compose run --rm backend pytest tests/api -q
-	docker compose run --rm backend pytest tests/integration -q
-	docker compose run --rm backend pytest tests --cov=nexus --cov-branch --cov-report=term-missing -q
+	docker compose run --rm -e NEXUS_REQUIRE_POSTGRES_TESTS=true backend pytest tests/integration -q
+	docker compose run --rm -e NEXUS_REQUIRE_POSTGRES_TESTS=true backend pytest tests --cov=nexus --cov-branch --cov-report=term-missing -q
 	docker compose run --rm backend ruff check src tests
 	docker compose run --rm backend mypy src
 
