@@ -11,6 +11,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 COPY pyproject.toml README.md ./
+COPY alembic.ini ./
+COPY migrations ./migrations
 COPY src ./src
 COPY tests ./tests
 
