@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import BigInteger, DateTime, String, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column, validates
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from nexus.domain.users import normalize_email
 from nexus.infrastructure.persistence.base import Base
+
+if TYPE_CHECKING:
+    from nexus.infrastructure.persistence.models.organization_membership import (
+        OrganizationMembership,
+    )
 
 
 class User(Base):
@@ -44,6 +50,16 @@ class User(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    organization_membership: Mapped[OrganizationMembership | None] = relationship(
+        back_populates="user",
+        foreign_keys="OrganizationMembership.user_id",
+        uselist=False,
+    )
+    invited_organization_memberships: Mapped[list[OrganizationMembership]] = relationship(
+        back_populates="inviter",
+        foreign_keys="OrganizationMembership.invited_by",
     )
 
     @validates("email")
