@@ -29,6 +29,7 @@ SETTINGS_ENV_KEYS = [
     "SIGNUP_OTP_RATE_LIMIT_MAX_REQUESTS",
     "EMAIL_PROVIDER",
     "EMAIL_FROM_ADDRESS",
+    "RESEND_API_KEY",
 ]
 
 
@@ -65,6 +66,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.signup_otp_rate_limit_window_seconds == 900
     assert settings.signup_otp_rate_limit_max_requests == 5
     assert settings.email_provider == "disabled"
+    assert settings.resend_api_key is None
 
 
 def test_database_url_is_required(clean_environment) -> None:
@@ -108,6 +110,9 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("OTP_HMAC_SECRET", "env-secret-value-with-enough-length")
+    monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("EMAIL_FROM_ADDRESS", "no-reply@example.com")
+    monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
 
     reloaded = Settings(_env_file=None)
 
@@ -121,6 +126,9 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.cors_allowed_origins == ["http://localhost:5173"]
     assert reloaded.log_level == "DEBUG"
     assert reloaded.otp_hmac_secret == "env-secret-value-with-enough-length"
+    assert reloaded.email_provider == "resend"
+    assert reloaded.email_from_address == "no-reply@example.com"
+    assert reloaded.resend_api_key == "test-resend-key"
 
 
 @pytest.mark.parametrize(

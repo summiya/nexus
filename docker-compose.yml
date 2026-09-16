@@ -23,6 +23,7 @@ services:
       SIGNUP_OTP_RATE_LIMIT_MAX_REQUESTS: ${SIGNUP_OTP_RATE_LIMIT_MAX_REQUESTS}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER}
       EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS}
+      RESEND_API_KEY: ${RESEND_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
