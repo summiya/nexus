@@ -12,22 +12,25 @@ jobs:
   backend-quality:
     name: Backend Quality
     runs-on: ubuntu-latest
+
     env:
-      POSTGRES_DB: ${{ vars.POSTGRES_DB }}
-      POSTGRES_USER: ${{ vars.POSTGRES_USER }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus
       NEXUS_REQUIRE_POSTGRES_TESTS: "true"
+
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: nexus
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+          --health-cmd "pg_isready -U nexus -d nexus"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -35,56 +38,43 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
       - name: Prepare backend configuration
-        run: |
-          cp .env.example .env
-          python - <<'PY'
-          import os
-          from pathlib import Path
+        run: cp .env.example .env
 
-          env_path = Path(".env")
-          lines = env_path.read_text().splitlines()
-          database_url = (
-              "postgresql://"
-              f"{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}"
-              f"@localhost:5432/{os.environ['POSTGRES_DB']}"
-          )
-
-          env_path.write_text(
-              "\n".join(
-                  f"DATABASE_URL={database_url}"
-                  if line.startswith("DATABASE_URL=")
-                  else line
-                  for line in lines
-              )
-              + "\n"
-          )
-          PY
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install backend dependencies
         working-directory: backend
         run: pip install ".[dev]"
+
       - name: Backend Unit Tests
         working-directory: backend
         run: pytest tests/unit -q
+
       - name: Backend API Tests
         working-directory: backend
         run: pytest tests/api -q
+
       - name: Backend Integration Tests
         working-directory: backend
         run: pytest tests/integration -q
+
       - name: Backend coverage
         working-directory: backend
         run: pytest tests --cov=nexus --cov-branch --cov-report=term-missing -q
+
       - name: Run Ruff
         working-directory: backend
         run: ruff check src tests
+
       - name: Run mypy
         working-directory: backend
         run: mypy src
+
       - name: Run pre-commit
         run: pre-commit run --all-files
 
@@ -95,32 +85,41 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
       - name: Prepare frontend configuration
         run: cp .env.example .env
+
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          python-version: "20"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
       - name: Frontend typecheck
         working-directory: frontend
         run: npm run typecheck
+
       - name: Frontend lint
         working-directory: frontend
         run: npm run lint
+
       - name: Frontend format check
         working-directory: frontend
         run: npm run format:check
+
       - name: Frontend tests
         working-directory: frontend
         run: npm test
+
       - name: Frontend coverage
         working-directory: frontend
         run: npm run test:coverage
+
       - name: Frontend production build
         working-directory: frontend
         run: |
@@ -128,9 +127,11 @@ jobs:
           source ../.env
           set +a
           npm run build
+
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
+
       - name: Frontend browser smoke test
         working-directory: frontend
         run: npm run test:e2e
@@ -142,7 +143,10 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+
       - name: Prepare Docker configuration
         run: cp .env.example .env
+
       - name: Build Docker images
         run: docker compose build
+        
