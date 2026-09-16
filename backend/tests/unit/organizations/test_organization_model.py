@@ -40,3 +40,8 @@ def test_organization_table_defines_active_lifecycle_default() -> None:
 
 def test_organization_table_enforces_unique_slug() -> None:
     assert Organization.__table__.c.slug.unique is True
+
+
+def test_organization_users_relationship_is_one_to_many() -> None:
+    assert Organization.users.property.back_populates == "organization"
+    assert Organization.users.property.uselist is True
