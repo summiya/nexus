@@ -36,6 +36,7 @@ class Role(Base):
         UniqueConstraint(
             "organization_id", "name", name="uq_roles_organization_id_name"
         ),
+        UniqueConstraint("id", "organization_id", name="uq_roles_id_organization_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -75,5 +76,5 @@ class Role(Base):
         back_populates="role", cascade="all, delete-orphan"
     )
     users: Mapped[list[User]] = relationship(
-        secondary="user_roles", back_populates="roles", viewonly=True
+        secondary="user_roles", back_populates="users", viewonly=True
     )
