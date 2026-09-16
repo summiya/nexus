@@ -39,7 +39,15 @@ class SignupResponseBody(BaseModel):
 
 def get_signup_otp_service() -> SignupOtpService:
     try:
-        email_provider = build_signup_otp_email_provider(settings.email_provider)
+        email_provider = build_signup_otp_email_provider(
+            provider_name=settings.email_provider,
+            from_address=settings.email_from_address,
+            smtp_host=settings.smtp_host,
+            smtp_port=settings.smtp_port,
+            smtp_username=settings.smtp_username,
+            smtp_password=settings.smtp_password,
+            smtp_security=settings.smtp_security,
+        )
     except EmailDeliveryError as exc:
         raise NexusError(
             ErrorCode.SERVICE_UNAVAILABLE,
