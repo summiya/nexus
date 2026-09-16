@@ -86,8 +86,9 @@ def test_bootstrap_is_idempotent_and_attaches_complete_catalog(
 ) -> None:
     with Session(migrated_engine) as session, session.begin():
         organization = _create_organization(session, "bootstrap-one")
-        first = provision_administrator_role(session, organization.id)
-        second = provision_administrator_role(session, organization.id)
+        organization_id = organization.id
+        first = provision_administrator_role(session, organization_id)
+        second = provision_administrator_role(session, organization_id)
         role_id = first.id
 
         assert second.id == role_id
@@ -96,7 +97,7 @@ def test_bootstrap_is_idempotent_and_attaches_complete_catalog(
         roles = list(
             session.scalars(
                 select(Role).where(
-                    Role.organization_id == organization.id,
+                    Role.organization_id == organization_id,
                     Role.name == ADMINISTRATOR_ROLE_NAME,
                 )
             )
