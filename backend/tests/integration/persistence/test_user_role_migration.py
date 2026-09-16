@@ -222,13 +222,17 @@ def test_user_role_foreign_keys_cascade_from_user_and_role(
         insert_user_role(connection, organization_id, user_one, role_one)
         insert_user_role(connection, organization_id, user_two, role_two)
 
-        connection.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_one})
+        connection.execute(
+            text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_one}
+        )
         user_assignment = connection.execute(
             text("SELECT count(*) FROM user_roles WHERE user_id = :user_id"),
             {"user_id": user_one},
         ).scalar_one()
 
-        connection.execute(text("DELETE FROM roles WHERE id = :role_id"), {"role_id": role_two})
+        connection.execute(
+            text("DELETE FROM roles WHERE id = :role_id"), {"role_id": role_two}
+        )
         role_assignment = connection.execute(
             text("SELECT count(*) FROM user_roles WHERE role_id = :role_id"),
             {"role_id": role_two},
