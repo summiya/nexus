@@ -6,7 +6,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Uuid, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from nexus.domain.users import normalize_email
@@ -21,6 +31,22 @@ class OtpChallenge(Base):
 
     __tablename__ = "otp_challenges"
     __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('signup', 'login')",
+            name="ck_otp_challenges_purpose",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="ck_otp_challenges_attempt_count_nonnegative",
+        ),
+        CheckConstraint(
+            "max_attempts > 0",
+            name="ck_otp_challenges_max_attempts_positive",
+        ),
+        CheckConstraint(
+            "attempt_count <= max_attempts",
+            name="ck_otp_challenges_attempt_count_within_limit",
+        ),
         Index("ix_otp_challenges_email_purpose", "email", "purpose"),
     )
 
