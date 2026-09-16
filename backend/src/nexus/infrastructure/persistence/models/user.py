@@ -14,6 +14,8 @@ from nexus.infrastructure.persistence.base import Base
 
 if TYPE_CHECKING:
     from nexus.infrastructure.persistence.models.organization import Organization
+    from nexus.infrastructure.persistence.models.role import Role
+    from nexus.infrastructure.persistence.models.user_role import UserRole
 
 
 class User(Base):
@@ -57,6 +59,12 @@ class User(Base):
     )
 
     organization: Mapped[Organization] = relationship(back_populates="users")
+    user_roles: Mapped[list[UserRole]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    roles: Mapped[list[Role]] = relationship(
+        secondary="user_roles", back_populates="users", viewonly=True
+    )
 
     @validates("email")
     def _normalize_email(self, _key: str, value: str) -> str:
