@@ -29,6 +29,14 @@ class VerifiedOtpChallenge:
     purpose: OtpPurpose
 
 
+class OtpVerificationFailed(Exception):
+    """Raised when OTP verification fails without exposing challenge state."""
+
+    def __init__(self, *, persist_attempt_state: bool = False) -> None:
+        super().__init__("OTP verification failed")
+        self.persist_attempt_state = persist_attempt_state
+
+
 class OtpVerificationService:
     """Verify OTP challenges without owning the outer transaction."""
 
@@ -57,7 +65,7 @@ class OtpVerificationService:
             or challenge.locked_at is not None
             or challenge.expires_at <= datetime.now(UTC)
         ):
-            raise _invalid_otp_error()
+            raise OtpVerificationFailed()
 
         expected_digest = digest_otp(
             secret=self._settings.otp_hmac_secret,
@@ -70,7 +78,7 @@ class OtpVerificationService:
             if challenge.attempt_count >= challenge.max_attempts:
                 challenge.locked_at = datetime.now(UTC)
             session.flush()
-            raise _invalid_otp_error()
+            raise OtpVerificationFailed(persist_attempt_state=True)
 
         return VerifiedOtpChallenge(
             challenge=challenge,
@@ -83,7 +91,7 @@ class OtpVerificationService:
             len(otp) != self._settings.signup_otp_length
             or _OTP_RE.fullmatch(otp) is None
         ):
-            raise _invalid_otp_error()
+            raise OtpVerificationFailed()
 
     def _load_latest_challenge_for_update(
         self,
@@ -104,7 +112,7 @@ class OtpVerificationService:
         )
 
 
-def _invalid_otp_error() -> NexusError:
+def otp_verification_error() -> NexusError:
     return NexusError(
         ErrorCode.UNAUTHORIZED,
         "Authentication credentials are invalid.",

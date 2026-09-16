@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 from nexus.application.authentication.email import WelcomeEmailSender
 from nexus.application.authentication.otp_verification import (
     OtpPurpose,
+    OtpVerificationFailed,
     OtpVerificationService,
+    otp_verification_error,
 )
 from nexus.application.authentication.session import (
     AuthenticationSessionService,
@@ -133,11 +135,14 @@ class SignupVerificationService:
                 user=user,
             )
             session.commit()
-        except NexusError as exc:
-            if exc.code == ErrorCode.UNAUTHORIZED:
+        except OtpVerificationFailed as exc:
+            if exc.persist_attempt_state:
                 session.commit()
             else:
                 session.rollback()
+            raise otp_verification_error() from exc
+        except NexusError:
+            session.rollback()
             raise
         except Exception:
             session.rollback()

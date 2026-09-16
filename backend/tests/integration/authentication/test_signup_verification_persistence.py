@@ -16,7 +16,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from nexus.application.authentication.otp_verification import OtpVerificationService
-from nexus.application.authentication.session import AuthenticationSessionService
+from nexus.application.authentication.session import (
+    AuthenticationSessionService,
+    SessionTokenResult,
+)
 from nexus.application.authentication.signup_verification import (
     SignupVerificationRequest,
     SignupVerificationService,
@@ -115,26 +118,51 @@ class RecordingWelcomeEmailSender:
         self.sent.append({"email": email, "display_name": display_name})
 
 
+class UnauthorizedSessionService(AuthenticationSessionService):
+    def create_session(self, session: Session, *, user: User) -> SessionTokenResult:
+        del session, user
+        raise NexusError(ErrorCode.UNAUTHORIZED, "Authentication is required.")
+
+
 def build_service(
     *,
     settings_value: Settings | None = None,
     welcome_sender: RecordingWelcomeEmailSender | None = None,
+    session_service: AuthenticationSessionService | None = None,
 ) -> SignupVerificationService:
     settings_value = settings_value or build_settings()
     return SignupVerificationService(
         otp_verifier=OtpVerificationService(settings=settings_value),
-        session_service=AuthenticationSessionService(
-            access_token_service=AccessTokenService(
-                secret=settings_value.auth_token_secret,
-                expires_seconds=settings_value.access_token_expires_seconds,
-                issuer=settings_value.auth_token_issuer,
-                clock=lambda: datetime.now(UTC),
-            ),
+        session_service=session_service
+        or AuthenticationSessionService(
+            access_token_service=_access_token_service(settings_value),
             refresh_token_secret=settings_value.refresh_token_secret,
-            refresh_token_expires_seconds=settings_value.refresh_token_expires_seconds,
+            refresh_token_expires_seconds=(
+                settings_value.refresh_token_expires_seconds
+            ),
             clock=lambda: datetime.now(UTC),
         ),
         welcome_email_sender=welcome_sender or RecordingWelcomeEmailSender(),
+    )
+
+
+def build_unauthorized_session_service(
+    settings_value: Settings,
+) -> UnauthorizedSessionService:
+    return UnauthorizedSessionService(
+        access_token_service=_access_token_service(settings_value),
+        refresh_token_secret=settings_value.refresh_token_secret,
+        refresh_token_expires_seconds=settings_value.refresh_token_expires_seconds,
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def _access_token_service(settings_value: Settings) -> AccessTokenService:
+    return AccessTokenService(
+        secret=settings_value.auth_token_secret,
+        expires_seconds=settings_value.access_token_expires_seconds,
+        issuer=settings_value.auth_token_issuer,
+        clock=lambda: datetime.now(UTC),
     )
 
 
@@ -157,6 +185,9 @@ def create_signup_challenge(
     email: str = "summiya@acme.com",
     otp: str = SIGNUP_OTP,
     expires_at: datetime | None = None,
+    attempt_count: int = 0,
+    consumed_at: datetime | None = None,
+    locked_at: datetime | None = None,
 ) -> OtpChallenge:
     challenge = OtpChallenge(
         user_id=None,
@@ -169,7 +200,10 @@ def create_signup_challenge(
             otp=otp,
         ),
         expires_at=expires_at or datetime.now(UTC) + timedelta(minutes=5),
+        attempt_count=attempt_count,
         max_attempts=settings_value.signup_otp_max_attempts,
+        consumed_at=consumed_at,
+        locked_at=locked_at,
     )
     session.add(challenge)
     session.commit()
@@ -313,7 +347,7 @@ def test_existing_organization_slug_returns_conflict(
     assert exc_info.value.code == ErrorCode.CONFLICT
 
 
-def test_invalid_otp_returns_unauthorized_and_does_not_create_signup_state(
+def test_wrong_otp_persists_attempt_count_without_creating_signup_state(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
@@ -336,6 +370,108 @@ def test_invalid_otp_returns_unauthorized_and_does_not_create_signup_state(
         assert session.scalar(select(func.count(Organization.id))) == 0
         assert session.scalar(select(func.count(User.id))) == 0
         assert session.scalar(select(func.count(AuthSession.id))) == 0
+
+
+def test_max_attempt_failure_persists_locked_at(
+    migrated_engine: Engine,
+) -> None:
+    settings_value = build_settings()
+    service = build_service(settings_value=settings_value)
+
+    with Session(migrated_engine) as session:
+        create_signup_challenge(
+            session,
+            settings_value=settings_value,
+            attempt_count=settings_value.signup_otp_max_attempts - 1,
+        )
+        with pytest.raises(NexusError) as exc_info:
+            service.complete_signup(
+                session=session,
+                request=signup_request(otp="000000"),
+            )
+
+    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+
+    with Session(migrated_engine) as session:
+        challenge = session.scalars(select(OtpChallenge)).one()
+        assert challenge.attempt_count == settings_value.signup_otp_max_attempts
+        assert challenge.locked_at is not None
+        assert challenge.consumed_at is None
+        assert session.scalar(select(func.count(Organization.id))) == 0
+        assert session.scalar(select(func.count(User.id))) == 0
+        assert session.scalar(select(func.count(AuthSession.id))) == 0
+
+
+def test_unrelated_unauthorized_rolls_back_partial_signup_state(
+    migrated_engine: Engine,
+) -> None:
+    settings_value = build_settings()
+    service = build_service(
+        settings_value=settings_value,
+        session_service=build_unauthorized_session_service(settings_value),
+    )
+
+    with Session(migrated_engine) as session:
+        create_signup_challenge(session, settings_value=settings_value)
+        with pytest.raises(NexusError) as exc_info:
+            service.complete_signup(session=session, request=signup_request())
+
+    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+
+    with Session(migrated_engine) as session:
+        challenge = session.scalars(select(OtpChallenge)).one()
+        assert challenge.attempt_count == 0
+        assert challenge.consumed_at is None
+        assert session.scalar(select(func.count(Organization.id))) == 0
+        assert session.scalar(select(func.count(User.id))) == 0
+        assert session.scalar(select(func.count(UserRole.user_id))) == 0
+        assert session.scalar(select(func.count(AuthSession.id))) == 0
+
+
+@pytest.mark.parametrize(
+    "challenge_state",
+    ["expired", "consumed", "locked", "missing"],
+)
+def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
+    migrated_engine: Engine,
+    challenge_state: str,
+) -> None:
+    settings_value = build_settings()
+    service = build_service(settings_value=settings_value)
+
+    with Session(migrated_engine) as session:
+        if challenge_state == "expired":
+            create_signup_challenge(
+                session,
+                settings_value=settings_value,
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+        elif challenge_state == "consumed":
+            create_signup_challenge(
+                session,
+                settings_value=settings_value,
+                consumed_at=datetime.now(UTC),
+            )
+        elif challenge_state == "locked":
+            create_signup_challenge(
+                session,
+                settings_value=settings_value,
+                locked_at=datetime.now(UTC),
+            )
+
+        session.add(Organization(name="Pending", slug="pending"))
+        with pytest.raises(NexusError) as exc_info:
+            service.complete_signup(session=session, request=signup_request())
+
+    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+
+    with Session(migrated_engine) as session:
+        assert session.scalar(select(func.count(Organization.id))) == 0
+        assert session.scalar(select(func.count(User.id))) == 0
+        assert session.scalar(select(func.count(AuthSession.id))) == 0
+        challenge = session.scalar(select(OtpChallenge))
+        if challenge is not None:
+            assert challenge.attempt_count == 0
 
 
 def test_welcome_email_failure_does_not_roll_back_signup(
