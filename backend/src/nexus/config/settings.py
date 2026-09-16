@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     redis_url: str = Field(min_length=1)
     cors_allowed_origins: list[str]
     log_level: str = "INFO"
+    otp_hmac_secret: str = Field(min_length=32)
+    signup_otp_ttl_seconds: int = Field(default=600, gt=0)
+    signup_otp_max_attempts: int = Field(default=5, gt=0)
+    signup_otp_length: int = Field(default=6, ge=6, le=10)
+    signup_otp_rate_limit_window_seconds: int = Field(default=900, gt=0)
+    signup_otp_rate_limit_max_requests: int = Field(default=5, gt=0)
+    email_provider: str = "disabled"
+    email_from_address: str = "no-reply@nexus.local"
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,
