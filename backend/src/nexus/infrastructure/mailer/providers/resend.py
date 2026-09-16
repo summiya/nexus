@@ -17,7 +17,7 @@ class ResendEmailProvider:
     from_address: str
 
     def send(self, message: EmailMessage) -> None:
-        resend = _load_resend_sdk()
+        resend, resend_delivery_errors = _load_resend_sdk()
         payload: dict[str, Any] = {
             "from": self.from_address,
             "to": message.to,
@@ -30,14 +30,20 @@ class ResendEmailProvider:
         try:
             resend.api_key = self.api_key
             resend.Emails.send(payload)
-        except Exception as exc:
+        except resend_delivery_errors as exc:
             raise EmailDeliveryError(
                 "Email provider failed to deliver message"
             ) from exc
 
 
-def _load_resend_sdk() -> Any:
+def _load_resend_sdk() -> tuple[Any, tuple[type[BaseException], ...]]:
     try:
-        return importlib.import_module("resend")
+        resend = importlib.import_module("resend")
+        resend_exceptions = importlib.import_module("resend.exceptions")
     except ModuleNotFoundError as exc:
         raise EmailDeliveryError("Resend SDK is not installed") from exc
+
+    return resend, (
+        resend_exceptions.ResendError,
+        resend_exceptions.NoContentError,
+    )
