@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from nexus.domain.users import normalize_email
@@ -22,6 +22,9 @@ class User(Base):
     """Persisted NEXUS user identity/profile record."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_users_id_organization_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     public_id: Mapped[uuid.UUID] = mapped_column(
