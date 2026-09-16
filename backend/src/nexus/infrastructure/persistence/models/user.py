@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Uuid, func
+from sqlalchemy import BigInteger, DateTime, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from nexus.domain.users import normalize_email
@@ -17,7 +17,12 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, nullable=False, unique=True, index=True, default=uuid.uuid4
+    )
     email: Mapped[str] = mapped_column(
         String(320), nullable=False, unique=True, index=True
     )
