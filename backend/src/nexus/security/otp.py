@@ -13,7 +13,11 @@ def generate_numeric_otp(length: int) -> str:
     return f"{secrets.randbelow(upper_bound):0{length}d}"
 
 
+def keyed_digest(*, secret: str, message: str) -> str:
+    """Return a server-secret-bound digest for non-reversible lookup keys."""
+    return hmac.new(secret.encode(), message.encode(), sha256).hexdigest()
+
+
 def digest_otp(*, secret: str, email: str, purpose: str, otp: str) -> str:
     """Return a server-secret-bound digest for one OTP challenge."""
-    message = f"{purpose}:{email}:{otp}".encode()
-    return hmac.new(secret.encode(), message, sha256).hexdigest()
+    return keyed_digest(secret=secret, message=f"{purpose}:{email}:{otp}")

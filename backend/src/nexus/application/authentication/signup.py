@@ -18,7 +18,7 @@ from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.rate_limit import RateLimiter, RateLimitError
 from nexus.logging import get_logger
-from nexus.security.otp import digest_otp, generate_numeric_otp
+from nexus.security.otp import digest_otp, generate_numeric_otp, keyed_digest
 
 logger = get_logger(__name__)
 
@@ -111,7 +111,7 @@ class SignupOtpService:
             session.scalar(select(User.id).where(User.email == email)) is not None
         )
         if user_exists:
-            logger.info("signup_otp_request_accepted", existing_user=True)
+            logger.info("signup_otp_request_accepted")
             return SignupOtpResult()
 
         otp = generate_numeric_otp(self._settings.signup_otp_length)
@@ -134,6 +134,7 @@ class SignupOtpService:
 
         try:
             session.add(challenge)
+            session.flush()
             self._email_provider.send_signup_otp(
                 email=email,
                 otp=otp,
@@ -152,15 +153,13 @@ class SignupOtpService:
             session.rollback()
             raise
 
-        logger.info("signup_otp_request_accepted", existing_user=False)
+        logger.info("signup_otp_request_accepted")
         return SignupOtpResult()
 
     def _enforce_rate_limit(self, email: str) -> None:
-        key_digest = digest_otp(
+        key_digest = keyed_digest(
             secret=self._settings.otp_hmac_secret,
-            email=email,
-            purpose="signup-rate-limit",
-            otp="request",
+            message=f"signup-rate-limit:{email}",
         )
         try:
             allowed = self._rate_limiter.allow(

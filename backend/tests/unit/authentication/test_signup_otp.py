@@ -16,6 +16,7 @@ from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.email import EmailDeliveryError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
+from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.security.otp import digest_otp, generate_numeric_otp
 
 
@@ -69,9 +70,16 @@ class ScalarResult:
 
 
 class FakeSession:
-    def __init__(self, existing_user_id: int | None = None) -> None:
+    def __init__(
+        self,
+        existing_user_id: int | None = None,
+        *,
+        fail_flush: bool = False,
+    ) -> None:
         self.existing_user_id = existing_user_id
+        self.fail_flush = fail_flush
         self.added: list[object] = []
+        self.flushed = False
         self.committed = False
         self.rolled_back = False
 
@@ -80,6 +88,11 @@ class FakeSession:
 
     def add(self, value: object) -> None:
         self.added.append(value)
+
+    def flush(self) -> None:
+        if self.fail_flush:
+            raise RuntimeError("flush failed")
+        self.flushed = True
 
     def commit(self) -> None:
         self.committed = True
@@ -147,6 +160,7 @@ def test_creates_signup_challenge_and_sends_email() -> None:
     )
 
     assert result.accepted is True
+    assert session.flushed is True
     assert session.committed is True
     assert len(email_provider.sent) == 1
     challenge = session.added[0]
@@ -186,6 +200,20 @@ def test_email_provider_failure_rolls_back_and_raises_service_unavailable() -> N
     assert session.committed is False
 
 
+def test_flush_failure_rolls_back_without_sending_email() -> None:
+    email_provider = FakeEmailProvider()
+    session = FakeSession(fail_flush=True)
+
+    with pytest.raises(RuntimeError, match="flush failed"):
+        build_service(email_provider=email_provider).request_signup_otp(
+            session=session, request=signup_request()
+        )
+
+    assert email_provider.sent == []
+    assert session.rolled_back is True
+    assert session.committed is False
+
+
 def test_rate_limit_exceeded_raises_rate_limited() -> None:
     with pytest.raises(NexusError) as exc_info:
         build_service(rate_limiter=FakeRateLimiter(allowed=False)).request_signup_otp(
@@ -193,3 +221,36 @@ def test_rate_limit_exceeded_raises_rate_limited() -> None:
         )
 
     assert exc_info.value.code == ErrorCode.RATE_LIMITED
+
+
+class FakeRedis:
+    def __init__(self, allowed: int = 1) -> None:
+        self.allowed = allowed
+        self.eval_calls: list[tuple[str, int, str, str, str]] = []
+
+    def eval(
+        self,
+        script: str,
+        numkeys: int,
+        key: str,
+        limit: str,
+        window_seconds: str,
+    ) -> int:
+        self.eval_calls.append((script, numkeys, key, limit, window_seconds))
+        return self.allowed
+
+
+def test_redis_rate_limiter_uses_atomic_script() -> None:
+    redis = FakeRedis()
+    limiter = RedisRateLimiter(redis=redis)  # type: ignore[arg-type]
+
+    assert limiter.allow(key="signup-otp:key", limit=5, window_seconds=900) is True
+
+    assert len(redis.eval_calls) == 1
+    script, numkeys, key, limit, window_seconds = redis.eval_calls[0]
+    assert "INCR" in script
+    assert "EXPIRE" in script
+    assert numkeys == 1
+    assert key == "signup-otp:key"
+    assert limit == "5"
+    assert window_seconds == "900"
