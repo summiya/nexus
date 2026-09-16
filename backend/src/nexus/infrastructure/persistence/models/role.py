@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from nexus.infrastructure.persistence.models.organization import Organization
     from nexus.infrastructure.persistence.models.permission import Permission
     from nexus.infrastructure.persistence.models.role_permission import RolePermission
+    from nexus.infrastructure.persistence.models.user import User
+    from nexus.infrastructure.persistence.models.user_role import UserRole
 
 
 class Role(Base):
@@ -68,4 +70,10 @@ class Role(Base):
     )
     permissions: Mapped[list[Permission]] = relationship(
         secondary="role_permissions", back_populates="roles", viewonly=True
+    )
+    user_roles: Mapped[list[UserRole]] = relationship(
+        back_populates="role", cascade="all, delete-orphan"
+    )
+    users: Mapped[list[User]] = relationship(
+        secondary="user_roles", back_populates="roles", viewonly=True
     )
