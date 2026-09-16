@@ -3,10 +3,14 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import pytest
 from fastapi.testclient import TestClient
 
-from nexus.api.auth import get_signup_otp_service
+import nexus.api.auth as auth_module
+from nexus.api.auth import build_email_provider, get_signup_otp_service
 from nexus.application.authentication.signup import SignupOtpRequest
+from nexus.errors import ErrorCode, NexusError
+from nexus.infrastructure.mailer.providers import ResendEmailProvider
 from nexus.main import app
 
 
@@ -69,3 +73,41 @@ def test_signup_endpoint_rejects_client_supplied_purpose(client: TestClient) -> 
 
     assert response.status_code == 422
     assert service.requests == []
+
+
+def test_build_email_provider_uses_resend_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auth_module.settings, "email_provider", "resend")
+    monkeypatch.setattr(
+        auth_module.settings, "email_from_address", "no-reply@example.com"
+    )
+    monkeypatch.setattr(auth_module.settings, "resend_api_key", "test-resend-key")
+
+    provider = build_email_provider()
+
+    assert provider == ResendEmailProvider(
+        api_key="test-resend-key",
+        from_address="no-reply@example.com",
+    )
+
+
+def test_build_email_provider_fails_closed_without_resend_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auth_module.settings, "email_provider", "resend")
+    monkeypatch.setattr(auth_module.settings, "resend_api_key", None)
+
+    with pytest.raises(auth_module.EmailDeliveryError):
+        build_email_provider()
+
+
+def test_get_signup_otp_service_maps_email_configuration_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auth_module.settings, "email_provider", "disabled")
+
+    with pytest.raises(NexusError) as exc_info:
+        get_signup_otp_service()
+
+    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE

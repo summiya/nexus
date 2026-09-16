@@ -110,7 +110,7 @@ def test_signup_request_persists_secure_otp_challenge(
     email_provider = FakeEmailProvider()
     service = SignupOtpService(
         settings=build_settings(),
-        email_provider=email_provider,
+        email_sender=email_provider,
         rate_limiter=AllowingRateLimiter(),
     )
 

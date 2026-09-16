@@ -14,7 +14,7 @@ from nexus.application.authentication.signup import (
 )
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
-from nexus.infrastructure.email import EmailDeliveryError
+from nexus.infrastructure.mailer import EmailDeliveryError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.security.otp import digest_otp, generate_numeric_otp
@@ -108,7 +108,7 @@ def build_service(
 ) -> SignupOtpService:
     return SignupOtpService(
         settings=build_settings(),
-        email_provider=email_provider or FakeEmailProvider(),
+        email_sender=email_provider or FakeEmailProvider(),
         rate_limiter=rate_limiter or FakeRateLimiter(),
     )
 

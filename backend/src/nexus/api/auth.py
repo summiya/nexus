@@ -8,16 +8,15 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from nexus.application.authentication.email import DefaultSignupOtpEmailSender
 from nexus.application.authentication.signup import (
     SignupOtpRequest,
     SignupOtpService,
 )
 from nexus.config.settings import settings
 from nexus.errors import ErrorCode, NexusError
-from nexus.infrastructure.email import (
-    EmailDeliveryError,
-    build_signup_otp_email_provider,
-)
+from nexus.infrastructure.mailer import EmailDeliveryError, EmailProvider
+from nexus.infrastructure.mailer.providers import ResendEmailProvider
 from nexus.infrastructure.persistence.session import get_db_session
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 
@@ -37,9 +36,22 @@ class SignupResponseBody(BaseModel):
     status: str
 
 
+def build_email_provider() -> EmailProvider:
+    if settings.email_provider == "resend":
+        if settings.resend_api_key is None:
+            raise EmailDeliveryError("Resend API key is not configured")
+        return ResendEmailProvider(
+            api_key=settings.resend_api_key,
+            from_address=settings.email_from_address,
+        )
+    if settings.email_provider == "disabled":
+        raise EmailDeliveryError("Email provider is not configured")
+    raise EmailDeliveryError("Unsupported email provider")
+
+
 def get_signup_otp_service() -> SignupOtpService:
     try:
-        email_provider = build_signup_otp_email_provider(settings.email_provider)
+        email_provider = build_email_provider()
     except EmailDeliveryError as exc:
         raise NexusError(
             ErrorCode.SERVICE_UNAVAILABLE,
@@ -49,7 +61,7 @@ def get_signup_otp_service() -> SignupOtpService:
 
     return SignupOtpService(
         settings=settings,
-        email_provider=email_provider,
+        email_sender=DefaultSignupOtpEmailSender(email_provider=email_provider),
         rate_limiter=RedisRateLimiter.from_url(settings.redis_url),
     )
 

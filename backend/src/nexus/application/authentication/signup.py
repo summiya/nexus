@@ -10,10 +10,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from nexus.application.authentication.email import SignupOtpEmailSender
 from nexus.config.settings import Settings
 from nexus.domain.users import normalize_email
 from nexus.errors import ErrorCode, NexusError
-from nexus.infrastructure.email import EmailDeliveryError, SignupOtpEmailProvider
+from nexus.infrastructure.mailer import EmailDeliveryError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.rate_limit import RateLimiter, RateLimitError
@@ -74,11 +75,11 @@ class SignupOtpService:
         self,
         *,
         settings: Settings,
-        email_provider: SignupOtpEmailProvider,
+        email_sender: SignupOtpEmailSender,
         rate_limiter: RateLimiter,
     ) -> None:
         self._settings = settings
-        self._email_provider = email_provider
+        self._email_sender = email_sender
         self._rate_limiter = rate_limiter
 
     def request_signup_otp(
@@ -135,7 +136,7 @@ class SignupOtpService:
         try:
             session.add(challenge)
             session.flush()
-            self._email_provider.send_signup_otp(
+            self._email_sender.send_signup_otp(
                 email=email,
                 otp=otp,
                 expires_at=expires_at,

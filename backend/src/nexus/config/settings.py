@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     signup_otp_rate_limit_max_requests: int = Field(default=5, gt=0)
     email_provider: str = "disabled"
     email_from_address: str = "no-reply@nexus.local"
+    resend_api_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,
