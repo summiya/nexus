@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, DateTime, String, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column, validates
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from nexus.domain.users import normalize_email
 from nexus.infrastructure.persistence.base import Base
+
+if TYPE_CHECKING:
+    from nexus.infrastructure.persistence.models.organization import Organization
 
 
 class User(Base):
@@ -20,6 +24,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     public_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, nullable=False, unique=True, index=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     email: Mapped[str] = mapped_column(
         String(320), nullable=False, unique=True, index=True
@@ -45,6 +55,8 @@ class User(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    organization: Mapped[Organization] = relationship(back_populates="users")
 
     @validates("email")
     def _normalize_email(self, _key: str, value: str) -> str:
