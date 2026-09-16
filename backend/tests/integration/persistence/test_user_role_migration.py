@@ -122,7 +122,25 @@ def insert_role(connection: sa.Connection, organization_id: int, name: str) -> i
     ).scalar_one()
 
 
-def test_upgrade_creates_user_roles_schema(
+def insert_user_role(
+    connection: sa.Connection, organization_id: int, user_id: int, role_id: int
+) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO user_roles (organization_id, user_id, role_id)
+            VALUES (:organization_id, :user_id, :role_id)
+            """
+        ),
+        {
+            "organization_id": organization_id,
+            "user_id": user_id,
+            "role_id": role_id,
+        },
+    )
+
+
+def test_upgrade_creates_tenant_safe_user_roles_schema(
     migrated_database: tuple[Config, Engine],
 ) -> None:
     config, engine = migrated_database
@@ -136,6 +154,7 @@ def test_upgrade_creates_user_roles_schema(
     ]
 
     columns = {column["name"]: column for column in inspector.get_columns("user_roles")}
+    assert columns["organization_id"]["nullable"] is False
     assert columns["user_id"]["nullable"] is False
     assert columns["role_id"]["nullable"] is False
     assert columns["created_at"]["nullable"] is False
@@ -144,55 +163,51 @@ def test_upgrade_creates_user_roles_schema(
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("user_roles")
     }
-    user_fk = foreign_keys["fk_user_roles_user_id_users"]
-    role_fk = foreign_keys["fk_user_roles_role_id_roles"]
+    user_fk = foreign_keys["fk_user_roles_user_organization_users"]
+    role_fk = foreign_keys["fk_user_roles_role_organization_roles"]
 
-    assert user_fk["constrained_columns"] == ["user_id"]
+    assert user_fk["constrained_columns"] == ["user_id", "organization_id"]
     assert user_fk["referred_table"] == "users"
-    assert user_fk["referred_columns"] == ["id"]
+    assert user_fk["referred_columns"] == ["id", "organization_id"]
     assert user_fk["options"] == {"ondelete": "CASCADE"}
 
-    assert role_fk["constrained_columns"] == ["role_id"]
+    assert role_fk["constrained_columns"] == ["role_id", "organization_id"]
     assert role_fk["referred_table"] == "roles"
-    assert role_fk["referred_columns"] == ["id"]
+    assert role_fk["referred_columns"] == ["id", "organization_id"]
     assert role_fk["options"] == {"ondelete": "CASCADE"}
 
 
-def test_postgresql_enforces_user_role_constraints(
+def test_postgresql_enforces_user_role_and_tenant_constraints(
     migrated_database: tuple[Config, Engine],
 ) -> None:
     config, engine = migrated_database
     upgrade(config)
 
     with engine.begin() as connection:
-        organization_id = insert_organization(connection, "user-role")
-        user_id = insert_user(connection, organization_id, "user-role@example.com")
-        role_id = insert_role(connection, organization_id, "Administrator")
-        connection.execute(
-            text("INSERT INTO user_roles (user_id, role_id) VALUES (:user_id, :role_id)"),
-            {"user_id": user_id, "role_id": role_id},
-        )
+        organization_one = insert_organization(connection, "user-role-one")
+        organization_two = insert_organization(connection, "user-role-two")
+        user_id = insert_user(connection, organization_one, "user-role@example.com")
+        role_one = insert_role(connection, organization_one, "Administrator")
+        role_two = insert_role(connection, organization_two, "Administrator")
+        insert_user_role(connection, organization_one, user_id, role_one)
 
     with pytest.raises(IntegrityError), engine.begin() as connection:
-        connection.execute(
-            text("INSERT INTO user_roles (user_id, role_id) VALUES (:user_id, :role_id)"),
-            {"user_id": user_id, "role_id": role_id},
-        )
+        insert_user_role(connection, organization_one, user_id, role_one)
 
     with pytest.raises(IntegrityError), engine.begin() as connection:
-        connection.execute(
-            text("INSERT INTO user_roles (user_id, role_id) VALUES (:user_id, :role_id)"),
-            {"user_id": user_id + 99999, "role_id": role_id},
-        )
+        insert_user_role(connection, organization_one, user_id + 99999, role_one)
 
     with pytest.raises(IntegrityError), engine.begin() as connection:
-        connection.execute(
-            text("INSERT INTO user_roles (user_id, role_id) VALUES (:user_id, :role_id)"),
-            {"user_id": user_id, "role_id": role_id + 99999},
-        )
+        insert_user_role(connection, organization_one, user_id, role_one + 99999)
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        insert_user_role(connection, organization_one, user_id, role_two)
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        insert_user_role(connection, organization_two, user_id, role_two)
 
 
-def test_user_role_foreign_keys_cascade_on_delete(
+def test_user_role_foreign_keys_cascade_from_user_and_role(
     migrated_database: tuple[Config, Engine],
 ) -> None:
     config, engine = migrated_database
@@ -200,16 +215,27 @@ def test_user_role_foreign_keys_cascade_on_delete(
 
     with engine.begin() as connection:
         organization_id = insert_organization(connection, "cascade")
-        user_id = insert_user(connection, organization_id, "cascade@example.com")
-        role_id = insert_role(connection, organization_id, "Operator")
-        connection.execute(
-            text("INSERT INTO user_roles (user_id, role_id) VALUES (:user_id, :role_id)"),
-            {"user_id": user_id, "role_id": role_id},
-        )
-        connection.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_id})
-        remaining = connection.execute(text("SELECT count(*) FROM user_roles")).scalar_one()
+        user_one = insert_user(connection, organization_id, "cascade-one@example.com")
+        user_two = insert_user(connection, organization_id, "cascade-two@example.com")
+        role_one = insert_role(connection, organization_id, "Operator")
+        role_two = insert_role(connection, organization_id, "Reviewer")
+        insert_user_role(connection, organization_id, user_one, role_one)
+        insert_user_role(connection, organization_id, user_two, role_two)
 
-    assert remaining == 0
+        connection.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": user_one})
+        user_assignment = connection.execute(
+            text("SELECT count(*) FROM user_roles WHERE user_id = :user_id"),
+            {"user_id": user_one},
+        ).scalar_one()
+
+        connection.execute(text("DELETE FROM roles WHERE id = :role_id"), {"role_id": role_two})
+        role_assignment = connection.execute(
+            text("SELECT count(*) FROM user_roles WHERE role_id = :role_id"),
+            {"role_id": role_two},
+        ).scalar_one()
+
+    assert user_assignment == 0
+    assert role_assignment == 0
 
 
 def test_user_role_revision_downgrade_preserves_prior_rbac_schema(
