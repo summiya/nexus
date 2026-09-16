@@ -111,6 +111,26 @@ def test_resend_provider_translates_vendor_failure(
         )
 
 
+def test_resend_provider_translates_no_content_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_emails = FakeResendEmails()
+    fake_emails.error = FakeNoContentError("empty response")
+    install_fake_resend(monkeypatch, fake_emails)
+
+    with pytest.raises(EmailDeliveryError):
+        ResendEmailProvider(
+            api_key="test-key",
+            from_address="no-reply@example.com",
+        ).send(
+            EmailMessage(
+                to="person@example.com",
+                subject="Hello",
+                text_body="Plain text",
+            )
+        )
+
+
 def test_resend_provider_does_not_translate_programming_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
