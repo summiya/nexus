@@ -12,30 +12,54 @@ jobs:
   backend-quality:
     name: Backend Quality
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_DB: nexus
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      NEXUS_REQUIRE_POSTGRES_TESTS: "true"
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: nexus
-          POSTGRES_USER: nexus
-          POSTGRES_PASSWORD: nexus
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U nexus -d nexus"
+          --health-cmd "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      APP_DEBUG: "false"
-      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus
-      REDIS_URL: redis://localhost:6379/15
-      CORS_ALLOWED_ORIGINS: '["http://localhost:5173"]'
-      NEXUS_REQUIRE_POSTGRES_TESTS: "true"
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Prepare backend configuration
+        run: |
+          cp .env.example .env
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          env_path = Path(".env")
+          lines = env_path.read_text().splitlines()
+          database_url = (
+              "postgresql://"
+              f"{os.environ['POSTGRES_USER']}:{os.environ['POSTGRES_PASSWORD']}"
+              f"@localhost:5432/{os.environ['POSTGRES_DB']}"
+          )
+
+          env_path.write_text(
+              "\n".join(
+                  f"DATABASE_URL={database_url}"
+                  if line.startswith("DATABASE_URL=")
+                  else line
+                  for line in lines
+              )
+              + "\n"
+          )
+          PY
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -71,6 +95,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Prepare frontend configuration
+        run: cp .env.example .env
       - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -97,9 +123,11 @@ jobs:
         run: npm run test:coverage
       - name: Frontend production build
         working-directory: frontend
-        env:
-          VITE_API_BASE_URL: http://127.0.0.1:8000/api/v1
-        run: npm run build
+        run: |
+          set -a
+          source ../.env
+          set +a
+          npm run build
       - name: Install Playwright browser
         working-directory: frontend
         run: npx playwright install --with-deps chromium
@@ -114,5 +142,7 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+      - name: Prepare Docker configuration
+        run: cp .env.example .env
       - name: Build Docker images
         run: docker compose build
