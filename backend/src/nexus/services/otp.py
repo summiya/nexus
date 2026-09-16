@@ -1,4 +1,4 @@
-"""Reusable OTP verification use case."""
+"""Reusable OTP verification service."""
 
 from __future__ import annotations
 
@@ -8,13 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from nexus.application.authentication.signup import normalize_signup_email
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
+from nexus.ports.repositories.otp_challenge import OtpChallengeRepository
 from nexus.security.otp import digest_otp
 
 OtpPurpose = Literal["signup", "login"]
@@ -40,21 +38,25 @@ class OtpVerificationFailed(Exception):
 class OtpVerificationService:
     """Verify OTP challenges without owning the outer transaction."""
 
-    def __init__(self, *, settings: Settings) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        otp_challenge_repository: OtpChallengeRepository,
+    ) -> None:
         self._settings = settings
+        self._otp_challenge_repository = otp_challenge_repository
 
     def verify(
         self,
         *,
-        session: Session,
         email: str,
         otp: str,
         purpose: OtpPurpose,
     ) -> VerifiedOtpChallenge:
         normalized_email = normalize_signup_email(email)
         self._validate_otp_format(otp)
-        challenge = self._load_latest_challenge_for_update(
-            session=session,
+        challenge = self._otp_challenge_repository.get_latest_for_update(
             email=normalized_email,
             purpose=purpose,
         )
@@ -77,7 +79,6 @@ class OtpVerificationService:
             challenge.attempt_count += 1
             if challenge.attempt_count >= challenge.max_attempts:
                 challenge.locked_at = datetime.now(UTC)
-            session.flush()
             raise OtpVerificationFailed(persist_attempt_state=True)
 
         return VerifiedOtpChallenge(
@@ -92,24 +93,6 @@ class OtpVerificationService:
             or _OTP_RE.fullmatch(otp) is None
         ):
             raise OtpVerificationFailed()
-
-    def _load_latest_challenge_for_update(
-        self,
-        *,
-        session: Session,
-        email: str,
-        purpose: OtpPurpose,
-    ) -> OtpChallenge | None:
-        return session.scalar(
-            select(OtpChallenge)
-            .where(
-                OtpChallenge.email == email,
-                OtpChallenge.purpose == purpose,
-            )
-            .order_by(OtpChallenge.created_at.desc())
-            .limit(1)
-            .with_for_update()
-        )
 
 
 def otp_verification_error() -> NexusError:

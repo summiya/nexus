@@ -9,8 +9,6 @@ import pytest
 from nexus.application.authentication.signup import (
     SignupOtpRequest,
     SignupOtpService,
-    normalize_display_text,
-    normalize_signup_email,
 )
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
@@ -18,6 +16,10 @@ from nexus.infrastructure.mailer import EmailDeliveryError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.security.otp import digest_otp, generate_numeric_otp
+from nexus.services.authentication_validation import (
+    normalize_display_text,
+    normalize_signup_email,
+)
 
 
 def build_settings() -> Settings:
@@ -66,35 +68,10 @@ class FakeRateLimiter:
         return self.allowed
 
 
-class ScalarResult:
-    def __init__(self, value: int | None) -> None:
-        self.value = value
-
-
-class FakeSession:
-    def __init__(
-        self,
-        existing_user_id: int | None = None,
-        *,
-        fail_flush: bool = False,
-    ) -> None:
-        self.existing_user_id = existing_user_id
-        self.fail_flush = fail_flush
-        self.added: list[object] = []
-        self.flushed = False
+class FakeTransaction:
+    def __init__(self) -> None:
         self.committed = False
         self.rolled_back = False
-
-    def scalar(self, _statement: object) -> int | None:
-        return self.existing_user_id
-
-    def add(self, value: object) -> None:
-        self.added.append(value)
-
-    def flush(self) -> None:
-        if self.fail_flush:
-            raise RuntimeError("flush failed")
-        self.flushed = True
 
     def commit(self) -> None:
         self.committed = True
@@ -103,13 +80,45 @@ class FakeSession:
         self.rolled_back = True
 
 
+class FakeUserRepository:
+    def __init__(self, *, existing_user: bool = False) -> None:
+        self.existing_user = existing_user
+
+    def exists_by_email(self, email: str) -> bool:
+        del email
+        return self.existing_user
+
+
+class FakeOtpChallengeRepository:
+    def __init__(
+        self,
+        *,
+        fail_add: bool = False,
+    ) -> None:
+        self.added: list[object] = []
+        self.fail_add = fail_add
+
+    def add(self, value: OtpChallenge) -> None:
+        if self.fail_add:
+            raise RuntimeError("flush failed")
+        self.added.append(value)
+
+
 def build_service(
     *,
     email_provider: FakeEmailProvider | None = None,
     rate_limiter: FakeRateLimiter | None = None,
+    transaction: FakeTransaction | None = None,
+    user_repository: FakeUserRepository | None = None,
+    otp_challenge_repository: FakeOtpChallengeRepository | None = None,
 ) -> SignupOtpService:
     return SignupOtpService(
         settings=build_settings(),
+        transaction=transaction or FakeTransaction(),
+        user_repository=user_repository or FakeUserRepository(),
+        otp_challenge_repository=(
+            otp_challenge_repository or FakeOtpChallengeRepository()
+        ),
         email_sender=email_provider or FakeEmailProvider(),
         rate_limiter=rate_limiter or FakeRateLimiter(),
     )
@@ -155,17 +164,19 @@ def test_otp_generation_and_digest_do_not_store_plaintext() -> None:
 
 def test_creates_signup_challenge_and_sends_email() -> None:
     email_provider = FakeEmailProvider()
-    session = FakeSession()
+    transaction = FakeTransaction()
+    otp_repository = FakeOtpChallengeRepository()
 
-    result = build_service(email_provider=email_provider).request_signup_otp(
-        session=session, request=signup_request()
-    )
+    result = build_service(
+        email_provider=email_provider,
+        transaction=transaction,
+        otp_challenge_repository=otp_repository,
+    ).request_signup_otp(request=signup_request())
 
     assert result.accepted is True
-    assert session.flushed is True
-    assert session.committed is True
+    assert transaction.committed is True
     assert len(email_provider.sent) == 1
-    challenge = session.added[0]
+    challenge = otp_repository.added[0]
     assert isinstance(challenge, OtpChallenge)
     assert challenge.email == "summiya@acme.com"
     assert challenge.purpose == "signup"
@@ -177,49 +188,56 @@ def test_creates_signup_challenge_and_sends_email() -> None:
 
 def test_existing_email_returns_generic_response_without_challenge_or_email() -> None:
     email_provider = FakeEmailProvider()
-    session = FakeSession(existing_user_id=123)
+    transaction = FakeTransaction()
+    otp_repository = FakeOtpChallengeRepository()
 
-    result = build_service(email_provider=email_provider).request_signup_otp(
-        session=session, request=signup_request()
-    )
+    result = build_service(
+        email_provider=email_provider,
+        transaction=transaction,
+        user_repository=FakeUserRepository(existing_user=True),
+        otp_challenge_repository=otp_repository,
+    ).request_signup_otp(request=signup_request())
 
     assert result.accepted is True
-    assert session.added == []
+    assert otp_repository.added == []
     assert email_provider.sent == []
-    assert session.committed is False
+    assert transaction.committed is False
 
 
 def test_email_provider_failure_rolls_back_and_raises_service_unavailable() -> None:
-    session = FakeSession()
+    transaction = FakeTransaction()
 
     with pytest.raises(NexusError) as exc_info:
-        build_service(email_provider=FakeEmailProvider(fail=True)).request_signup_otp(
-            session=session, request=signup_request()
-        )
+        build_service(
+            email_provider=FakeEmailProvider(fail=True),
+            transaction=transaction,
+        ).request_signup_otp(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
-    assert session.rolled_back is True
-    assert session.committed is False
+    assert transaction.rolled_back is True
+    assert transaction.committed is False
 
 
 def test_flush_failure_rolls_back_without_sending_email() -> None:
     email_provider = FakeEmailProvider()
-    session = FakeSession(fail_flush=True)
+    transaction = FakeTransaction()
 
     with pytest.raises(RuntimeError, match="flush failed"):
-        build_service(email_provider=email_provider).request_signup_otp(
-            session=session, request=signup_request()
-        )
+        build_service(
+            email_provider=email_provider,
+            transaction=transaction,
+            otp_challenge_repository=FakeOtpChallengeRepository(fail_add=True),
+        ).request_signup_otp(request=signup_request())
 
     assert email_provider.sent == []
-    assert session.rolled_back is True
-    assert session.committed is False
+    assert transaction.rolled_back is True
+    assert transaction.committed is False
 
 
 def test_rate_limit_exceeded_raises_rate_limited() -> None:
     with pytest.raises(NexusError) as exc_info:
         build_service(rate_limiter=FakeRateLimiter(allowed=False)).request_signup_otp(
-            session=FakeSession(), request=signup_request()
+            request=signup_request()
         )
 
     assert exc_info.value.code == ErrorCode.RATE_LIMITED

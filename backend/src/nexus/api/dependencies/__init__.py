@@ -1,3 +1,5 @@
+"""Shared API dependencies."""
+
 from fastapi import Request
 
 from nexus.events import EventPublisher

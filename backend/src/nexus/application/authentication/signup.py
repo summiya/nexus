@@ -2,28 +2,27 @@
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from nexus.application.authentication.email import SignupOtpEmailSender
 from nexus.config.settings import Settings
-from nexus.domain.users import normalize_email
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.mailer import EmailDeliveryError
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
-from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.rate_limit import RateLimiter, RateLimitError
 from nexus.logging import get_logger
+from nexus.ports.repositories.otp_challenge import OtpChallengeRepository
+from nexus.ports.repositories.user import UserRepository
+from nexus.ports.transaction import TransactionManager
 from nexus.security.otp import digest_otp, generate_numeric_otp, keyed_digest
+from nexus.services.authentication_validation import (
+    normalize_display_text,
+    normalize_signup_email,
+)
 
 logger = get_logger(__name__)
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _SIGNUP_PURPOSE = "signup"
 
 
@@ -40,34 +39,6 @@ class SignupOtpResult:
     accepted: bool = True
 
 
-def normalize_display_text(value: str, field_name: str, *, max_length: int) -> str:
-    normalized = unicodedata.normalize("NFKC", value).strip()
-    if not normalized:
-        raise NexusError(
-            ErrorCode.VALIDATION_ERROR,
-            "The request validation failed.",
-            details={"field": field_name},
-        )
-    if len(normalized) > max_length:
-        raise NexusError(
-            ErrorCode.VALIDATION_ERROR,
-            "The request validation failed.",
-            details={"field": field_name},
-        )
-    return normalized
-
-
-def normalize_signup_email(value: str) -> str:
-    email = normalize_email(value)
-    if len(email) > 320 or _EMAIL_RE.fullmatch(email) is None:
-        raise NexusError(
-            ErrorCode.VALIDATION_ERROR,
-            "The request validation failed.",
-            details={"field": "email"},
-        )
-    return email
-
-
 class SignupOtpService:
     """Orchestrate signup OTP request behavior."""
 
@@ -75,17 +46,22 @@ class SignupOtpService:
         self,
         *,
         settings: Settings,
+        transaction: TransactionManager,
+        user_repository: UserRepository,
+        otp_challenge_repository: OtpChallengeRepository,
         email_sender: SignupOtpEmailSender,
         rate_limiter: RateLimiter,
     ) -> None:
         self._settings = settings
+        self._transaction = transaction
+        self._user_repository = user_repository
+        self._otp_challenge_repository = otp_challenge_repository
         self._email_sender = email_sender
         self._rate_limiter = rate_limiter
 
     def request_signup_otp(
         self,
         *,
-        session: Session,
         request: SignupOtpRequest,
     ) -> SignupOtpResult:
         organization_name = normalize_display_text(
@@ -108,10 +84,7 @@ class SignupOtpService:
 
         self._enforce_rate_limit(email)
 
-        user_exists = (
-            session.scalar(select(User.id).where(User.email == email)) is not None
-        )
-        if user_exists:
+        if self._user_repository.exists_by_email(email):
             logger.info("signup_otp_request_accepted")
             return SignupOtpResult()
 
@@ -134,16 +107,15 @@ class SignupOtpService:
         )
 
         try:
-            session.add(challenge)
-            session.flush()
+            self._otp_challenge_repository.add(challenge)
             self._email_sender.send_signup_otp(
                 email=email,
                 otp=otp,
                 expires_at=expires_at,
             )
-            session.commit()
+            self._transaction.commit()
         except EmailDeliveryError as exc:
-            session.rollback()
+            self._transaction.rollback()
             logger.warning("signup_otp_email_delivery_failed")
             raise NexusError(
                 ErrorCode.SERVICE_UNAVAILABLE,
@@ -151,7 +123,7 @@ class SignupOtpService:
                 retryable=True,
             ) from exc
         except Exception:
-            session.rollback()
+            self._transaction.rollback()
             raise
 
         logger.info("signup_otp_request_accepted")

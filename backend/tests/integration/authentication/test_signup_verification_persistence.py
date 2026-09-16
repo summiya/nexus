@@ -15,11 +15,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.otp_verification import OtpVerificationService
-from nexus.application.authentication.session import (
-    AuthenticationSessionService,
-    SessionTokenResult,
-)
 from nexus.application.authentication.signup_verification import (
     SignupVerificationRequest,
     SignupVerificationService,
@@ -34,8 +29,30 @@ from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.role import Role
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.persistence.models.user_role import UserRole
+from nexus.infrastructure.persistence.repositories.administrator_role import (
+    SqlAlchemyAdministratorRoleProvisioner,
+)
+from nexus.infrastructure.persistence.repositories.auth_session import (
+    SqlAlchemyAuthSessionRepository,
+)
+from nexus.infrastructure.persistence.repositories.organization import (
+    SqlAlchemyOrganizationRepository,
+)
+from nexus.infrastructure.persistence.repositories.otp_challenge import (
+    SqlAlchemyOtpChallengeRepository,
+)
+from nexus.infrastructure.persistence.repositories.user import SqlAlchemyUserRepository
+from nexus.infrastructure.persistence.repositories.user_role import (
+    SqlAlchemyUserRoleRepository,
+)
+from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 from nexus.security.authentication_tokens import AccessTokenService
 from nexus.security.otp import digest_otp
+from nexus.services.authentication_session import (
+    AuthenticationSessionService,
+    SessionTokenResult,
+)
+from nexus.services.otp import OtpVerificationService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 SIGNUP_OTP = "123456"
@@ -119,20 +136,30 @@ class RecordingWelcomeEmailSender:
 
 
 class UnauthorizedSessionService(AuthenticationSessionService):
-    def create_session(self, session: Session, *, user: User) -> SessionTokenResult:
-        del session, user
+    def create_session(self, *, user: User) -> SessionTokenResult:
+        del user
         raise NexusError(ErrorCode.UNAUTHORIZED, "Authentication is required.")
 
 
 def build_service(
+    session: Session,
     *,
     settings_value: Settings | None = None,
     welcome_sender: RecordingWelcomeEmailSender | None = None,
     session_service: AuthenticationSessionService | None = None,
 ) -> SignupVerificationService:
     settings_value = settings_value or build_settings()
+    otp_challenge_repository = SqlAlchemyOtpChallengeRepository(session)
     return SignupVerificationService(
-        otp_verifier=OtpVerificationService(settings=settings_value),
+        transaction=SqlAlchemyTransactionManager(session),
+        user_repository=SqlAlchemyUserRepository(session),
+        organization_repository=SqlAlchemyOrganizationRepository(session),
+        user_role_repository=SqlAlchemyUserRoleRepository(session),
+        administrator_role_provisioner=SqlAlchemyAdministratorRoleProvisioner(session),
+        otp_verifier=OtpVerificationService(
+            settings=settings_value,
+            otp_challenge_repository=otp_challenge_repository,
+        ),
         session_service=session_service
         or AuthenticationSessionService(
             access_token_service=_access_token_service(settings_value),
@@ -140,6 +167,7 @@ def build_service(
             refresh_token_expires_seconds=(
                 settings_value.refresh_token_expires_seconds
             ),
+            auth_session_repository=SqlAlchemyAuthSessionRepository(session),
             clock=lambda: datetime.now(UTC),
         ),
         welcome_email_sender=welcome_sender or RecordingWelcomeEmailSender(),
@@ -147,12 +175,14 @@ def build_service(
 
 
 def build_unauthorized_session_service(
+    session: Session,
     settings_value: Settings,
 ) -> UnauthorizedSessionService:
     return UnauthorizedSessionService(
         access_token_service=_access_token_service(settings_value),
         refresh_token_secret=settings_value.refresh_token_secret,
         refresh_token_expires_seconds=settings_value.refresh_token_expires_seconds,
+        auth_session_repository=SqlAlchemyAuthSessionRepository(session),
         clock=lambda: datetime.now(UTC),
     )
 
@@ -215,13 +245,15 @@ def test_valid_normalized_values_complete_signup(
 ) -> None:
     settings_value = build_settings()
     welcome_sender = RecordingWelcomeEmailSender()
-    service = build_service(
-        settings_value=settings_value, welcome_sender=welcome_sender
-    )
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        result = service.complete_signup(session=session, request=signup_request())
+        service = build_service(
+            session,
+            settings_value=settings_value,
+            welcome_sender=welcome_sender,
+        )
+        result = service.complete_signup(request=signup_request())
 
     with Session(migrated_engine) as session:
         organization = session.scalars(select(Organization)).one()
@@ -274,13 +306,12 @@ def test_blank_signup_profile_values_are_rejected(
     value: str,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
+        service = build_service(session, settings_value=settings_value)
         with pytest.raises(NexusError) as exc_info:
             service.complete_signup(
-                session=session,
                 request=signup_request(**{field: value}),
             )
 
@@ -288,13 +319,9 @@ def test_blank_signup_profile_values_are_rejected(
 
 
 def test_invalid_email_is_rejected(migrated_engine: Engine) -> None:
-    service = build_service()
-
     with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        service.complete_signup(
-            session=session,
-            request=signup_request(email="not-an-email"),
-        )
+        service = build_service(session)
+        service.complete_signup(request=signup_request(email="not-an-email"))
 
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
 
@@ -303,7 +330,6 @@ def test_existing_normalized_email_conflict_does_not_consume_otp_or_create_state
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         organization = Organization(name="Existing", slug="existing")
@@ -315,9 +341,10 @@ def test_existing_normalized_email_conflict_does_not_consume_otp_or_create_state
         session.add_all([organization, user])
         session.commit()
         create_signup_challenge(session, settings_value=settings_value)
+        service = build_service(session, settings_value=settings_value)
 
         with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(session=session, request=signup_request())
+            service.complete_signup(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.CONFLICT
 
@@ -334,15 +361,15 @@ def test_existing_organization_slug_returns_conflict(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         session.add(Organization(name="Acme AI", slug="acme-ai"))
         session.commit()
         create_signup_challenge(session, settings_value=settings_value)
+        service = build_service(session, settings_value=settings_value)
 
         with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(session=session, request=signup_request())
+            service.complete_signup(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.CONFLICT
 
@@ -351,13 +378,12 @@ def test_wrong_otp_persists_attempt_count_without_creating_signup_state(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
+        service = build_service(session, settings_value=settings_value)
         with pytest.raises(NexusError) as exc_info:
             service.complete_signup(
-                session=session,
                 request=signup_request(otp="000000"),
             )
 
@@ -376,7 +402,6 @@ def test_max_attempt_failure_persists_locked_at(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         create_signup_challenge(
@@ -384,9 +409,9 @@ def test_max_attempt_failure_persists_locked_at(
             settings_value=settings_value,
             attempt_count=settings_value.signup_otp_max_attempts - 1,
         )
+        service = build_service(session, settings_value=settings_value)
         with pytest.raises(NexusError) as exc_info:
             service.complete_signup(
-                session=session,
                 request=signup_request(otp="000000"),
             )
 
@@ -406,15 +431,19 @@ def test_unrelated_unauthorized_rolls_back_partial_signup_state(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(
-        settings_value=settings_value,
-        session_service=build_unauthorized_session_service(settings_value),
-    )
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
+        service = build_service(
+            session,
+            settings_value=settings_value,
+            session_service=build_unauthorized_session_service(
+                session,
+                settings_value,
+            ),
+        )
         with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(session=session, request=signup_request())
+            service.complete_signup(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -437,7 +466,6 @@ def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
     challenge_state: str,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(settings_value=settings_value)
 
     with Session(migrated_engine) as session:
         if challenge_state == "expired":
@@ -460,8 +488,9 @@ def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
             )
 
         session.add(Organization(name="Pending", slug="pending"))
+        service = build_service(session, settings_value=settings_value)
         with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(session=session, request=signup_request())
+            service.complete_signup(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -478,14 +507,15 @@ def test_welcome_email_failure_does_not_roll_back_signup(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
-    service = build_service(
-        settings_value=settings_value,
-        welcome_sender=RecordingWelcomeEmailSender(fail=True),
-    )
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        result = service.complete_signup(session=session, request=signup_request())
+        service = build_service(
+            session,
+            settings_value=settings_value,
+            welcome_sender=RecordingWelcomeEmailSender(fail=True),
+        )
+        result = service.complete_signup(request=signup_request())
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(Organization.id))) == 1
