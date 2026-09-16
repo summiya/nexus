@@ -16,12 +16,22 @@ from sqlalchemy.orm import Session
 
 from nexus.application.authentication.session import AuthenticationSessionService
 from nexus.config.settings import settings
+from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
-from nexus.security.authentication_tokens import AccessTokenService
+from nexus.security.authentication_tokens import (
+    AccessTokenError,
+    AccessTokenService,
+    AuthTokenContext,
+)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
+
+
+class FailingAccessTokenService(AccessTokenService):
+    def issue_access_token(self, context: AuthTokenContext) -> str:
+        raise AccessTokenError("access token issuance failed")
 
 
 def normalize_postgresql_driver(database_url: str) -> str:
@@ -73,6 +83,20 @@ def migrated_engine() -> Iterator[Engine]:
 def build_service() -> AuthenticationSessionService:
     return AuthenticationSessionService(
         access_token_service=AccessTokenService(
+            secret="test-auth-token-secret-with-enough-length",
+            expires_seconds=900,
+            issuer="nexus-test",
+            clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
+        ),
+        refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        refresh_token_expires_seconds=2_592_000,
+        clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
+    )
+
+
+def build_failing_service() -> AuthenticationSessionService:
+    return AuthenticationSessionService(
+        access_token_service=FailingAccessTokenService(
             secret="test-auth-token-secret-with-enough-length",
             expires_seconds=900,
             issuer="nexus-test",
@@ -173,3 +197,58 @@ def test_outer_rollback_removes_created_session(migrated_engine: Engine) -> None
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(AuthSession.id))) == 0
+
+
+def test_create_session_token_failure_rolls_back_persisted_session(
+    migrated_engine: Engine,
+) -> None:
+    auth_service = build_failing_service()
+
+    with Session(migrated_engine) as session:
+        user = create_user(session)
+        with pytest.raises(NexusError) as exc_info:
+            auth_service.create_session(session, user=user)
+
+        assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        assert session.scalar(select(func.count(AuthSession.id))) == 0
+
+
+def test_refresh_session_token_failure_rolls_back_rotation(
+    migrated_engine: Engine,
+) -> None:
+    auth_service = build_service()
+    failing_service = build_failing_service()
+
+    with Session(migrated_engine) as session:
+        user = create_user(session)
+        first = auth_service.create_session(session, user=user)
+        session.commit()
+
+    original_hash = auth_service._hash_refresh_token(first.refresh_token)
+
+    with Session(migrated_engine) as session:
+        with pytest.raises(NexusError) as exc_info:
+            failing_service.refresh_session(
+                session,
+                refresh_token=first.refresh_token,
+            )
+
+        assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        auth_session = session.scalars(select(AuthSession)).one()
+        assert auth_session.refresh_token_hash == original_hash
+        assert auth_session.last_used_at is None
+
+    with Session(migrated_engine) as session:
+        refreshed = auth_service.refresh_session(
+            session,
+            refresh_token=first.refresh_token,
+        )
+        session.commit()
+
+    assert refreshed.refresh_token != first.refresh_token
