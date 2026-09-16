@@ -19,9 +19,7 @@ class Organization(Base):
 
     __tablename__ = "organizations"
 
-    id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=True
-    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     public_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, nullable=False, unique=True, index=True, default=uuid.uuid4
     )
