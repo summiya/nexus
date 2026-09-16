@@ -5,5 +5,13 @@ from nexus.infrastructure.persistence.models.permission import Permission
 from nexus.infrastructure.persistence.models.role import Role
 from nexus.infrastructure.persistence.models.role_permission import RolePermission
 from nexus.infrastructure.persistence.models.user import User
+from nexus.infrastructure.persistence.models.user_role import UserRole
 
-__all__ = ["Organization", "Permission", "Role", "RolePermission", "User"]
+__all__ = [
+    "Organization",
+    "Permission",
+    "Role",
+    "RolePermission",
+    "User",
+    "UserRole",
+]
