@@ -61,9 +61,7 @@ def provision_administrator_role(session: Session, organization_id: int) -> Role
     )
     for permission in permissions:
         if permission.id not in existing_permission_ids:
-            session.add(
-                RolePermission(role_id=role.id, permission_id=permission.id)
-            )
+            session.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
     session.flush()
     return role
