@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse
+from nexus.llm.domain import (
+    LLMCompletedEvent,
+    LLMErrorEvent,
+    LLMEvent,
+    LLMRequest,
+    LLMResponse,
+    LLMStartedEvent,
+)
 from nexus.llm.infrastructure.adapters.litellm.errors import (
     LiteLLMExceptionTypes,
     translate_litellm_error,
@@ -14,6 +23,12 @@ from nexus.llm.infrastructure.adapters.litellm.errors import (
 from nexus.llm.infrastructure.adapters.litellm.mapping import (
     to_litellm_payload,
     to_llm_response,
+    to_llm_stream_completed_event,
+    to_llm_stream_text_delta,
+    to_llm_stream_usage_event,
+)
+from nexus.llm.infrastructure.adapters.litellm.tool_call_assembler import (
+    LiteLLMToolCallAssembler,
 )
 
 try:
@@ -36,9 +51,84 @@ class LiteLLMAdapter:
             raise translate_litellm_error(exc, self.client.exception_types) from exc
         return to_llm_response(response)
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
-        del request
-        return _streaming_not_implemented()
+    async def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        """Stream normalized events.
+
+        Error policy:
+        - provider failure before ``LLMStartedEvent`` raises a Nexus LLM error;
+        - provider failure after ``LLMStartedEvent`` yields one ``LLMErrorEvent``;
+        - local mapping/programming errors and cancellation propagate after cleanup.
+        """
+
+        payload = to_litellm_payload(request)
+        upstream: AsyncIterator[object] | None = None
+        completion: LLMCompletedEvent | None = None
+        suppress_cleanup_errors = False
+        assembler = LiteLLMToolCallAssembler()
+
+        try:
+            try:
+                upstream = await self.client.astream(**payload)
+            except self.client.exception_types.provider_failures as exc:
+                raise translate_litellm_error(exc, self.client.exception_types) from exc
+
+            yield LLMStartedEvent()
+            while True:
+                try:
+                    chunk = await anext(upstream)
+                except StopAsyncIteration:
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except self.client.exception_types.provider_failures as exc:
+                    error = translate_litellm_error(
+                        exc,
+                        self.client.exception_types,
+                    )
+                    yield LLMErrorEvent(
+                        kind=error.kind,
+                        message=error.message,
+                        retryable=error.retryable,
+                    )
+                    suppress_cleanup_errors = True
+                    return
+
+                text_delta = to_llm_stream_text_delta(chunk)
+                if text_delta is not None:
+                    yield text_delta
+
+                for event in assembler.process_chunk(chunk):
+                    yield event
+
+                usage = to_llm_stream_usage_event(chunk)
+                if usage is not None:
+                    yield usage
+
+                completion = to_llm_stream_completed_event(chunk)
+                if completion is not None:
+                    for event in assembler.complete():
+                        yield event
+                    break
+
+            if completion is None:
+                for event in assembler.complete():
+                    yield event
+                completion = LLMCompletedEvent()
+
+            upstream_to_close = upstream
+            upstream = None
+            await _close_upstream(
+                upstream_to_close,
+                self.client.exception_types,
+                suppress_errors=False,
+            )
+            yield completion
+        finally:
+            await _close_upstream(
+                upstream,
+                self.client.exception_types,
+                suppress_errors=suppress_cleanup_errors or sys.exception() is not None,
+            )
 
 
 @dataclass(frozen=True)
@@ -55,6 +145,13 @@ class LiteLLMClient:
             raise RuntimeError("LiteLLM dependency is not installed")
         return await module.acompletion(**kwargs)
 
+    async def astream(self, **kwargs: object) -> AsyncIterator[object]:
+        module = litellm
+        if module is None:
+            raise RuntimeError("LiteLLM dependency is not installed")
+        stream = await module.acompletion(**kwargs, stream=True)
+        return stream
+
 
 class _LiteLLMClientProtocol(Protocol):
     @property
@@ -62,7 +159,25 @@ class _LiteLLMClientProtocol(Protocol):
 
     async def acompletion(self, **kwargs: object) -> object: ...
 
+    async def astream(self, **kwargs: object) -> AsyncIterator[object]: ...
 
-async def _streaming_not_implemented() -> AsyncIterator[LLMEvent]:
-    raise NotImplementedError("LiteLLM streaming is not implemented in Phase 2")
-    yield  # pragma: no cover
+
+async def _close_upstream(
+    upstream: AsyncIterator[object] | None,
+    exception_types: LiteLLMExceptionTypes,
+    *,
+    suppress_errors: bool,
+) -> None:
+    if upstream is None:
+        return
+    close = getattr(upstream, "aclose", None)
+    if not callable(close):
+        return
+    try:
+        await close()
+    except asyncio.CancelledError:
+        raise
+    except exception_types.provider_failures as exc:
+        if suppress_errors:
+            return
+        raise translate_litellm_error(exc, exception_types) from exc

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
 
 from nexus.llm.domain import (
     LLMAuthenticationError,
+    LLMCompletedEvent,
+    LLMEvent,
     LLMMessage,
     LLMRequest,
     LLMRole,
+    LLMStartedEvent,
 )
 from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
 from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
@@ -40,6 +44,10 @@ class FakeLiteLLMClient:
         if self.error is not None:
             raise self.error
         return self.response
+
+    async def astream(self, **kwargs: object) -> AsyncIterator[object]:
+        self.calls.append(kwargs)
+        return _empty_provider_stream()
 
 
 def test_litellm_adapter_calls_async_api_and_maps_response() -> None:
@@ -77,15 +85,23 @@ def test_litellm_adapter_translates_provider_errors() -> None:
     assert "api-key-secret" not in exc_info.value.message
 
 
-def test_litellm_adapter_does_not_fake_streaming() -> None:
+def test_litellm_adapter_streams_with_injected_client() -> None:
+    fake_client = FakeLiteLLMClient()
     request = LLMRequest(
         model="gpt-test",
         messages=[LLMMessage(role=LLMRole.USER, content="Hello")],
     )
 
-    async def consume_stream() -> None:
-        async for _event in LiteLLMAdapter().stream(request):
-            pass
+    async def collect_events() -> list[LLMEvent]:
+        return [
+            event async for event in LiteLLMAdapter(client=fake_client).stream(request)
+        ]
 
-    with pytest.raises(NotImplementedError, match="Phase 2"):
-        asyncio.run(consume_stream())
+    events = asyncio.run(collect_events())
+
+    assert events == [LLMStartedEvent(), LLMCompletedEvent()]
+
+
+async def _empty_provider_stream() -> AsyncIterator[object]:
+    if False:
+        yield {}

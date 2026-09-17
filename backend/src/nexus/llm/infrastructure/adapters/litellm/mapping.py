@@ -6,14 +6,17 @@ import json
 from collections.abc import Mapping, Sequence
 
 from nexus.llm.domain import (
+    LLMCompletedEvent,
     LLMFinishReason,
     LLMMessage,
     LLMRequest,
     LLMResponse,
     LLMRole,
+    LLMTextDeltaEvent,
     LLMToolCall,
     LLMToolDefinition,
     LLMUsage,
+    LLMUsageEvent,
 )
 
 type LiteLLMPayload = dict[str, object]
@@ -93,11 +96,11 @@ def _tool_call_from_litellm(tool_call: object) -> LLMToolCall:
     return LLMToolCall(
         id=str(_read(tool_call, "id")),
         name=str(_read(function, "name")),
-        arguments=_tool_call_arguments(arguments),
+        arguments=normalize_tool_call_arguments(arguments),
     )
 
 
-def _tool_call_arguments(value: object) -> dict[str, object]:
+def normalize_tool_call_arguments(value: object) -> dict[str, object]:
     if isinstance(value, Mapping):
         return dict(value)
     if isinstance(value, str):
@@ -108,6 +111,34 @@ def _tool_call_arguments(value: object) -> dict[str, object]:
         if isinstance(decoded, Mapping):
             return dict(decoded)
     return {}
+
+
+def to_llm_stream_text_delta(chunk: object) -> LLMTextDeltaEvent | None:
+    choice = _first_stream_choice(chunk)
+    if choice is None:
+        return None
+    delta = _read(choice, "delta", {})
+    content = _read(delta, "content")
+    if not isinstance(content, str) or not content:
+        return None
+    return LLMTextDeltaEvent(delta=content)
+
+
+def to_llm_stream_usage_event(chunk: object) -> LLMUsageEvent | None:
+    usage = _usage_from_litellm(_read(chunk, "usage"))
+    if usage is None:
+        return None
+    return LLMUsageEvent(usage=usage)
+
+
+def to_llm_stream_completed_event(chunk: object) -> LLMCompletedEvent | None:
+    choice = _first_stream_choice(chunk)
+    if choice is None:
+        return None
+    finish_reason = _read(choice, "finish_reason")
+    if finish_reason is None:
+        return None
+    return LLMCompletedEvent(finish_reason=_finish_reason_from_litellm(finish_reason))
 
 
 def _usage_from_litellm(usage: object) -> LLMUsage | None:
@@ -121,6 +152,13 @@ def _usage_from_litellm(usage: object) -> LLMUsage | None:
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+
+
+def _first_stream_choice(chunk: object) -> object | None:
+    choices = _read(chunk, "choices", [])
+    if not isinstance(choices, Sequence) or not choices:
+        return None
+    return choices[0]
 
 
 def _finish_reason_from_litellm(value: object) -> LLMFinishReason:
