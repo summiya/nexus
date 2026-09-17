@@ -16,6 +16,7 @@ from nexus.llm.domain import (
     LLMRequest,
     LLMResponse,
     LLMStartedEvent,
+    LLMUnknownProviderError,
 )
 from nexus.llm.infrastructure.adapters.litellm.errors import (
     LiteLLMExceptionTypes,
@@ -114,6 +115,16 @@ class LiteLLMAdapter:
 
             for event in assembler.complete():
                 yield event
+
+            if assembler.has_invalid_completion:
+                error = LLMUnknownProviderError("LLM provider returned an invalid tool call")
+                yield LLMErrorEvent(
+                    kind=error.kind,
+                    message=error.message,
+                    retryable=error.retryable,
+                )
+                suppress_cleanup_errors = True
+                return
 
             upstream_to_close = upstream
             upstream = None
