@@ -117,7 +117,9 @@ class LiteLLMAdapter:
                 yield event
 
             if assembler.has_invalid_completion:
-                error = LLMUnknownProviderError("LLM provider returned an invalid tool call")
+                error = LLMUnknownProviderError(
+                    "LLM provider returned an invalid tool call"
+                )
                 yield LLMErrorEvent(
                     kind=error.kind,
                     message=error.message,
