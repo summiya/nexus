@@ -42,11 +42,13 @@ def test_authenticate_rejects_invalid_token_without_exposing_token() -> None:
     with pytest.raises(NexusError) as exc_info:
         service.authenticate(token)
 
-    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+    assert exc_info.value.code == ErrorCode.ACCESS_TOKEN_INVALID
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
     assert token not in str(exc_info.value)
 
 
-def test_authenticate_rejects_expired_token_as_unauthorized() -> None:
+def test_authenticate_rejects_expired_token_with_distinct_error() -> None:
     token_service = _token_service(expired=True)
     token = token_service.issue_access_token(
         AuthTokenContext(
@@ -60,4 +62,6 @@ def test_authenticate_rejects_expired_token_as_unauthorized() -> None:
     with pytest.raises(NexusError) as exc_info:
         service.authenticate(token)
 
-    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+    assert exc_info.value.code == ErrorCode.ACCESS_TOKEN_EXPIRED
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
