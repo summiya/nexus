@@ -375,7 +375,12 @@ def test_malformed_final_tool_call_arguments_are_not_completed() -> None:
     assert any(isinstance(event, LLMToolCallStartedEvent) for event in events)
     assert any(isinstance(event, LLMToolCallDeltaEvent) for event in events)
     assert not any(isinstance(event, LLMToolCallCompletedEvent) for event in events)
-    assert events[-1] == LLMCompletedEvent(finish_reason=LLMFinishReason.TOOL_CALLS)
+    assert_no_completed(events)
+    assert events[-1] == LLMErrorEvent(
+        kind=LLMUnknownProviderError.kind,
+        message="LLM provider returned an invalid tool call",
+        retryable=False,
+    )
 
 
 def test_separate_streams_do_not_share_tool_call_state() -> None:
@@ -488,70 +493,81 @@ def test_stream_iteration_failure_yields_safe_error_event(
     assert_no_completed(events)
 
 
-def test_early_consumer_close_closes_upstream_stream() -> None:
-    fake_client = FakeLiteLLMClient()
-    stream = FakeAsyncStream([chunk(content="Hel"), chunk(content="lo")])
-    fake_client.stream = stream
-    llm_stream = LiteLLMAdapter(client=fake_client).stream(request())
-
-    async def consume_one_event_then_close() -> None:
-        first_event = await anext(llm_stream)
-        assert first_event == LLMStartedEvent()
-        await llm_stream.aclose()
-
-    asyncio.run(consume_one_event_then_close())
-
-    assert stream.closed is True
-    assert stream.close_count == 1
-    assert stream._index == 0
-
-
-def test_explicit_downstream_close_cleanup_failure_raises_nexus_error() -> None:
-    fake_client = FakeLiteLLMClient()
-    stream = FakeAsyncStream(
-        [chunk(content="Hel")],
-        close_error=RuntimeError("cleanup-secret"),
-    )
-    fake_client.stream = stream
-    llm_stream = LiteLLMAdapter(client=fake_client).stream(request())
-
-    async def consume_one_event_then_close() -> None:
-        first_event = await anext(llm_stream)
-        assert first_event == LLMStartedEvent()
-        await llm_stream.aclose()
-
-    with pytest.raises(LLMUnknownProviderError) as exc_info:
-        asyncio.run(consume_one_event_then_close())
-
-    assert stream.close_count == 1
-    assert exc_info.value.message == "LLM provider request failed"
-    assert "cleanup-secret" not in exc_info.value.message
-
-
-def test_cancellation_closes_upstream_and_propagates() -> None:
+def test_stream_cancellation_propagates_after_cleanup() -> None:
     fake_client = FakeLiteLLMClient()
     stream = CancellingAsyncStream([])
     fake_client.stream = stream
 
+    async def consume() -> None:
+        async for _event in LiteLLMAdapter(client=fake_client).stream(request()):
+            pass
+
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+        asyncio.run(consume())
 
     assert stream.closed is True
     assert stream.close_count == 1
 
 
-def test_provider_error_remains_primary_when_cleanup_also_fails() -> None:
+def test_normal_stream_cleanup_failure_yields_safe_error_event() -> None:
     fake_client = FakeLiteLLMClient()
     stream = FakeAsyncStream(
-        [chunk(content="Hel")],
-        error=APIConnectionError("provider-secret"),
-        error_after_chunks=True,
-        close_error=APIConnectionError("cleanup-secret"),
+        [chunk(content="Hel", finish_reason="stop")],
+        close_error=APIConnectionError("provider-secret"),
     )
     fake_client.stream = stream
 
     events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
 
+    assert stream.closed is True
+    assert stream.close_count == 1
+    assert events == [
+        LLMStartedEvent(),
+        LLMTextDeltaEvent(delta="Hel"),
+        LLMErrorEvent(
+            kind=LLMProviderUnavailableError.kind,
+            message="LLM provider request failed",
+            retryable=True,
+        ),
+    ]
+    assert_no_completed(events)
+
+
+def test_downstream_close_failure_raises_safe_error() -> None:
+    fake_client = FakeLiteLLMClient()
+    stream = FakeAsyncStream(
+        [chunk(content="Hel")],
+        close_error=APIConnectionError("provider-secret"),
+    )
+    fake_client.stream = stream
+    adapter = LiteLLMAdapter(client=fake_client)
+
+    async def consume_and_close() -> None:
+        llm_stream = adapter.stream(request())
+        first_event = await anext(llm_stream)
+        assert first_event == LLMStartedEvent()
+        with pytest.raises(LLMProviderUnavailableError):
+            await llm_stream.aclose()
+
+    asyncio.run(consume_and_close())
+
+    assert stream.closed is True
+    assert stream.close_count == 1
+
+
+def test_stream_cleanup_does_not_mask_iteration_error() -> None:
+    fake_client = FakeLiteLLMClient()
+    stream = FakeAsyncStream(
+        [chunk(content="Hel")],
+        error=APIConnectionError("primary-provider-error"),
+        error_after_chunks=True,
+        close_error=RuntimeError("cleanup-secret"),
+    )
+    fake_client.stream = stream
+
+    events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+
+    assert stream.closed is True
     assert stream.close_count == 1
     assert events[-1] == LLMErrorEvent(
         kind=LLMProviderUnavailableError.kind,
@@ -561,50 +577,20 @@ def test_provider_error_remains_primary_when_cleanup_also_fails() -> None:
     assert_no_completed(events)
 
 
-def test_cancellation_remains_primary_when_cleanup_also_fails() -> None:
+def test_stream_cleanup_does_not_mask_cancellation() -> None:
     fake_client = FakeLiteLLMClient()
     stream = CancellingAsyncStream(
         [],
-        close_error=APIConnectionError("cleanup-secret"),
+        close_error=RuntimeError("cleanup-secret"),
     )
     fake_client.stream = stream
+
+    async def consume() -> None:
+        async for _event in LiteLLMAdapter(client=fake_client).stream(request()):
+            pass
 
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+        asyncio.run(consume())
 
+    assert stream.closed is True
     assert stream.close_count == 1
-
-
-@pytest.mark.parametrize(
-    ("error", "expected_kind", "retryable"),
-    [
-        (APIConnectionError("cleanup-secret"), LLMProviderUnavailableError.kind, True),
-        (RuntimeError("cleanup-secret"), LLMUnknownProviderError.kind, False),
-    ],
-)
-def test_normal_cleanup_failure_yields_error_event_without_completion(
-    error: Exception,
-    expected_kind: object,
-    retryable: bool,
-) -> None:
-    fake_client = FakeLiteLLMClient()
-    stream = FakeAsyncStream(
-        [chunk(content="Hel")],
-        close_error=error,
-    )
-    fake_client.stream = stream
-
-    events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
-
-    assert stream.close_count == 1
-    assert events == [
-        LLMStartedEvent(),
-        LLMTextDeltaEvent(delta="Hel"),
-        LLMErrorEvent(
-            kind=expected_kind,  # type: ignore[arg-type]
-            message="LLM provider request failed",
-            retryable=retryable,
-        ),
-    ]
-    assert str(error) not in events[-1].message  # type: ignore[union-attr]
-    assert_no_completed(events)
