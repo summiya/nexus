@@ -270,9 +270,7 @@ def test_stream_maps_tool_call_deltas_and_completion() -> None:
     assert events[4].tool_call.id == "call_1"
     assert events[4].tool_call.name == "search"
     assert events[4].tool_call.arguments == {"query": "nexus"}
-    assert events[5] == LLMCompletedEvent(
-        finish_reason=LLMFinishReason.TOOL_CALLS
-    )
+    assert events[5] == LLMCompletedEvent(finish_reason=LLMFinishReason.TOOL_CALLS)
 
 
 def test_tool_call_arguments_wait_for_stable_identity() -> None:
@@ -377,9 +375,7 @@ def test_malformed_final_tool_call_arguments_are_not_completed() -> None:
     assert any(isinstance(event, LLMToolCallStartedEvent) for event in events)
     assert any(isinstance(event, LLMToolCallDeltaEvent) for event in events)
     assert not any(isinstance(event, LLMToolCallCompletedEvent) for event in events)
-    assert events[-1] == LLMCompletedEvent(
-        finish_reason=LLMFinishReason.TOOL_CALLS
-    )
+    assert events[-1] == LLMCompletedEvent(finish_reason=LLMFinishReason.TOOL_CALLS)
 
 
 def test_separate_streams_do_not_share_tool_call_state() -> None:
