@@ -33,3 +33,7 @@ class LLMResponse:
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls))
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        if self.message.content is None and not self.tool_calls:
+            raise ValueError(
+                "LLM responses without message content must include tool calls"
+            )

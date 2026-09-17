@@ -73,9 +73,57 @@ def test_llm_request_rejects_invalid_core_values(
         LLMRequest(**request_kwargs)  # type: ignore[arg-type]
 
 
-def test_llm_message_rejects_empty_content() -> None:
+def test_normal_user_text_message_is_valid() -> None:
+    message = LLMMessage(role=LLMRole.USER, content="Hello")
+
+    assert message.content == "Hello"
+
+
+def test_normal_assistant_text_message_is_valid() -> None:
+    message = LLMMessage(role=LLMRole.ASSISTANT, content="Hello")
+
+    assert message.content == "Hello"
+
+
+def test_assistant_message_can_omit_text_for_tool_call_response() -> None:
+    tool_call = LLMToolCall(id="call_1", name="search", arguments={"q": "nexus"})
+    response = LLMResponse(
+        message=LLMMessage(role=LLMRole.ASSISTANT),
+        finish_reason=LLMFinishReason.TOOL_CALLS,
+        tool_calls=[tool_call],
+    )
+
+    assert response.message.content is None
+    assert response.tool_calls == (tool_call,)
+
+
+def test_empty_assistant_content_is_normalized_to_absent_text() -> None:
+    message = LLMMessage(role=LLMRole.ASSISTANT, content="")
+
+    assert message.content is None
+
+
+@pytest.mark.parametrize("role", [LLMRole.SYSTEM, LLMRole.USER, LLMRole.TOOL])
+def test_non_assistant_messages_reject_absent_text(role: LLMRole) -> None:
+    kwargs = {"tool_call_id": "call_1"} if role is LLMRole.TOOL else {}
+
     with pytest.raises(ValueError):
-        LLMMessage(role=LLMRole.USER, content="")
+        LLMMessage(role=role, content=None, **kwargs)
+
+
+def test_tool_messages_require_tool_call_id() -> None:
+    with pytest.raises(ValueError):
+        LLMMessage(role=LLMRole.TOOL, content="Tool result")
+
+
+def test_tool_call_id_is_only_valid_for_tool_messages() -> None:
+    with pytest.raises(ValueError):
+        LLMMessage(role=LLMRole.ASSISTANT, content="Hello", tool_call_id="call_1")
+
+
+def test_response_rejects_absent_message_content_without_tool_calls() -> None:
+    with pytest.raises(ValueError):
+        LLMResponse(message=LLMMessage(role=LLMRole.ASSISTANT))
 
 
 def test_llm_usage_rejects_negative_counts() -> None:
