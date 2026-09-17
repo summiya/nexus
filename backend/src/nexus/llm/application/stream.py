@@ -13,6 +13,7 @@ from nexus.llm.ports import LLMGateway
 class Stream:
     gateway: LLMGateway
 
-    async def execute(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
-        async for event in self.gateway.stream(request):
-            yield event
+    def execute(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        """Return the gateway stream directly so downstream close propagates."""
+
+        return self.gateway.stream(request)
