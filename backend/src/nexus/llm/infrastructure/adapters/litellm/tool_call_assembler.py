@@ -17,20 +17,30 @@ from nexus.llm.infrastructure.adapters.litellm.mapping import (
     normalize_tool_call_arguments,
 )
 
+type _ToolCallKey = tuple[str, int | str]
+
 
 @dataclass
 class LiteLLMToolCallAssembler:
     """Reconstruct LiteLLM streamed tool-call fragments for one stream."""
 
-    _states: dict[int, _ToolCallState] = field(default_factory=dict)
+    _states: dict[_ToolCallKey, _ToolCallState] = field(default_factory=dict)
+    _has_invalid_completion: bool = False
+
+    @property
+    def has_invalid_completion(self) -> bool:
+        return self._has_invalid_completion
 
     def process_chunk(self, chunk: object) -> list[LLMEvent]:
         events: list[LLMEvent] = []
         for delta in _tool_call_deltas(chunk):
-            index = _tool_call_index(delta)
-            state = self._states.setdefault(index, _ToolCallState(index=index))
+            key = _tool_call_key(delta)
+            if key is None:
+                continue
+
+            state = self._states.setdefault(key, _ToolCallState())
             state.update(delta)
-            if not state.is_stable:
+            if state.invalid or not state.is_stable:
                 continue
             if not state.started:
                 events.append(
@@ -53,10 +63,14 @@ class LiteLLMToolCallAssembler:
     def complete(self) -> list[LLMToolCallCompletedEvent]:
         events: list[LLMToolCallCompletedEvent] = []
         for state in self._states.values():
+            if state.invalid:
+                self._has_invalid_completion = True
+                continue
             if not state.is_stable:
                 continue
             arguments = _complete_arguments(state.arguments)
             if arguments is None:
+                self._has_invalid_completion = True
                 continue
             events.append(
                 LLMToolCallCompletedEvent(
@@ -72,31 +86,55 @@ class LiteLLMToolCallAssembler:
 
 @dataclass
 class _ToolCallState:
-    index: int
     tool_call_id: str = ""
     name: str = ""
     arguments: str = ""
     pending_argument_deltas: list[str] = field(default_factory=list)
     started: bool = False
+    arguments_seen: bool = False
+    invalid: bool = False
 
     @property
     def is_stable(self) -> bool:
-        return bool(self.tool_call_id and self.name)
+        return bool(self.tool_call_id and self.name and self.arguments_seen)
 
     def update(self, delta: object) -> None:
         tool_call_id = _read(delta, "id")
         if isinstance(tool_call_id, str) and tool_call_id:
+            if self.tool_call_id and tool_call_id != self.tool_call_id:
+                self.invalid = True
+                return
             self.tool_call_id = tool_call_id
 
         function = _read(delta, "function", {})
         name = _read(function, "name")
         if isinstance(name, str) and name:
-            self.name += name
+            if self.started:
+                if name != self.name:
+                    self.invalid = True
+                    return
+            else:
+                self.name = _merge_name_fragment(self.name, name)
 
-        arguments = _read(function, "arguments")
+        arguments_marker = object()
+        arguments = _read(function, "arguments", arguments_marker)
+        if arguments is not arguments_marker:
+            self.arguments_seen = True
         if isinstance(arguments, str) and arguments:
             self.arguments += arguments
             self.pending_argument_deltas.append(arguments)
+
+
+def _merge_name_fragment(current: str, incoming: str) -> str:
+    if not current:
+        return incoming
+    if incoming == current:
+        return current
+    if incoming.startswith(current):
+        return incoming
+    if current.endswith(incoming):
+        return current
+    return current + incoming
 
 
 def _tool_call_deltas(chunk: object) -> list[object]:
@@ -117,9 +155,15 @@ def _first_choice(chunk: object) -> object | None:
     return choices[0]
 
 
-def _tool_call_index(delta: object) -> int:
-    index = _read(delta, "index", 0)
-    return index if isinstance(index, int) else 0
+def _tool_call_key(delta: object) -> _ToolCallKey | None:
+    index = _read(delta, "index")
+    if isinstance(index, int) and index >= 0:
+        return ("index", index)
+
+    tool_call_id = _read(delta, "id")
+    if isinstance(tool_call_id, str) and tool_call_id:
+        return ("id", tool_call_id)
+    return None
 
 
 def _complete_arguments(value: str) -> dict[str, object] | None:
