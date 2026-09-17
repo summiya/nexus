@@ -1,12 +1,30 @@
+from collections.abc import AsyncIterator
 from typing import Annotated
 
+import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from nexus.api.dependencies import get_event_publisher
 from nexus.config.settings import Settings
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
+from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.main import create_app
+
+
+class FakeLLMGateway:
+    async def generate(self, request: LLMRequest) -> LLMResponse:
+        del request
+        raise NotImplementedError
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        del request
+        return _empty_llm_stream()
+
+
+async def _empty_llm_stream() -> AsyncIterator[LLMEvent]:
+    if False:
+        yield LLMStartedEvent()
 
 
 def build_settings(**overrides: object) -> Settings:
@@ -88,6 +106,20 @@ def test_default_event_publisher_is_application_scoped() -> None:
     app = create_app(build_settings())
 
     assert isinstance(app.state.event_publisher, InProcessEventPublisher)
+
+
+def test_llm_gateway_and_use_cases_are_application_scoped() -> None:
+    gateway = FakeLLMGateway()
+    app = create_app(build_settings(), llm_gateway=gateway)
+
+    assert app.state.llm.gateway is gateway
+    assert app.state.llm.generate.gateway is gateway
+    assert app.state.llm.stream.gateway is gateway
+
+
+def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
+    with pytest.raises(ValueError, match="Unsupported LLM gateway configuration"):
+        create_app(build_settings(llm_gateway="unsupported"))
 
 
 def test_event_publisher_can_be_injected_and_resolved_through_fastapi() -> None:

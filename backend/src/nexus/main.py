@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from nexus.api.composition.llm import build_llm_composition
 from nexus.api.router import api_router
 from nexus.config.settings import Settings, settings
 from nexus.errors.handlers import register_exception_handlers
 from nexus.events import EventPublisher, InProcessEventPublisher
+from nexus.llm.ports import LLMGateway
 from nexus.logging import configure_logging, get_logger
 from nexus.middleware import RequestContextMiddleware
 
@@ -27,6 +29,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 def create_app(
     app_settings: Settings = settings,
     event_publisher: EventPublisher | None = None,
+    llm_gateway: LLMGateway | None = None,
 ) -> FastAPI:
     """Compose the NEXUS FastAPI application from approved foundation services."""
     configure_logging(app_settings.log_level)
@@ -40,6 +43,7 @@ def create_app(
     )
 
     app.state.event_publisher = event_publisher or InProcessEventPublisher()
+    app.state.llm = build_llm_composition(app_settings, gateway=llm_gateway)
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=app_settings.api_prefix)
