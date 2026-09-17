@@ -14,12 +14,14 @@ class NexusError(Exception):
         *,
         details: Mapping[str, Any] | None = None,
         retryable: bool = False,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.details = dict(details) if details is not None else None
         self.retryable = retryable
+        self.headers = dict(headers) if headers is not None else None
 
     @property
     def status_code(self) -> int:

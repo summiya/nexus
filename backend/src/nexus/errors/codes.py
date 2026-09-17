@@ -5,6 +5,8 @@ class ErrorCode(StrEnum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     BAD_REQUEST = "BAD_REQUEST"
     UNAUTHORIZED = "UNAUTHORIZED"
+    ACCESS_TOKEN_EXPIRED = "ACCESS_TOKEN_EXPIRED"
+    ACCESS_TOKEN_INVALID = "ACCESS_TOKEN_INVALID"
     FORBIDDEN = "FORBIDDEN"
     NOT_FOUND = "NOT_FOUND"
     CONFLICT = "CONFLICT"
@@ -17,6 +19,8 @@ ERROR_STATUS_CODES: dict[ErrorCode, int] = {
     ErrorCode.VALIDATION_ERROR: 422,
     ErrorCode.BAD_REQUEST: 400,
     ErrorCode.UNAUTHORIZED: 401,
+    ErrorCode.ACCESS_TOKEN_EXPIRED: 401,
+    ErrorCode.ACCESS_TOKEN_INVALID: 401,
     ErrorCode.FORBIDDEN: 403,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.CONFLICT: 409,
@@ -28,11 +32,14 @@ ERROR_STATUS_CODES: dict[ErrorCode, int] = {
 HTTP_STATUS_ERROR_CODES: dict[int, ErrorCode] = {
     status_code: code for code, status_code in ERROR_STATUS_CODES.items()
 }
+HTTP_STATUS_ERROR_CODES[401] = ErrorCode.UNAUTHORIZED
 
 ERROR_DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.VALIDATION_ERROR: "The request validation failed.",
     ErrorCode.BAD_REQUEST: "The request could not be processed.",
     ErrorCode.UNAUTHORIZED: "Authentication is required.",
+    ErrorCode.ACCESS_TOKEN_EXPIRED: "Access token has expired.",
+    ErrorCode.ACCESS_TOKEN_INVALID: "Access token is invalid.",
     ErrorCode.FORBIDDEN: "You are not allowed to perform this action.",
     ErrorCode.NOT_FOUND: "The requested resource was not found.",
     ErrorCode.CONFLICT: "The request conflicts with the current resource state.",

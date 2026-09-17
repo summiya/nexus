@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -24,6 +26,7 @@ def _response(
     code: ErrorCode,
     message: str,
     request: Request,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     body = ErrorResponse(
         error=ErrorBody(
@@ -32,7 +35,11 @@ def _response(
             request_id=_request_id(request),
         )
     )
-    return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
+    return JSONResponse(
+        status_code=status_code,
+        content=body.model_dump(mode="json"),
+        headers=headers,
+    )
 
 
 async def nexus_error_handler(request: Request, exc: NexusError) -> JSONResponse:
@@ -41,6 +48,7 @@ async def nexus_error_handler(request: Request, exc: NexusError) -> JSONResponse
         code=exc.code,
         message=exc.message,
         request=request,
+        headers=exc.headers,
     )
 
 
@@ -54,6 +62,7 @@ async def http_exception_handler(
         code=code,
         message=ERROR_DEFAULT_MESSAGES[code],
         request=request,
+        headers=exc.headers,
     )
 
 
