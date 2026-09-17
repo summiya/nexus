@@ -26,9 +26,7 @@ def build_llm_composition(
     """Build LLM use cases around one shared gateway instance."""
 
     resolved_gateway = (
-        gateway
-        if gateway is not None
-        else create_llm_gateway(app_settings.llm_gateway)
+        gateway if gateway is not None else create_llm_gateway(app_settings.llm_gateway)
     )
     return LLMComposition(
         gateway=resolved_gateway,

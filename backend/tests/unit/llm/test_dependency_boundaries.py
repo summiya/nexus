@@ -11,7 +11,9 @@ def _nexus_imports(path: Path) -> set[str]:
     imports: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names if alias.name.startswith("nexus"))
+            imports.update(
+                alias.name for alias in node.names if alias.name.startswith("nexus")
+            )
         elif (
             isinstance(node, ast.ImportFrom)
             and node.module
