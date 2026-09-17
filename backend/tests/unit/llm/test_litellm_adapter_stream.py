@@ -43,7 +43,7 @@ class FakeLiteLLMClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.stream: FakeAsyncStream | None = FakeAsyncStream([])
-        self.stream_error: Exception | None = None
+        self.stream_error: BaseException | None = None
         self.exception_types = LiteLLMExceptionTypes(
             authentication=(AuthenticationError,),
             provider_unavailable=(APIConnectionError,),
@@ -509,6 +509,21 @@ def test_stream_creation_failure_is_translated_safely(
 
     assert exc_info.value.message == "LLM provider request failed"
     assert str(error) not in exc_info.value.message
+
+
+def test_stream_creation_cancellation_propagates_without_events() -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.stream_error = asyncio.CancelledError()
+    events: list[LLMEvent] = []
+
+    async def consume() -> None:
+        async for event in LiteLLMAdapter(client=fake_client).stream(request()):
+            events.append(event)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(consume())
+
+    assert events == []
 
 
 @pytest.mark.parametrize(

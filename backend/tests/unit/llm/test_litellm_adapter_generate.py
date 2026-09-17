@@ -35,7 +35,7 @@ class FakeLiteLLMClient:
                 }
             ]
         }
-        self.error: Exception | None = None
+        self.error: BaseException | None = None
         self.exception_types = LiteLLMExceptionTypes(
             authentication=(AuthenticationError,)
         )
@@ -84,6 +84,18 @@ def test_litellm_adapter_translates_provider_errors() -> None:
 
     assert exc_info.value.message == "LLM provider request failed"
     assert "api-key-secret" not in exc_info.value.message
+
+
+def test_litellm_adapter_generation_cancellation_propagates() -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.error = asyncio.CancelledError()
+    request = LLMRequest(
+        model="gpt-test",
+        messages=[LLMMessage(role=LLMRole.USER, content="Hello")],
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(LiteLLMAdapter(client=fake_client).generate(request))
 
 
 @pytest.mark.parametrize("arguments", ['{"query"', '["nexus"]'])
