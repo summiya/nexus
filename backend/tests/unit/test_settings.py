@@ -21,6 +21,7 @@ SETTINGS_ENV_KEYS = [
     "REDIS_URL",
     "CORS_ALLOWED_ORIGINS",
     "LOG_LEVEL",
+    "LLM_GATEWAY",
     "OTP_HMAC_SECRET",
     "SIGNUP_OTP_TTL_SECONDS",
     "SIGNUP_OTP_MAX_ATTEMPTS",
@@ -82,6 +83,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.api_prefix == "/api/v1"
     assert settings.cors_allowed_origins == ["http://localhost:5173"]
     assert settings.log_level == "INFO"
+    assert settings.llm_gateway == "litellm"
     assert settings.signup_otp_ttl_seconds == 600
     assert settings.signup_otp_max_attempts == 5
     assert settings.signup_otp_length == 6
@@ -134,6 +136,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/9")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("LLM_GATEWAY", "litellm")
     monkeypatch.setenv("OTP_HMAC_SECRET", "env-secret-value-with-enough-length")
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("EMAIL_FROM_ADDRESS", "no-reply@example.com")
@@ -157,6 +160,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.redis_url == "redis://localhost:6379/9"
     assert reloaded.cors_allowed_origins == ["http://localhost:5173"]
     assert reloaded.log_level == "DEBUG"
+    assert reloaded.llm_gateway == "litellm"
     assert reloaded.otp_hmac_secret == "env-secret-value-with-enough-length"
     assert reloaded.email_provider == "resend"
     assert reloaded.email_from_address == "no-reply@example.com"
@@ -194,6 +198,11 @@ def test_invalid_debug_boolean_fails_validation(monkeypatch, clean_environment) 
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_blank_llm_gateway_fails_validation(clean_environment) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(llm_gateway="")
 
 
 def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:
