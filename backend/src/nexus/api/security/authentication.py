@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from nexus.config.settings import settings
+from nexus.errors import ErrorCode, NexusError
 from nexus.security.authentication_tokens import AccessTokenService, AuthTokenContext
 from nexus.services.access_authentication import AccessAuthenticationService
 
@@ -39,11 +40,10 @@ def get_current_auth_context(
     service: AccessAuthenticationServiceDep,
 ) -> AuthTokenContext:
     if credentials is None:
-        from nexus.errors import ErrorCode, NexusError
-
         raise NexusError(
             ErrorCode.UNAUTHORIZED,
             "Authentication credentials are required.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return service.authenticate(credentials.credentials)
 
