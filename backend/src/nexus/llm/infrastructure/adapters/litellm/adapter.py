@@ -13,6 +13,7 @@ from nexus.llm.domain import (
     LLMError,
     LLMErrorEvent,
     LLMEvent,
+    LLMFinishReason,
     LLMRequest,
     LLMResponse,
     LLMStartedEvent,
@@ -23,6 +24,7 @@ from nexus.llm.infrastructure.adapters.litellm.errors import (
     translate_litellm_error,
 )
 from nexus.llm.infrastructure.adapters.litellm.mapping import (
+    LiteLLMToolCallMappingError,
     to_litellm_payload,
     to_llm_response,
     to_llm_stream_completed_event,
@@ -51,7 +53,12 @@ class LiteLLMAdapter:
             response = await self.client.acompletion(**payload)
         except Exception as exc:
             raise translate_litellm_error(exc, self.client.exception_types) from exc
-        return to_llm_response(response)
+        try:
+            return to_llm_response(response)
+        except LiteLLMToolCallMappingError as exc:
+            raise LLMUnknownProviderError(
+                "LLM provider returned an invalid tool call"
+            ) from exc
 
     async def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
         """Stream normalized events.
@@ -113,10 +120,12 @@ class LiteLLMAdapter:
             if completion is None:
                 completion = LLMCompletedEvent()
 
-            for event in assembler.complete():
-                yield event
+            tool_call_events = assembler.complete()
 
-            if assembler.has_invalid_completion:
+            if assembler.has_invalid_completion or (
+                completion.finish_reason is LLMFinishReason.TOOL_CALLS
+                and not tool_call_events
+            ):
                 error = LLMUnknownProviderError(
                     "LLM provider returned an invalid tool call"
                 )
@@ -127,6 +136,9 @@ class LiteLLMAdapter:
                 )
                 suppress_cleanup_errors = True
                 return
+
+            for event in tool_call_events:
+                yield event
 
             upstream_to_close = upstream
             upstream = None

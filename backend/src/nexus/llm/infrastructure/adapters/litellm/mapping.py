@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 
 from nexus.llm.domain import (
@@ -20,6 +21,10 @@ from nexus.llm.domain import (
 )
 
 type LiteLLMPayload = dict[str, object]
+
+
+class LiteLLMToolCallMappingError(ValueError):
+    """Raised when provider tool-call data cannot satisfy Nexus contracts."""
 
 
 def to_litellm_payload(request: LLMRequest) -> LiteLLMPayload:
@@ -94,23 +99,57 @@ def _tool_call_from_litellm(tool_call: object) -> LLMToolCall:
     function = _read(tool_call, "function", {})
     arguments = _read(function, "arguments", {})
     return LLMToolCall(
-        id=str(_read(tool_call, "id")),
-        name=str(_read(function, "name")),
+        id=_required_tool_call_string(_read(tool_call, "id")),
+        name=_required_tool_call_string(_read(function, "name")),
         arguments=normalize_tool_call_arguments(arguments),
     )
 
 
 def normalize_tool_call_arguments(value: object) -> dict[str, object]:
-    if isinstance(value, Mapping):
-        return dict(value)
     if isinstance(value, str):
         try:
-            decoded = json.loads(value)
-        except json.JSONDecodeError:
-            return {}
-        if isinstance(decoded, Mapping):
-            return dict(decoded)
-    return {}
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise LiteLLMToolCallMappingError(
+                "LiteLLM tool-call arguments are not valid JSON"
+            ) from exc
+    if not isinstance(value, Mapping):
+        raise LiteLLMToolCallMappingError(
+            "LiteLLM tool-call arguments must be a JSON object"
+        )
+    return _normalize_json_object(value)
+
+
+def _normalize_json_object(value: Mapping[object, object]) -> dict[str, object]:
+    normalized: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise LiteLLMToolCallMappingError(
+                "LiteLLM tool-call argument keys must be strings"
+            )
+        normalized[key] = _normalize_json_value(item)
+    return normalized
+
+
+def _normalize_json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+    elif isinstance(value, Mapping):
+        return _normalize_json_object(value)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_normalize_json_value(item) for item in value]
+    raise LiteLLMToolCallMappingError(
+        "LiteLLM tool-call arguments contain a non-JSON value"
+    )
+
+
+def _required_tool_call_string(value: object) -> str:
+    if isinstance(value, str) and value:
+        return value
+    raise LiteLLMToolCallMappingError("LiteLLM tool-call identity is incomplete")
 
 
 def to_llm_stream_text_delta(chunk: object) -> LLMTextDeltaEvent | None:
