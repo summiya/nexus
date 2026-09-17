@@ -10,6 +10,7 @@ from typing import Protocol
 
 from nexus.llm.domain import (
     LLMCompletedEvent,
+    LLMError,
     LLMErrorEvent,
     LLMEvent,
     LLMRequest,
@@ -69,7 +70,7 @@ class LiteLLMAdapter:
         try:
             try:
                 upstream = await self.client.astream(**payload)
-            except self.client.exception_types.provider_failures as exc:
+            except Exception as exc:  # noqa: BLE001 - provider boundary
                 raise translate_litellm_error(exc, self.client.exception_types) from exc
 
             yield LLMStartedEvent()
@@ -80,7 +81,7 @@ class LiteLLMAdapter:
                     break
                 except asyncio.CancelledError:
                     raise
-                except self.client.exception_types.provider_failures as exc:
+                except Exception as exc:  # noqa: BLE001 - provider boundary
                     error = translate_litellm_error(
                         exc,
                         self.client.exception_types,
@@ -104,30 +105,42 @@ class LiteLLMAdapter:
                 if usage is not None:
                     yield usage
 
-                completion = to_llm_stream_completed_event(chunk)
-                if completion is not None:
-                    for event in assembler.complete():
-                        yield event
-                    break
+                chunk_completion = to_llm_stream_completed_event(chunk)
+                if chunk_completion is not None and completion is None:
+                    completion = chunk_completion
 
             if completion is None:
-                for event in assembler.complete():
-                    yield event
                 completion = LLMCompletedEvent()
+
+            for event in assembler.complete():
+                yield event
 
             upstream_to_close = upstream
             upstream = None
-            await _close_upstream(
-                upstream_to_close,
-                self.client.exception_types,
-                suppress_errors=False,
-            )
+            try:
+                await _close_upstream(
+                    upstream_to_close,
+                    self.client.exception_types,
+                    suppress_errors=False,
+                )
+            except LLMError as error:
+                yield LLMErrorEvent(
+                    kind=error.kind,
+                    message=error.message,
+                    retryable=error.retryable,
+                )
+                return
             yield completion
         finally:
+            active_exception = sys.exception()
             await _close_upstream(
                 upstream,
                 self.client.exception_types,
-                suppress_errors=suppress_cleanup_errors or sys.exception() is not None,
+                suppress_errors=suppress_cleanup_errors
+                or (
+                    active_exception is not None
+                    and not isinstance(active_exception, GeneratorExit)
+                ),
             )
 
 
@@ -177,7 +190,7 @@ async def _close_upstream(
         await close()
     except asyncio.CancelledError:
         raise
-    except exception_types.provider_failures as exc:
+    except Exception as exc:  # noqa: BLE001 - provider boundary
         if suppress_errors:
             return
         raise translate_litellm_error(exc, exception_types) from exc

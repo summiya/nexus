@@ -30,6 +30,8 @@ class LiteLLMToolCallAssembler:
             index = _tool_call_index(delta)
             state = self._states.setdefault(index, _ToolCallState(index=index))
             state.update(delta)
+            if not state.is_stable:
+                continue
             if not state.started:
                 events.append(
                     LLMToolCallStartedEvent(
@@ -38,20 +40,20 @@ class LiteLLMToolCallAssembler:
                     )
                 )
                 state.started = True
-            if state.arguments_delta:
+            for arguments_delta in state.pending_argument_deltas:
                 events.append(
                     LLMToolCallDeltaEvent(
                         tool_call_id=state.tool_call_id,
-                        arguments_delta=state.arguments_delta,
+                        arguments_delta=arguments_delta,
                     )
                 )
-                state.arguments_delta = ""
+            state.pending_argument_deltas.clear()
         return events
 
     def complete(self) -> list[LLMToolCallCompletedEvent]:
         events: list[LLMToolCallCompletedEvent] = []
         for state in self._states.values():
-            if not state.started or not state.name:
+            if not state.is_stable:
                 continue
             arguments = _complete_arguments(state.arguments)
             if arguments is None:
@@ -74,15 +76,17 @@ class _ToolCallState:
     tool_call_id: str = ""
     name: str = ""
     arguments: str = ""
-    arguments_delta: str = ""
+    pending_argument_deltas: list[str] = field(default_factory=list)
     started: bool = False
+
+    @property
+    def is_stable(self) -> bool:
+        return bool(self.tool_call_id and self.name)
 
     def update(self, delta: object) -> None:
         tool_call_id = _read(delta, "id")
         if isinstance(tool_call_id, str) and tool_call_id:
             self.tool_call_id = tool_call_id
-        if not self.tool_call_id:
-            self.tool_call_id = f"tool_call_{self.index}"
 
         function = _read(delta, "function", {})
         name = _read(function, "name")
@@ -92,7 +96,7 @@ class _ToolCallState:
         arguments = _read(function, "arguments")
         if isinstance(arguments, str) and arguments:
             self.arguments += arguments
-            self.arguments_delta = arguments
+            self.pending_argument_deltas.append(arguments)
 
 
 def _tool_call_deltas(chunk: object) -> list[object]:
