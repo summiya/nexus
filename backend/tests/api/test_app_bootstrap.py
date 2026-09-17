@@ -9,6 +9,7 @@ from nexus.api.dependencies import get_event_publisher
 from nexus.config.settings import Settings
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
+from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
 from nexus.main import create_app
 
 
@@ -118,7 +119,10 @@ def test_llm_gateway_and_use_cases_are_application_scoped() -> None:
 
 
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
-    with pytest.raises(ValueError, match="Unsupported LLM gateway configuration"):
+    with pytest.raises(
+        UnsupportedLLMGatewayError,
+        match="Unsupported LLM gateway configuration",
+    ):
         create_app(build_settings(llm_gateway="unsupported"))
 
 
