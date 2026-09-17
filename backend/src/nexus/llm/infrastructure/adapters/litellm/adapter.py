@@ -8,6 +8,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
+import litellm
+
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -34,11 +36,6 @@ from nexus.llm.infrastructure.adapters.litellm.mapping import (
 from nexus.llm.infrastructure.adapters.litellm.tool_call_assembler import (
     LiteLLMToolCallAssembler,
 )
-
-try:
-    import litellm  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # pragma: no cover - package metadata declares dependency
-    litellm = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -178,16 +175,10 @@ class LiteLLMClient:
     )
 
     async def acompletion(self, **kwargs: object) -> object:
-        module = litellm
-        if module is None:
-            raise RuntimeError("LiteLLM dependency is not installed")
-        return await module.acompletion(**kwargs)
+        return await litellm.acompletion(**kwargs)
 
     async def astream(self, **kwargs: object) -> AsyncIterator[object]:
-        module = litellm
-        if module is None:
-            raise RuntimeError("LiteLLM dependency is not installed")
-        stream = await module.acompletion(**kwargs, stream=True)
+        stream = await litellm.acompletion(**kwargs, stream=True)
         return stream
 
 

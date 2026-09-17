@@ -40,9 +40,7 @@ class LiteLLMExceptionTypes:
         )
 
     @classmethod
-    def from_module(cls, module: ModuleType | None) -> LiteLLMExceptionTypes:
-        if module is None:
-            return cls()
+    def from_module(cls, module: ModuleType) -> LiteLLMExceptionTypes:
         return cls(
             authentication=_types(module, "AuthenticationError"),
             invalid_request=_types(module, "BadRequestError", "InvalidRequestError"),
@@ -68,6 +66,8 @@ def translate_litellm_error(
 ) -> LLMError:
     if isinstance(exc, exception_types.authentication):
         return LLMAuthenticationError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
+    if isinstance(exc, exception_types.content_rejected):
+        return LLMContentRejectedError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
     if isinstance(exc, exception_types.invalid_request):
         return LLMInvalidRequestError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
     if isinstance(exc, exception_types.rate_limited):
@@ -79,8 +79,6 @@ def translate_litellm_error(
             _SAFE_MESSAGE,
             safe_details=_safe_details(exc),
         )
-    if isinstance(exc, exception_types.content_rejected):
-        return LLMContentRejectedError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
     return LLMUnknownProviderError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
 
 
