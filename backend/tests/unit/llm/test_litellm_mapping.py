@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from nexus.llm.domain import (
     LLMFinishReason,
     LLMMessage,
@@ -11,6 +13,7 @@ from nexus.llm.domain import (
     LLMToolDefinition,
 )
 from nexus.llm.infrastructure.adapters.litellm.mapping import (
+    LiteLLMToolCallMappingError,
     to_litellm_payload,
     to_llm_response,
 )
@@ -45,6 +48,10 @@ def test_maps_messages_model_and_generation_parameters() -> None:
 
 
 def test_maps_tool_definitions_to_litellm_payload() -> None:
+    parameters_schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}},
+    }
     request = LLMRequest(
         model="gpt-test",
         messages=[LLMMessage(role=LLMRole.USER, content="Search")],
@@ -52,10 +59,7 @@ def test_maps_tool_definitions_to_litellm_payload() -> None:
             LLMToolDefinition(
                 name="search",
                 description="Search documents",
-                parameters_schema={
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                },
+                parameters_schema=parameters_schema,
             )
         ],
     )
@@ -75,6 +79,7 @@ def test_maps_tool_definitions_to_litellm_payload() -> None:
             },
         }
     ]
+    assert request.tools[0].parameters_schema == parameters_schema
 
 
 def test_maps_litellm_response_usage_and_finish_reason() -> None:
@@ -173,7 +178,8 @@ def test_maps_json_string_tool_call_arguments() -> None:
     assert not isinstance(mapped.tool_calls[0].arguments, str)
 
 
-def test_malformed_json_tool_call_arguments_become_empty_mapping() -> None:
+@pytest.mark.parametrize("arguments", ['{"query"', '["nexus"]', '"nexus"', "1", "null"])
+def test_invalid_tool_call_arguments_are_rejected(arguments: str) -> None:
     response = {
         "choices": [
             {
@@ -185,7 +191,7 @@ def test_malformed_json_tool_call_arguments_become_empty_mapping() -> None:
                             "id": "call_1",
                             "function": {
                                 "name": "search",
-                                "arguments": '{"query"',
+                                "arguments": arguments,
                             },
                         }
                     ],
@@ -195,12 +201,11 @@ def test_malformed_json_tool_call_arguments_become_empty_mapping() -> None:
         ]
     }
 
-    mapped = to_llm_response(response)
+    with pytest.raises(LiteLLMToolCallMappingError):
+        to_llm_response(response)
 
-    assert mapped.tool_calls[0].arguments == {}
 
-
-def test_non_object_json_tool_call_arguments_become_empty_mapping() -> None:
+def test_maps_multiple_tool_calls_without_provider_object_leakage() -> None:
     response = {
         "choices": [
             {
@@ -212,9 +217,16 @@ def test_non_object_json_tool_call_arguments_become_empty_mapping() -> None:
                             "id": "call_1",
                             "function": {
                                 "name": "search",
-                                "arguments": '["nexus"]',
+                                "arguments": '{"query": "nexus"}',
                             },
-                        }
+                        },
+                        {
+                            "id": "call_2",
+                            "function": {
+                                "name": "lookup",
+                                "arguments": {"id": "42"},
+                            },
+                        },
                     ],
                 },
                 "finish_reason": "tool_calls",
@@ -224,4 +236,35 @@ def test_non_object_json_tool_call_arguments_become_empty_mapping() -> None:
 
     mapped = to_llm_response(response)
 
-    assert mapped.tool_calls[0].arguments == {}
+    assert mapped.tool_calls == (
+        LLMToolCall(id="call_1", name="search", arguments={"query": "nexus"}),
+        LLMToolCall(id="call_2", name="lookup", arguments={"id": "42"}),
+    )
+    assert all(isinstance(tool_call, LLMToolCall) for tool_call in mapped.tool_calls)
+
+
+def test_rejects_nested_provider_objects_in_tool_call_arguments() -> None:
+    provider_object = SimpleNamespace(secret="provider-secret")
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "search",
+                                "arguments": {"provider": provider_object},
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+
+    with pytest.raises(LiteLLMToolCallMappingError):
+        to_llm_response(response)

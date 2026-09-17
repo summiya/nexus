@@ -383,6 +383,60 @@ def test_malformed_final_tool_call_arguments_are_not_completed() -> None:
     )
 
 
+def test_conflicting_tool_call_identity_yields_error_without_completion() -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.stream = FakeAsyncStream(
+        [
+            chunk(
+                tool_calls=[
+                    {
+                        "index": 0,
+                        "id": "call_1",
+                        "function": {"name": "search", "arguments": '{"q"'},
+                    }
+                ]
+            ),
+            chunk(
+                tool_calls=[
+                    {
+                        "index": 0,
+                        "id": "call_2",
+                        "function": {"arguments": ': "nexus"}'},
+                    }
+                ],
+                finish_reason="tool_calls",
+            ),
+        ]
+    )
+
+    events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+
+    assert not any(isinstance(event, LLMToolCallCompletedEvent) for event in events)
+    assert_no_completed(events)
+    assert events[-1] == LLMErrorEvent(
+        kind=LLMUnknownProviderError.kind,
+        message="LLM provider returned an invalid tool call",
+        retryable=False,
+    )
+
+
+def test_tool_call_finish_without_a_valid_call_yields_error() -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.stream = FakeAsyncStream([chunk(finish_reason="tool_calls")])
+
+    events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+
+    assert events == [
+        LLMStartedEvent(),
+        LLMErrorEvent(
+            kind=LLMUnknownProviderError.kind,
+            message="LLM provider returned an invalid tool call",
+            retryable=False,
+        ),
+    ]
+    assert_no_completed(events)
+
+
 def test_separate_streams_do_not_share_tool_call_state() -> None:
     first_client = FakeLiteLLMClient()
     first_client.stream = FakeAsyncStream(

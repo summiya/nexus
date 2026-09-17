@@ -14,6 +14,7 @@ from nexus.llm.domain import (
     LLMRequest,
     LLMRole,
     LLMStartedEvent,
+    LLMUnknownProviderError,
 )
 from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
 from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
@@ -83,6 +84,43 @@ def test_litellm_adapter_translates_provider_errors() -> None:
 
     assert exc_info.value.message == "LLM provider request failed"
     assert "api-key-secret" not in exc_info.value.message
+
+
+@pytest.mark.parametrize("arguments", ['{"query"', '["nexus"]'])
+def test_litellm_adapter_rejects_invalid_tool_call_arguments_safely(
+    arguments: str,
+) -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "search",
+                                "arguments": arguments,
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+    request = LLMRequest(
+        model="gpt-test",
+        messages=[LLMMessage(role=LLMRole.USER, content="Search")],
+    )
+
+    with pytest.raises(LLMUnknownProviderError) as exc_info:
+        asyncio.run(LiteLLMAdapter(client=fake_client).generate(request))
+
+    assert exc_info.value.message == "LLM provider returned an invalid tool call"
+    assert arguments not in exc_info.value.message
 
 
 def test_litellm_adapter_streams_with_injected_client() -> None:
