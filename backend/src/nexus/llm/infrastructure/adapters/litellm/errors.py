@@ -21,12 +21,23 @@ _SAFE_MESSAGE = "LLM provider request failed"
 
 @dataclass(frozen=True)
 class LiteLLMExceptionTypes:
-    authentication: tuple[type[BaseException], ...] = ()
-    invalid_request: tuple[type[BaseException], ...] = ()
-    rate_limited: tuple[type[BaseException], ...] = ()
-    provider_unavailable: tuple[type[BaseException], ...] = ()
-    timeout: tuple[type[BaseException], ...] = ()
-    content_rejected: tuple[type[BaseException], ...] = ()
+    authentication: tuple[type[Exception], ...] = ()
+    invalid_request: tuple[type[Exception], ...] = ()
+    rate_limited: tuple[type[Exception], ...] = ()
+    provider_unavailable: tuple[type[Exception], ...] = ()
+    timeout: tuple[type[Exception], ...] = ()
+    content_rejected: tuple[type[Exception], ...] = ()
+
+    @property
+    def provider_failures(self) -> tuple[type[Exception], ...]:
+        return (
+            self.authentication
+            + self.invalid_request
+            + self.rate_limited
+            + self.provider_unavailable
+            + self.timeout
+            + self.content_rejected
+        )
 
     @classmethod
     def from_module(cls, module: ModuleType | None) -> LiteLLMExceptionTypes:
@@ -73,11 +84,11 @@ def translate_litellm_error(
     return LLMUnknownProviderError(_SAFE_MESSAGE, safe_details=_safe_details(exc))
 
 
-def _types(module: ModuleType, *names: str) -> tuple[type[BaseException], ...]:
-    found: list[type[BaseException]] = []
+def _types(module: ModuleType, *names: str) -> tuple[type[Exception], ...]:
+    found: list[type[Exception]] = []
     for name in names:
         value = getattr(module, name, None)
-        if isinstance(value, type) and issubclass(value, BaseException):
+        if isinstance(value, type) and issubclass(value, Exception):
             found.append(value)
     return tuple(found)
 
