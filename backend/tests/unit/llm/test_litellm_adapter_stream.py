@@ -9,6 +9,7 @@ import pytest
 from nexus.llm.domain import (
     LLMAuthenticationError,
     LLMCompletedEvent,
+    LLMError,
     LLMErrorEvent,
     LLMEvent,
     LLMEventType,
@@ -443,7 +444,7 @@ def test_separate_streams_do_not_share_tool_call_state() -> None:
 )
 def test_stream_creation_failure_is_translated_safely(
     error: Exception,
-    expected_type: type[Exception],
+    expected_type: type[LLMError],
 ) -> None:
     fake_client = FakeLiteLLMClient()
     fake_client.stream_error = error
@@ -451,8 +452,8 @@ def test_stream_creation_failure_is_translated_safely(
     with pytest.raises(expected_type) as exc_info:
         asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
 
-    assert getattr(exc_info.value, "message") == "LLM provider request failed"
-    assert str(error) not in getattr(exc_info.value, "message")
+    assert exc_info.value.message == "LLM provider request failed"
+    assert str(error) not in exc_info.value.message
 
 
 @pytest.mark.parametrize(
