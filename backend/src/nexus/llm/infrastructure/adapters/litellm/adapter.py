@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import importlib
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from types import ModuleType
+from dataclasses import dataclass, field
+from typing import Protocol
 
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse
 from nexus.llm.infrastructure.adapters.litellm.errors import (
     LiteLLMExceptionTypes,
-    load_litellm_exception_types,
     translate_litellm_error,
 )
 from nexus.llm.infrastructure.adapters.litellm.mapping import (
@@ -18,18 +16,24 @@ from nexus.llm.infrastructure.adapters.litellm.mapping import (
     to_llm_response,
 )
 
+try:
+    import litellm  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover - package metadata declares dependency
+    litellm = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class LiteLLMAdapter:
     """Concrete non-streaming LiteLLM implementation of the LLMGateway port."""
 
+    client: _LiteLLMClientProtocol = field(default_factory=lambda: LiteLLMClient())
+
     async def generate(self, request: LLMRequest) -> LLMResponse:
         payload = to_litellm_payload(request)
-        client = _load_litellm_client()
         try:
-            response = await client.acompletion(**payload)
+            response = await self.client.acompletion(**payload)
         except Exception as exc:
-            raise translate_litellm_error(exc, client.exception_types) from exc
+            raise translate_litellm_error(exc, self.client.exception_types) from exc
         return to_llm_response(response)
 
     def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
@@ -38,23 +42,25 @@ class LiteLLMAdapter:
 
 
 @dataclass(frozen=True)
-class _LiteLLMClient:
-    module: ModuleType
-    exception_types: LiteLLMExceptionTypes
+class LiteLLMClient:
+    """Small reusable wrapper around LiteLLM's async completion API."""
+
+    exception_types: LiteLLMExceptionTypes = field(
+        default_factory=lambda: LiteLLMExceptionTypes.from_module(litellm)
+    )
 
     async def acompletion(self, **kwargs: object) -> object:
-        return await self.module.acompletion(**kwargs)
+        module = litellm
+        if module is None:
+            raise RuntimeError("LiteLLM dependency is not installed")
+        return await module.acompletion(**kwargs)
 
 
-def _load_litellm_client() -> _LiteLLMClient:
-    try:
-        module = importlib.import_module("litellm")
-    except ModuleNotFoundError as exc:
-        raise translate_litellm_error(exc, LiteLLMExceptionTypes()) from exc
-    return _LiteLLMClient(
-        module=module,
-        exception_types=load_litellm_exception_types(module),
-    )
+class _LiteLLMClientProtocol(Protocol):
+    @property
+    def exception_types(self) -> LiteLLMExceptionTypes: ...
+
+    async def acompletion(self, **kwargs: object) -> object: ...
 
 
 async def _streaming_not_implemented() -> AsyncIterator[LLMEvent]:

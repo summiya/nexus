@@ -7,6 +7,7 @@ from nexus.llm.domain import (
     LLMMessage,
     LLMRequest,
     LLMRole,
+    LLMToolCall,
     LLMToolDefinition,
 )
 from nexus.llm.infrastructure.adapters.litellm.mapping import (
@@ -141,3 +142,86 @@ def test_maps_assistant_tool_call_only_response() -> None:
     assert mapped.tool_calls[0].id == "call_1"
     assert mapped.tool_calls[0].name == "search"
     assert mapped.tool_calls[0].arguments == {"query": "nexus"}
+    assert isinstance(mapped.tool_calls[0], LLMToolCall)
+
+
+def test_maps_json_string_tool_call_arguments() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "search",
+                                "arguments": '{"query": "nexus"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+
+    mapped = to_llm_response(response)
+
+    assert mapped.tool_calls[0].arguments == {"query": "nexus"}
+    assert not isinstance(mapped.tool_calls[0].arguments, str)
+
+
+def test_malformed_json_tool_call_arguments_become_empty_mapping() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "search",
+                                "arguments": '{"query"',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+
+    mapped = to_llm_response(response)
+
+    assert mapped.tool_calls[0].arguments == {}
+
+
+def test_non_object_json_tool_call_arguments_become_empty_mapping() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "function": {
+                                "name": "search",
+                                "arguments": '["nexus"]',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+
+    mapped = to_llm_response(response)
+
+    assert mapped.tool_calls[0].arguments == {}

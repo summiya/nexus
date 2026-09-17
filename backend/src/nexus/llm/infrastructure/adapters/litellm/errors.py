@@ -28,25 +28,27 @@ class LiteLLMExceptionTypes:
     timeout: tuple[type[BaseException], ...] = ()
     content_rejected: tuple[type[BaseException], ...] = ()
 
-
-def load_litellm_exception_types(module: ModuleType) -> LiteLLMExceptionTypes:
-    return LiteLLMExceptionTypes(
-        authentication=_types(module, "AuthenticationError"),
-        invalid_request=_types(module, "BadRequestError", "InvalidRequestError"),
-        rate_limited=_types(module, "RateLimitError"),
-        provider_unavailable=_types(
-            module,
-            "APIConnectionError",
-            "APIError",
-            "ServiceUnavailableError",
-        ),
-        timeout=_types(module, "Timeout", "TimeoutError", "APITimeoutError"),
-        content_rejected=_types(
-            module,
-            "ContentPolicyViolationError",
-            "ContentFilterError",
-        ),
-    )
+    @classmethod
+    def from_module(cls, module: ModuleType | None) -> LiteLLMExceptionTypes:
+        if module is None:
+            return cls()
+        return cls(
+            authentication=_types(module, "AuthenticationError"),
+            invalid_request=_types(module, "BadRequestError", "InvalidRequestError"),
+            rate_limited=_types(module, "RateLimitError"),
+            provider_unavailable=_types(
+                module,
+                "APIConnectionError",
+                "APIError",
+                "ServiceUnavailableError",
+            ),
+            timeout=_types(module, "Timeout", "TimeoutError", "APITimeoutError"),
+            content_rejected=_types(
+                module,
+                "ContentPolicyViolationError",
+                "ContentFilterError",
+            ),
+        )
 
 
 def translate_litellm_error(

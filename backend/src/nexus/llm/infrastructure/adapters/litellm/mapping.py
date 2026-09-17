@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 
 from nexus.llm.domain import (
@@ -92,8 +93,21 @@ def _tool_call_from_litellm(tool_call: object) -> LLMToolCall:
     return LLMToolCall(
         id=str(_read(tool_call, "id")),
         name=str(_read(function, "name")),
-        arguments=arguments if isinstance(arguments, Mapping) else {"raw": arguments},
+        arguments=_tool_call_arguments(arguments),
     )
+
+
+def _tool_call_arguments(value: object) -> dict[str, object]:
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(decoded, Mapping):
+            return dict(decoded)
+    return {}
 
 
 def _usage_from_litellm(usage: object) -> LLMUsage | None:

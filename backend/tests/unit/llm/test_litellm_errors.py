@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from types import ModuleType
 
 import pytest
 
@@ -13,7 +13,7 @@ from nexus.llm.domain import (
     LLMUnknownProviderError,
 )
 from nexus.llm.infrastructure.adapters.litellm.errors import (
-    load_litellm_exception_types,
+    LiteLLMExceptionTypes,
     translate_litellm_error,
 )
 
@@ -39,14 +39,13 @@ class APIConnectionError(Exception):
 
 
 def exception_types():
-    module = SimpleNamespace(
-        AuthenticationError=AuthenticationError,
-        BadRequestError=BadRequestError,
-        RateLimitError=RateLimitError,
-        Timeout=Timeout,
-        APIConnectionError=APIConnectionError,
-    )
-    return load_litellm_exception_types(module)  # type: ignore[arg-type]
+    module = ModuleType("fake_litellm")
+    module.AuthenticationError = AuthenticationError
+    module.BadRequestError = BadRequestError
+    module.RateLimitError = RateLimitError
+    module.Timeout = Timeout
+    module.APIConnectionError = APIConnectionError
+    return LiteLLMExceptionTypes.from_module(module)
 
 
 @pytest.mark.parametrize(

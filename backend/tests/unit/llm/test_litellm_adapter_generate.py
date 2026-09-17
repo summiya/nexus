@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from typing import Any
 
 import pytest
@@ -13,15 +12,14 @@ from nexus.llm.domain import (
     LLMRole,
 )
 from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
+from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
 
 
 class AuthenticationError(Exception):
     pass
 
 
-class FakeLiteLLMModule:
-    AuthenticationError = AuthenticationError
-
+class FakeLiteLLMClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self.response: object = {
@@ -33,6 +31,9 @@ class FakeLiteLLMModule:
             ]
         }
         self.error: Exception | None = None
+        self.exception_types = LiteLLMExceptionTypes(
+            authentication=(AuthenticationError,)
+        )
 
     async def acompletion(self, **kwargs: object) -> object:
         self.calls.append(kwargs)
@@ -41,27 +42,17 @@ class FakeLiteLLMModule:
         return self.response
 
 
-def install_fake_litellm(
-    monkeypatch: pytest.MonkeyPatch,
-    fake_litellm: FakeLiteLLMModule,
-) -> None:
-    monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
-
-
-def test_litellm_adapter_calls_async_api_and_maps_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_litellm = FakeLiteLLMModule()
-    install_fake_litellm(monkeypatch, fake_litellm)
+def test_litellm_adapter_calls_async_api_and_maps_response() -> None:
+    fake_client = FakeLiteLLMClient()
     request = LLMRequest(
         model="gpt-test",
         messages=[LLMMessage(role=LLMRole.USER, content="Hello")],
         temperature=0.1,
     )
 
-    response = asyncio.run(LiteLLMAdapter().generate(request))
+    response = asyncio.run(LiteLLMAdapter(client=fake_client).generate(request))
 
-    assert fake_litellm.calls == [
+    assert fake_client.calls == [
         {
             "model": "gpt-test",
             "messages": [{"role": "user", "content": "Hello"}],
@@ -71,19 +62,16 @@ def test_litellm_adapter_calls_async_api_and_maps_response(
     assert response.message.content == "Hello"
 
 
-def test_litellm_adapter_translates_provider_errors(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_litellm = FakeLiteLLMModule()
-    fake_litellm.error = AuthenticationError("api-key-secret")
-    install_fake_litellm(monkeypatch, fake_litellm)
+def test_litellm_adapter_translates_provider_errors() -> None:
+    fake_client = FakeLiteLLMClient()
+    fake_client.error = AuthenticationError("api-key-secret")
     request = LLMRequest(
         model="gpt-test",
         messages=[LLMMessage(role=LLMRole.USER, content="Hello")],
     )
 
     with pytest.raises(LLMAuthenticationError) as exc_info:
-        asyncio.run(LiteLLMAdapter().generate(request))
+        asyncio.run(LiteLLMAdapter(client=fake_client).generate(request))
 
     assert exc_info.value.message == "LLM provider request failed"
     assert "api-key-secret" not in exc_info.value.message
