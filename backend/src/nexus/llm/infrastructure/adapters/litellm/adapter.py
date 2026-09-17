@@ -70,7 +70,7 @@ class LiteLLMAdapter:
         try:
             try:
                 upstream = await self.client.astream(**payload)
-            except Exception as exc:  # noqa: BLE001 - provider boundary
+            except Exception as exc:
                 raise translate_litellm_error(exc, self.client.exception_types) from exc
 
             yield LLMStartedEvent()
@@ -190,7 +190,7 @@ async def _close_upstream(
         await close()
     except asyncio.CancelledError:
         raise
-    except Exception as exc:  # noqa: BLE001 - provider boundary
+    except Exception as exc:
         if suppress_errors:
             return
         raise translate_litellm_error(exc, exception_types) from exc
