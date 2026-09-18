@@ -1,6 +1,9 @@
 """NEXUS SQLAlchemy persistence models."""
 
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
+from nexus.infrastructure.persistence.models.conversation import Conversation
+from nexus.infrastructure.persistence.models.generation import Generation
+from nexus.infrastructure.persistence.models.message import Message
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.permission import Permission
@@ -11,6 +14,9 @@ from nexus.infrastructure.persistence.models.user_role import UserRole
 
 __all__ = [
     "AuthSession",
+    "Conversation",
+    "Generation",
+    "Message",
     "Organization",
     "OtpChallenge",
     "Permission",
