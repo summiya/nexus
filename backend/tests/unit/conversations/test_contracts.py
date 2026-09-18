@@ -15,7 +15,6 @@ from nexus.conversations.domain import (
     Message,
 )
 
-
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -109,7 +108,7 @@ def test_message_rejects_empty_content(content: str) -> None:
 
 
 def test_domain_contracts_reject_naive_timestamps() -> None:
-    naive = datetime(2026, 1, 1)
+    naive = TIMESTAMP.replace(tzinfo=None)
 
     with pytest.raises(ValueError, match="timezone-aware"):
         conversation(created_at=naive)
@@ -138,6 +137,21 @@ def test_generation_supports_status_finish_reason_and_usage() -> None:
     assert value.input_tokens == 3
     assert value.output_tokens == 2
     assert value.total_tokens == 5
+
+
+@pytest.mark.parametrize("field", ["started_at", "completed_at"])
+def test_generation_rejects_naive_lifecycle_timestamps(field: str) -> None:
+    values: dict[str, object] = {
+        "public_id": uuid4(),
+        "conversation_public_id": uuid4(),
+        "user_message_public_id": uuid4(),
+        "model": "gpt-test",
+        "status": GenerationStatus.RUNNING,
+        field: TIMESTAMP.replace(tzinfo=None),
+    }
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        Generation(**values)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("status", list(GenerationStatus))
