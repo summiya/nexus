@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -86,6 +87,19 @@ class Generation(Base):
             "conversation_id",
             "created_at",
             "id",
+        ),
+        Index(
+            "ix_generations_user_message",
+            "organization_id",
+            "conversation_id",
+            "user_message_id",
+        ),
+        Index(
+            "ix_generations_assistant_message",
+            "organization_id",
+            "conversation_id",
+            "assistant_message_id",
+            postgresql_where=text("assistant_message_id IS NOT NULL"),
         ),
     )
 

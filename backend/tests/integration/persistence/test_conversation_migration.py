@@ -310,7 +310,33 @@ def test_upgrade_creates_conversation_schema(
         "ix_conversations_project_created_at",
         "ix_messages_conversation_created_at",
         "ix_generations_conversation_created_at",
+        "ix_generations_user_message",
+        "ix_generations_assistant_message",
     }
+    generation_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("generations")
+        if index.get("duplicates_constraint") is None
+    }
+    assert generation_indexes["ix_generations_user_message"]["column_names"] == [
+        "organization_id",
+        "conversation_id",
+        "user_message_id",
+    ]
+    assert generation_indexes["ix_generations_assistant_message"]["column_names"] == [
+        "organization_id",
+        "conversation_id",
+        "assistant_message_id",
+    ]
+    assert (
+        generation_indexes["ix_generations_assistant_message"]["dialect_options"][
+            "postgresql_where"
+        ]
+        .strip()
+        .strip("()")
+        .strip()
+        == "assistant_message_id IS NOT NULL"
+    )
 
     foreign_keys = {
         foreign_key["name"]: foreign_key

@@ -211,9 +211,22 @@ def upgrade() -> None:
         "generations",
         ["organization_id", "conversation_id", "created_at", "id"],
     )
+    op.create_index(
+        "ix_generations_user_message",
+        "generations",
+        ["organization_id", "conversation_id", "user_message_id"],
+    )
+    op.create_index(
+        "ix_generations_assistant_message",
+        "generations",
+        ["organization_id", "conversation_id", "assistant_message_id"],
+        postgresql_where=sa.text("assistant_message_id IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_generations_assistant_message", table_name="generations")
+    op.drop_index("ix_generations_user_message", table_name="generations")
     op.drop_index("ix_generations_conversation_created_at", table_name="generations")
     op.drop_table("generations")
 

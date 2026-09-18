@@ -56,6 +56,7 @@ def test_message_persistence_model_defines_tenant_safe_content_constraints() -> 
 
 def test_generation_persistence_model_defines_usage_and_message_constraints() -> None:
     constraints = Generation.__table__.constraints
+    indexes = {index.name: index for index in Generation.__table__.indexes}
 
     assert Generation.__tablename__ == "generations"
     assert Generation.__table__.c.id.primary_key is True
@@ -78,4 +79,15 @@ def test_generation_persistence_model_defines_usage_and_message_constraints() ->
         isinstance(constraint, ForeignKeyConstraint)
         and constraint.name == "fk_generations_assistant_message_scope_messages"
         for constraint in constraints
+    )
+    assert indexes["ix_generations_user_message"].columns.keys() == [
+        "organization_id",
+        "conversation_id",
+        "user_message_id",
+    ]
+    assert (
+        indexes["ix_generations_assistant_message"]
+        .dialect_options["postgresql"]["where"]
+        .text
+        == "assistant_message_id IS NOT NULL"
     )
