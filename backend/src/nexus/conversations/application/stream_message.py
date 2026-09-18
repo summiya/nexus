@@ -304,6 +304,11 @@ class StreamConversationMessage:
             )
             upstream = self.llm_stream.execute(llm_request)
             first_event = await anext(upstream)
+        except asyncio.CancelledError:
+            await _close_iterator_during_cancellation(upstream)
+            if phase_a_committed:
+                await self._persist_cancelled(request, generation)
+            raise
         except LLMError as exc:
             if phase_a_committed:
                 await self._persist_failure(request, generation, exc.kind.value)
@@ -436,4 +441,14 @@ async def _close_iterator(iterator: AsyncIterator[LLMEvent] | None) -> None:
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001 - upstream cleanup is best effort
+        return
+
+
+async def _close_iterator_during_cancellation(
+    iterator: AsyncIterator[LLMEvent] | None,
+) -> None:
+    """Attempt provider cleanup without replacing the original cancellation."""
+    try:
+        await _close_iterator(iterator)
+    except BaseException:  # noqa: BLE001 - cancellation remains the primary outcome
         return

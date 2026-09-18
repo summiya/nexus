@@ -53,6 +53,7 @@ class FakePersistence:
         self.prepared: list[tuple[Message, Generation]] = []
         self.completed: list[tuple[Message, Generation]] = []
         self.failed: list[Generation] = []
+        self.cancelled: list[Generation] = []
 
     async def create_conversation(self, conversation: Conversation) -> None:
         del conversation
@@ -110,10 +111,8 @@ class FakePersistence:
         organization_public_id: UUID,
         generation: Generation,
     ) -> None:
-        await self.fail_generation(
-            organization_public_id=organization_public_id,
-            generation=generation,
-        )
+        assert organization_public_id == ORG_ID
+        self.cancelled.append(generation)
 
 
 class FakeGateway:
@@ -138,6 +137,30 @@ class FakeGateway:
                 yield event
 
         return events()
+
+
+class CancellationIterator:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def __aiter__(self) -> CancellationIterator:
+        return self
+
+    async def __anext__(self) -> LLMEvent:
+        raise asyncio.CancelledError
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class CancellationGateway(FakeGateway):
+    def __init__(self) -> None:
+        super().__init__()
+        self.iterator = CancellationIterator()
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        del request
+        return self.iterator
 
 
 def make_request() -> StreamConversationMessageRequest:
@@ -210,3 +233,27 @@ def test_provider_failure_before_first_event_becomes_http_error_and_fails_genera
 
     assert exc_info.value.code is ErrorCode.SERVICE_UNAVAILABLE
     assert persistence.failed[0].error_kind == "provider_unavailable"
+
+
+def test_preflight_cancellation_closes_provider_and_persists_cancelled_generation() -> (
+    None
+):
+    persistence = FakePersistence()
+    gateway = CancellationGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=gateway),
+        history_limit=10,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        await service.prepare(make_request())
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+
+    assert gateway.iterator.closed is True
+    assert len(persistence.cancelled) == 1
+    assert persistence.failed == []
+    assert persistence.completed == []

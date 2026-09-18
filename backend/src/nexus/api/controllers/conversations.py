@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from uuid import UUID
 
 from fastapi import APIRouter
-from fastapi.sse import EventSourceResponse, ServerSentEvent
+from fastapi.encoders import jsonable_encoder
+from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
 
 from nexus.api.dependencies.conversations import (
     CreateConversationDep,
@@ -54,13 +56,13 @@ async def create_conversation(
     )
 
 
-@router.post("/{conversation_public_id}/messages", response_class=EventSourceResponse)
+@router.post("/{conversation_public_id}/messages")
 async def stream_conversation_message(
     conversation_public_id: UUID,
     body: CreateMessageRequestBody,
     auth_context: CurrentAuthContextDep,
     service: StreamConversationMessageDep,
-) -> AsyncIterator[ServerSentEvent]:
+) -> EventSourceResponse:
     prepared = await service.prepare(
         StreamConversationMessageRequest(
             organization_public_id=auth_context.organization_public_id,
@@ -71,11 +73,21 @@ async def stream_conversation_message(
         )
     )
 
-    try:
-        async for event in prepared:
-            yield _to_server_sent_event(event)
-    finally:
-        await prepared.aclose()
+    async def events() -> AsyncIterator[bytes]:
+        try:
+            async for event in prepared:
+                server_event = _to_server_sent_event(event)
+                yield format_sse_event(
+                    data_str=json.dumps(jsonable_encoder(server_event.data)),
+                    event=server_event.event,
+                    id=server_event.id,
+                    retry=server_event.retry,
+                    comment=server_event.comment,
+                )
+        finally:
+            await prepared.aclose()
+
+    return EventSourceResponse(events())
 
 
 def _to_server_sent_event(event: ConversationEvent) -> ServerSentEvent:
