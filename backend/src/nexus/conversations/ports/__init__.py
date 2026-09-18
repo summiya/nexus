@@ -5,6 +5,7 @@ from nexus.conversations.ports.repositories import (
     ConversationPersistenceError,
     ConversationReferenceError,
     ConversationRepository,
+    ConversationRepositoryError,
     GenerationRepository,
     MessageRepository,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "ConversationPersistenceError",
     "ConversationReferenceError",
     "ConversationRepository",
+    "ConversationRepositoryError",
     "GenerationRepository",
     "MessageRepository",
 ]

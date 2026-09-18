@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -18,6 +19,7 @@ from nexus.conversations.domain import (
     Message,
 )
 from nexus.conversations.ports.repositories import (
+    ConversationEntityNotFoundError,
     ConversationReferenceError,
 )
 from nexus.infrastructure.persistence.models.conversation import (
@@ -26,6 +28,7 @@ from nexus.infrastructure.persistence.models.conversation import (
 from nexus.infrastructure.persistence.models.generation import (
     Generation as GenerationModel,
 )
+from nexus.infrastructure.persistence.models.message import Message as MessageModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.persistence.repositories.conversation import (
@@ -182,6 +185,28 @@ def test_conversation_repository_preserves_scopes_and_tenant_identity(
     assert wrong_tenant is None
 
 
+def test_conversation_repository_rejects_creator_from_another_tenant(
+    migrated_engine: Engine,
+) -> None:
+    organization_a, _ = seed_identity(migrated_engine)
+    _organization_b, user_b = seed_identity(migrated_engine)
+    conversation = make_conversation(organization_a, user_b)
+
+    with Session(migrated_engine) as session, pytest.raises(ConversationReferenceError):
+        SqlAlchemyConversationRepository(session).add(conversation)
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(ConversationModel.id)).where(
+                    ConversationModel.public_id == conversation.public_id
+                )
+            )
+            == 0
+        )
+
+
 def test_message_repository_returns_most_recent_messages_in_chronological_order(
     migrated_engine: Engine,
 ) -> None:
@@ -269,6 +294,36 @@ def test_message_history_is_tenant_scoped_and_session_independent(
         )
 
     assert returned == [message]
+
+
+def test_message_repository_rejects_conversation_from_another_tenant(
+    migrated_engine: Engine,
+) -> None:
+    organization_a, _ = seed_identity(migrated_engine)
+    organization_b, user_b = seed_identity(migrated_engine)
+    conversation = make_conversation(organization_b, user_b)
+    message = make_message(conversation.public_id, "other tenant")
+
+    with Session(migrated_engine) as session:
+        SqlAlchemyConversationRepository(session).add(conversation)
+        session.commit()
+
+    with Session(migrated_engine) as session, pytest.raises(ConversationReferenceError):
+        SqlAlchemyMessageRepository(session).add(
+            organization_public_id=organization_a,
+            message=message,
+        )
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(MessageModel.id)).where(
+                    MessageModel.public_id == message.public_id
+                )
+            )
+            == 0
+        )
 
 
 def test_generation_repository_persists_lifecycle_and_usage(
@@ -384,6 +439,153 @@ def test_generation_rejects_cross_tenant_message_reference(
             organization_public_id=first_organization_id,
             generation=make_generation(first.public_id, message.public_id),
         )
+
+
+def test_generation_update_rejects_another_tenant_without_leaking_state(
+    migrated_engine: Engine,
+) -> None:
+    organization_a, user_a = seed_identity(migrated_engine)
+    organization_b, _ = seed_identity(migrated_engine)
+    conversation = make_conversation(organization_a, user_a)
+    user_message = make_message(conversation.public_id, "request")
+    generation = make_generation(conversation.public_id, user_message.public_id)
+
+    with Session(migrated_engine) as session:
+        SqlAlchemyConversationRepository(session).add(conversation)
+        SqlAlchemyMessageRepository(session).add(
+            organization_public_id=organization_a,
+            message=user_message,
+        )
+        SqlAlchemyGenerationRepository(session).add(
+            organization_public_id=organization_a,
+            generation=generation,
+        )
+        session.commit()
+
+    attempted_update = replace(
+        generation,
+        status=GenerationStatus.RUNNING,
+        started_at=TIMESTAMP,
+    )
+    with (
+        Session(migrated_engine) as session,
+        pytest.raises(ConversationEntityNotFoundError),
+    ):
+        SqlAlchemyGenerationRepository(session).update(
+            organization_public_id=organization_b,
+            generation=attempted_update,
+        )
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        stored = session.scalars(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        ).one()
+    assert stored.status == GenerationStatus.PENDING.value
+    assert stored.started_at is None
+
+
+def test_generation_repository_persists_failed_lifecycle(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = seed_identity(migrated_engine)
+    conversation = make_conversation(organization_public_id, user_public_id)
+    user_message = make_message(conversation.public_id, "request")
+    generation = make_generation(conversation.public_id, user_message.public_id)
+
+    with Session(migrated_engine) as session:
+        SqlAlchemyConversationRepository(session).add(conversation)
+        SqlAlchemyMessageRepository(session).add(
+            organization_public_id=organization_public_id,
+            message=user_message,
+        )
+        SqlAlchemyGenerationRepository(session).add(
+            organization_public_id=organization_public_id,
+            generation=generation,
+        )
+        session.commit()
+
+    failed = replace(
+        generation,
+        status=GenerationStatus.FAILED,
+        started_at=TIMESTAMP,
+        completed_at=TIMESTAMP + timedelta(seconds=1),
+        error_kind="provider_timeout",
+    )
+    with Session(migrated_engine) as session:
+        SqlAlchemyGenerationRepository(session).update(
+            organization_public_id=organization_public_id,
+            generation=failed,
+        )
+        session.commit()
+
+    with Session(migrated_engine) as session:
+        stored = session.scalars(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        ).one()
+    assert stored.status == GenerationStatus.FAILED.value
+    assert stored.error_kind == "provider_timeout"
+    assert stored.started_at == TIMESTAMP
+    assert stored.completed_at == TIMESTAMP + timedelta(seconds=1)
+
+
+def test_generation_update_rejects_assistant_message_from_another_conversation(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = seed_identity(migrated_engine)
+    first = make_conversation(organization_public_id, user_public_id)
+    second = make_conversation(organization_public_id, user_public_id)
+    user_message = make_message(first.public_id, "request")
+    assistant_message = make_message(
+        second.public_id,
+        "response",
+        role=ConversationMessageRole.ASSISTANT,
+    )
+    generation = make_generation(first.public_id, user_message.public_id)
+
+    with Session(migrated_engine) as session:
+        conversation_repository = SqlAlchemyConversationRepository(session)
+        conversation_repository.add(first)
+        conversation_repository.add(second)
+        message_repository = SqlAlchemyMessageRepository(session)
+        message_repository.add(
+            organization_public_id=organization_public_id,
+            message=user_message,
+        )
+        message_repository.add(
+            organization_public_id=organization_public_id,
+            message=assistant_message,
+        )
+        SqlAlchemyGenerationRepository(session).add(
+            organization_public_id=organization_public_id,
+            generation=generation,
+        )
+        session.commit()
+
+    attempted_update = replace(
+        generation,
+        assistant_message_public_id=assistant_message.public_id,
+        status=GenerationStatus.COMPLETED,
+        completed_at=TIMESTAMP,
+    )
+    with Session(migrated_engine) as session, pytest.raises(ConversationReferenceError):
+        SqlAlchemyGenerationRepository(session).update(
+            organization_public_id=organization_public_id,
+            generation=attempted_update,
+        )
+        session.rollback()
+
+    with Session(migrated_engine) as session:
+        stored = session.scalars(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        ).one()
+    assert stored.assistant_message_id is None
 
 
 def test_repository_add_does_not_commit_and_outer_rollback_removes_rows(
