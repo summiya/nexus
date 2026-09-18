@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from nexus.api.composition.conversations import build_conversation_composition
 from nexus.api.composition.llm import build_llm_composition
 from nexus.api.router import api_router
 from nexus.config.settings import Settings, settings
@@ -44,6 +45,10 @@ def create_app(
 
     app.state.event_publisher = event_publisher or InProcessEventPublisher()
     app.state.llm = build_llm_composition(app_settings, gateway=llm_gateway)
+    app.state.conversations = build_conversation_composition(
+        app_settings,
+        llm_stream=app.state.llm.stream,
+    )
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=app_settings.api_prefix)
