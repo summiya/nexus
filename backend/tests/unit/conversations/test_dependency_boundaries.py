@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+
+DOMAIN_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "nexus"
+    / "conversations"
+    / "domain"
+)
+
+FORBIDDEN_IMPORTS = (
+    "alembic",
+    "anthropic",
+    "azure.ai",
+    "fastapi",
+    "google.generativeai",
+    "google.genai",
+    "litellm",
+    "nexus.api",
+    "nexus.infrastructure",
+    "nexus.llm",
+    "openai",
+    "pydantic",
+    "redis",
+    "sqlalchemy",
+    "starlette",
+)
+
+
+def _python_files() -> list[Path]:
+    return sorted(DOMAIN_ROOT.rglob("*.py"))
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    return imports
+
+
+def test_conversation_domain_has_no_infrastructure_or_transport_dependencies() -> None:
+    for path in _python_files():
+        imports = _imports(path)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in FORBIDDEN_IMPORTS
+        ), path
