@@ -27,7 +27,9 @@ class FakePreparedStream:
 
     def __aiter__(self) -> AsyncIterator[ConversationEvent]:
         async def events() -> AsyncIterator[ConversationEvent]:
-            yield GenerationStarted(self.conversation_id, self.generation_id, "gpt-test")
+            yield GenerationStarted(
+                self.conversation_id, self.generation_id, "gpt-test"
+            )
             yield MessageDelta(self.conversation_id, self.generation_id, "Hello")
             yield GenerationCompleted(
                 self.conversation_id,
@@ -66,8 +68,8 @@ def test_message_endpoint_uses_native_sse_and_maps_application_events() -> None:
         organization_public_id=organization_id,
         session_public_id=uuid4(),
     )
-    app.dependency_overrides[get_stream_conversation_message] = (
-        lambda: FakeConversationStreamService()
+    app.dependency_overrides[get_stream_conversation_message] = lambda: (
+        FakeConversationStreamService()
     )
 
     with TestClient(app) as client:

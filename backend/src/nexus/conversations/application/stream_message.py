@@ -261,7 +261,9 @@ class StreamConversationMessage:
             conversation.workspace_public_id is None
             and conversation.created_by_user_public_id != request.user_public_id
         ):
-            raise NexusError(ErrorCode.NOT_FOUND, "The requested resource was not found.")
+            raise NexusError(
+                ErrorCode.NOT_FOUND, "The requested resource was not found."
+            )
         if conversation.workspace_public_id is not None:
             raise NexusError(
                 ErrorCode.FORBIDDEN,
@@ -313,7 +315,9 @@ class StreamConversationMessage:
             ) from exc
         except StopAsyncIteration as exc:
             if phase_a_committed:
-                await self._persist_failure(request, generation, "empty_provider_stream")
+                await self._persist_failure(
+                    request, generation, "empty_provider_stream"
+                )
             await _close_iterator(upstream)
             raise NexusError(
                 ErrorCode.SERVICE_UNAVAILABLE,

@@ -63,7 +63,10 @@ class FakePersistence:
         organization_public_id: UUID,
         conversation_public_id: UUID,
     ) -> Conversation | None:
-        if organization_public_id != ORG_ID or conversation_public_id != CONVERSATION_ID:
+        if (
+            organization_public_id != ORG_ID
+            or conversation_public_id != CONVERSATION_ID
+        ):
             return None
         return self.conversation
 
@@ -178,7 +181,9 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     assert persistence.completed[0][0].content == "Hello"
 
 
-def test_provider_failure_before_first_event_becomes_http_error_and_fails_generation() -> None:
+def test_provider_failure_before_first_event_becomes_http_error_and_fails_generation() -> (
+    None
+):
     class FailingGateway(FakeGateway):
         def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
             del request
