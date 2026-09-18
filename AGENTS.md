@@ -659,6 +659,253 @@ Before declaring a frontend task complete, verify:
 - [ ] Production build passes.
 - [ ] No debug code or unrelated changes remain.
 
-## 21. Golden Rule
+## 21. Source of Truth and Current Repository Reality
+
+The current repository implementation is the primary source of truth for code structure, supported commands, and established patterns.
+
+Older planning documents may describe intended or historical structures. Before following a path, abstraction, command, or architectural pattern from documentation, verify that it matches the current repository.
+
+Current backend code and tests live under:
+
+```text
+backend/src/nexus/
+backend/tests/
+```
+
+**MUST NOT:** Create missing folders, abstractions, services, or layers only because an older document describes them.
+
+**MUST:** Reconcile task requirements with the actual current implementation before coding.
+
+When documentation and current approved implementation differ, preserve the current approved implementation unless the task explicitly requires changing it.
+
+## 22. Engineering Principles for Every Change
+
+Apply these principles pragmatically to every task:
+
+- SOLID
+- KISS
+- YAGNI
+- DRY without premature abstraction
+- Separation of Concerns
+- Dependency Inversion
+- Composition over Inheritance
+- Explicit over Implicit
+- Fail Fast
+- Strong Typing
+- Secure by Design
+- Defense in Depth
+- Least Privilege
+- Tenant Isolation where applicable
+- Data Integrity
+- Testability
+- Maintainability
+- Scalability
+
+SOLID does **not** mean creating more classes, interfaces, factories, or layers.
+
+**MUST NOT** introduce abstractions such as generic repositories, base services, factories, registries, service locators, DI frameworks, Unit of Work frameworks, command buses, mediator layers, generic mappers, or similar patterns unless they solve a concrete current Nexus requirement.
+
+Prefer the smallest architecture that keeps responsibilities and dependency boundaries clear.
+
+## 23. Task and Phase Discipline
+
+The user/task prompt defines the immediate scope. This file defines the default engineering workflow.
+
+### Plan-only tasks
+
+If the task says PLAN ONLY, DESIGN ONLY, REVIEW ONLY, or equivalent:
+
+- inspect the repository;
+- analyze the problem;
+- return the plan/review;
+- do not modify files;
+- do not create a branch;
+- do not commit;
+- do not push;
+- do not create a PR.
+
+### Implementation tasks
+
+When implementation is approved:
+
+1. Verify the required prerequisite work is already on the intended base branch.
+2. Sync the latest base branch, normally `main`.
+3. Create or use the explicitly requested task/phase branch.
+4. Implement only the approved task or phase.
+5. Add/update tests.
+6. Run focused validation while developing.
+7. Run the repository-standard final validation.
+8. Inspect the complete final diff.
+9. Perform architecture, security, maintainability, and scope review.
+10. Commit.
+11. Push.
+12. Create or update the PR.
+13. Stop at the requested phase boundary.
+
+**MUST NOT:** Start the next Jira phase, feature, cleanup, or refactor unless explicitly requested.
+
+**MUST NOT:** Merge a PR unless the user explicitly asks to merge it.
+
+If a foundational defect is inside the current task scope, fix it now rather than deliberately leaving known bad foundations for later.
+
+If an unrelated issue is discovered, report it instead of silently expanding scope.
+
+## 24. Git and Pull Request Workflow
+
+For normal implementation work:
+
+- Start from the latest intended base branch.
+- Keep one task/phase on one focused branch unless instructed otherwise.
+- Do not discard or overwrite unrelated local/user work.
+- Do not force-push or rewrite shared history unless explicitly required.
+- Do not mix unrelated cleanup into a feature PR.
+- Inspect `git status`, the complete diff, and `git diff --check` before completion.
+- Push the final validated branch.
+- Create or update the requested PR.
+- Do not merge without explicit user instruction.
+
+PR descriptions must not be empty.
+
+A meaningful PR body should include, as applicable:
+
+- task/phase scope;
+- architecture/design decisions;
+- security and data-integrity decisions;
+- important trade-offs;
+- migrations/schema changes;
+- tests and validation executed;
+- intentionally deferred work;
+- known follow-up items.
+
+If a PR already exists for the branch, update that PR instead of opening a duplicate.
+
+## 25. Makefile-First Validation
+
+The root `Makefile` is the standard interface for routine Nexus local validation.
+
+**MUST:** Inspect the current `Makefile` before final validation because targets may evolve.
+
+Prefer existing Make targets over reconstructing long Docker, pytest, npm, lint, type-check, or build commands manually.
+
+Current standard targets include:
+
+```bash
+make backend-check
+make frontend-check
+make docker-check
+make check
+```
+
+Use them according to the affected scope:
+
+- Backend-only changes: run focused tests while developing, then `make backend-check`.
+- Frontend-only changes: run focused tests while developing, then `make frontend-check`.
+- Docker/infrastructure changes: run the relevant focused validation and `make docker-check`.
+- Before declaring a PR fully ready, prefer `make check` to mirror the complete local Nexus CI workflow unless the task explicitly limits validation or the current Makefile defines a better target.
+
+Focused raw commands are allowed for debugging a specific failure or quickly exercising the exact changed tests.
+
+**MUST NOT:** Replace an existing Make target with a complicated ad-hoc command merely because the agent can construct one.
+
+If a Make target fails:
+
+1. inspect the actual failure;
+2. run a focused underlying command only when useful for diagnosis;
+3. fix the cause;
+4. rerun the Make target.
+
+Do not bypass or weaken checks.
+
+If not already included by the current Makefile, also run the repository's required quality checks such as:
+
+```bash
+pre-commit run --all-files
+git diff --check
+```
+
+Do not weaken Ruff, mypy, pytest, coverage, frontend lint/type-check, pre-commit, or CI configuration just to make a task pass.
+
+## 26. Testing Standard
+
+Tests must protect behavior and boundaries, not merely increase coverage.
+
+### MUST
+
+- Add regression tests for bugs.
+- Add meaningful tests for new behavior.
+- Use real PostgreSQL integration tests when behavior depends on PostgreSQL constraints, transactions, indexes, migrations, or SQLAlchemy persistence semantics.
+- Test security-sensitive tenant/resource boundaries explicitly.
+- Test failure behavior, not only happy paths.
+- Preserve deterministic test behavior.
+- Keep returned domain/application objects independent from live ORM session state where that is an architectural requirement.
+- Mirror current CI through the Makefile before declaring work complete.
+
+### MUST NOT
+
+- Mock away the behavior being tested in an integration test.
+- Delete a failing test merely to pass CI.
+- Weaken an assertion without a technical reason.
+- Skip security/integrity tests for convenience.
+- claim a check passed unless it was actually executed successfully.
+
+When a test requires an external service or database that Nexus deliberately provides through Docker/Make targets, use the repository-provided workflow rather than inventing a parallel setup.
+
+## 27. Backend Architecture Defaults
+
+For backend features, preserve clear responsibility boundaries.
+
+A typical API flow may be:
+
+```text
+FastAPI Router / Controller
+        ↓
+Application Use Case / Service
+        ↓
+Port / Repository Contract
+        ↓
+Infrastructure Adapter
+        ↓
+PostgreSQL / External Provider
+```
+
+This is a guide, not a requirement to create a layer for every feature.
+
+### Boundaries
+
+- Controllers handle transport concerns and translate HTTP input/output.
+- Application/use-case code owns business orchestration and transaction decisions.
+- Repositories/adapters own persistence or external-system mechanics.
+- Domain contracts must not depend on FastAPI, SQLAlchemy, provider SDKs, or transport schemas.
+- Infrastructure may depend on domain/ports to implement them.
+- Internal database IDs must not leak into public/domain boundaries unless explicitly designed.
+- Authorization and authentication remain separate responsibilities.
+- Tenant filtering is defense in depth and does not replace authorization.
+
+Do not hold a database transaction open across slow external network calls or LLM streaming unless an explicitly reviewed design requires it.
+
+Do not call blocking synchronous persistence directly from an async event loop without an explicit execution-boundary design.
+
+## 28. Final Agent Report
+
+At the end of an implementation task, report concisely:
+
+- what changed;
+- files or major areas changed;
+- important architecture/security decisions;
+- tests added/updated;
+- focused validation results if relevant;
+- Makefile validation results;
+- pre-commit and `git diff --check` results when required;
+- commit SHA;
+- pushed branch;
+- PR URL;
+- current CI status when available;
+- anything requiring human review before merge;
+- intentionally deferred work.
+
+Do not paste huge successful command logs. Summarize pass/fail counts and include detailed logs only when they explain a failure.
+
+
+## 29. Golden Rule
 
 > **Understand first. Scope locally. Follow the documented architecture. Make the smallest safe change. Test it. Expand only when evidence requires it.**
