@@ -32,8 +32,6 @@ class Settings(BaseSettings):
     access_token_expires_seconds: int = Field(default=900, gt=0)
     refresh_token_expires_seconds: int = Field(default=2_592_000, gt=0)
     auth_token_issuer: str | None = None
-    conversation_history_limit: int = Field(default=50, ge=1, le=200)
-    conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
 
     model_config = SettingsConfigDict(
         env_file=ROOT_ENV_FILE,
