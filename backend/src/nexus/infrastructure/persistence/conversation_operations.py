@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -23,6 +24,8 @@ from nexus.infrastructure.persistence.repositories.message import (
     SqlAlchemyMessageRepository,
 )
 
+T = TypeVar("T")
+
 
 class SqlAlchemyConversationPersistence(ConversationPersistence):
     """Run one short repository transaction in a fresh worker session."""
@@ -31,16 +34,9 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         self._session_factory = session_factory
 
     async def create_conversation(self, conversation: Conversation) -> None:
-        await asyncio.to_thread(self._create_conversation, conversation)
-
-    def _create_conversation(self, conversation: Conversation) -> None:
-        with self._session_factory() as session:
-            try:
-                SqlAlchemyConversationRepository(session).add(conversation)
-                session.commit()
-            except Exception:
-                session.rollback()
-                raise
+        await self._run_transaction(
+            lambda session: SqlAlchemyConversationRepository(session).add(conversation)
+        )
 
     async def get_conversation(
         self,
@@ -74,47 +70,27 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         generation: Generation,
         history_limit: int,
     ) -> PreparedGeneration:
-        return await asyncio.to_thread(
-            self._prepare_generation,
-            organization_public_id,
-            conversation,
-            message,
-            generation,
-            history_limit,
-        )
+        def prepare(session: Session) -> PreparedGeneration:
+            message_repository = SqlAlchemyMessageRepository(session)
+            message_repository.add(
+                organization_public_id=organization_public_id,
+                message=message,
+            )
+            SqlAlchemyGenerationRepository(session).add(
+                organization_public_id=organization_public_id,
+                generation=generation,
+            )
+            history = message_repository.list_recent_for_conversation(
+                organization_public_id=organization_public_id,
+                conversation_public_id=conversation.public_id,
+                limit=history_limit,
+            )
+            return PreparedGeneration(
+                conversation=conversation,
+                history=tuple(history),
+            )
 
-    def _prepare_generation(
-        self,
-        organization_public_id: UUID,
-        conversation: Conversation,
-        message: Message,
-        generation: Generation,
-        history_limit: int,
-    ) -> PreparedGeneration:
-        with self._session_factory() as session:
-            try:
-                message_repository = SqlAlchemyMessageRepository(session)
-                message_repository.add(
-                    organization_public_id=organization_public_id,
-                    message=message,
-                )
-                SqlAlchemyGenerationRepository(session).add(
-                    organization_public_id=organization_public_id,
-                    generation=generation,
-                )
-                history = message_repository.list_recent_for_conversation(
-                    organization_public_id=organization_public_id,
-                    conversation_public_id=conversation.public_id,
-                    limit=history_limit,
-                )
-                session.commit()
-                return PreparedGeneration(
-                    conversation=conversation,
-                    history=tuple(history),
-                )
-            except Exception:
-                session.rollback()
-                raise
+        return await self._run_transaction(prepare)
 
     async def complete_generation(
         self,
@@ -123,33 +99,17 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         assistant_message: Message,
         generation: Generation,
     ) -> None:
-        await asyncio.to_thread(
-            self._complete_generation,
-            organization_public_id,
-            assistant_message,
-            generation,
-        )
+        def complete(session: Session) -> None:
+            SqlAlchemyMessageRepository(session).add(
+                organization_public_id=organization_public_id,
+                message=assistant_message,
+            )
+            SqlAlchemyGenerationRepository(session).update(
+                organization_public_id=organization_public_id,
+                generation=generation,
+            )
 
-    def _complete_generation(
-        self,
-        organization_public_id: UUID,
-        assistant_message: Message,
-        generation: Generation,
-    ) -> None:
-        with self._session_factory() as session:
-            try:
-                SqlAlchemyMessageRepository(session).add(
-                    organization_public_id=organization_public_id,
-                    message=assistant_message,
-                )
-                SqlAlchemyGenerationRepository(session).update(
-                    organization_public_id=organization_public_id,
-                    generation=generation,
-                )
-                session.commit()
-            except Exception:
-                session.rollback()
-                raise
+        await self._run_transaction(complete)
 
     async def fail_generation(
         self,
@@ -157,11 +117,7 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         generation: Generation,
     ) -> None:
-        await asyncio.to_thread(
-            self._update_generation,
-            organization_public_id,
-            generation,
-        )
+        await self._update_generation(organization_public_id, generation)
 
     async def cancel_generation(
         self,
@@ -169,24 +125,29 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         generation: Generation,
     ) -> None:
-        await asyncio.to_thread(
-            self._update_generation,
-            organization_public_id,
-            generation,
-        )
+        await self._update_generation(organization_public_id, generation)
 
-    def _update_generation(
+    async def _update_generation(
         self,
         organization_public_id: UUID,
         generation: Generation,
     ) -> None:
+        await self._run_transaction(
+            lambda session: SqlAlchemyGenerationRepository(session).update(
+                organization_public_id=organization_public_id,
+                generation=generation,
+            )
+        )
+
+    async def _run_transaction(self, operation: Callable[[Session], T]) -> T:
+        return await asyncio.to_thread(self._run_transaction_sync, operation)
+
+    def _run_transaction_sync(self, operation: Callable[[Session], T]) -> T:
         with self._session_factory() as session:
             try:
-                SqlAlchemyGenerationRepository(session).update(
-                    organization_public_id=organization_public_id,
-                    generation=generation,
-                )
+                result = operation(session)
                 session.commit()
+                return result
             except Exception:
                 session.rollback()
                 raise
