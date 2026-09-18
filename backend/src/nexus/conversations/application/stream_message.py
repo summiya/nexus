@@ -98,16 +98,7 @@ class PreparedConversationStream:
                     generation=completed_generation,
                 )
             except Exception:  # noqa: BLE001 - persistence failure becomes a safe event
-                await self.service._persist_failure(
-                    self.request,
-                    self.generation,
-                    "persistence_failure",
-                )
-                yield GenerationError(
-                    generation_public_id=self.generation.public_id,
-                    kind="persistence_failure",
-                    message="The generation could not be completed.",
-                )
+                yield await self._failure_event("persistence_failure")
                 return
 
             if state.usage is not None:
@@ -127,27 +118,9 @@ class PreparedConversationStream:
             await self.service._persist_cancelled(self.request, self.generation)
             raise
         except _ConversationStreamFailure as exc:
-            await self.service._persist_failure(
-                self.request,
-                self.generation,
-                exc.kind,
-            )
-            yield GenerationError(
-                generation_public_id=self.generation.public_id,
-                kind=exc.kind,
-                message="The generation could not be completed.",
-            )
+            yield await self._failure_event(exc.kind)
         except LLMError as exc:
-            await self.service._persist_failure(
-                self.request,
-                self.generation,
-                exc.kind.value,
-            )
-            yield GenerationError(
-                generation_public_id=self.generation.public_id,
-                kind=exc.kind.value,
-                message="The generation could not be completed.",
-            )
+            yield await self._failure_event(exc.kind.value)
         finally:
             await self.aclose()
 
@@ -210,6 +183,18 @@ class PreparedConversationStream:
             error_kind=None,
         )
         return assistant_message, completed_generation
+
+    async def _failure_event(self, kind: str) -> GenerationError:
+        await self.service._persist_failure(
+            self.request,
+            self.generation,
+            kind,
+        )
+        return GenerationError(
+            generation_public_id=self.generation.public_id,
+            kind=kind,
+            message="The generation could not be completed.",
+        )
 
     async def aclose(self) -> None:
         if self.closed:
@@ -328,40 +313,27 @@ class StreamConversationMessage:
             await _close_iterator_during_cancellation(upstream)
             await self._persist_cancelled(request, generation)
             raise
-        except LLMError as exc:
-            await self._persist_failure(request, generation, exc.kind.value)
-            await _close_iterator(upstream)
-            raise NexusError(
-                ErrorCode.SERVICE_UNAVAILABLE,
-                "The language model service is unavailable.",
-                retryable=True,
-            ) from exc
-        except StopAsyncIteration as exc:
-            await self._persist_failure(request, generation, "empty_provider_stream")
-            await _close_iterator(upstream)
+        except (LLMError, StopAsyncIteration) as exc:
+            kind = (
+                exc.kind.value if isinstance(exc, LLMError) else "empty_provider_stream"
+            )
+            await self._cleanup_preflight_failure(request, generation, upstream, kind)
             raise NexusError(
                 ErrorCode.SERVICE_UNAVAILABLE,
                 "The language model service is unavailable.",
                 retryable=True,
             ) from exc
         except Exception:
-            await self._persist_failure(
-                request,
-                generation,
-                "stream_initialization_failure",
+            await self._cleanup_preflight_failure(
+                request, generation, upstream, "stream_initialization_failure"
             )
-            await _close_iterator(upstream)
             raise
 
         if isinstance(first_event, LLMErrorEvent):
-            await self._persist_failure(request, generation, first_event.kind.value)
-            await _close_iterator(upstream)
-            raise NexusError(
-                ErrorCode.SERVICE_UNAVAILABLE,
-                "The language model service is unavailable.",
-                retryable=True,
-            )
-        if isinstance(
+            kind = first_event.kind.value
+            message = "The language model service is unavailable."
+            retryable = True
+        elif isinstance(
             first_event,
             (
                 LLMToolCallStartedEvent,
@@ -369,13 +341,24 @@ class StreamConversationMessage:
                 LLMToolCallCompletedEvent,
             ),
         ):
-            await self._persist_failure(request, generation, "tool_calls_unsupported")
-            await _close_iterator(upstream)
-            raise NexusError(
-                ErrorCode.SERVICE_UNAVAILABLE,
-                "The requested generation could not be completed.",
-            )
-        return upstream, first_event
+            kind = "tool_calls_unsupported"
+            message = "The requested generation could not be completed."
+            retryable = False
+        else:
+            return upstream, first_event
+
+        await self._cleanup_preflight_failure(request, generation, upstream, kind)
+        raise NexusError(ErrorCode.SERVICE_UNAVAILABLE, message, retryable=retryable)
+
+    async def _cleanup_preflight_failure(
+        self,
+        request: StreamConversationMessageRequest,
+        generation: Generation,
+        upstream: AsyncIterator[LLMEvent] | None,
+        kind: str,
+    ) -> None:
+        await self._persist_failure(request, generation, kind)
+        await _close_iterator(upstream)
 
     async def _persist_failure(
         self,
@@ -383,31 +366,45 @@ class StreamConversationMessage:
         generation: Generation,
         kind: str,
     ) -> None:
-        try:
-            await self.persistence.fail_generation(
-                organization_public_id=request.organization_public_id,
-                generation=replace(
-                    generation,
-                    status=GenerationStatus.FAILED,
-                    completed_at=datetime.now(UTC),
-                    error_kind=kind,
-                ),
-            )
-        except Exception:  # noqa: BLE001 - cancellation persistence is best effort
-            return
+        await self._persist_terminal(
+            request,
+            generation,
+            status=GenerationStatus.FAILED,
+            error_kind=kind,
+        )
 
     async def _persist_cancelled(
         self,
         request: StreamConversationMessageRequest,
         generation: Generation,
     ) -> None:
+        await self._persist_terminal(
+            request,
+            generation,
+            status=GenerationStatus.CANCELLED,
+        )
+
+    async def _persist_terminal(
+        self,
+        request: StreamConversationMessageRequest,
+        generation: Generation,
+        *,
+        status: GenerationStatus,
+        error_kind: str | None = None,
+    ) -> None:
+        persist = (
+            self.persistence.fail_generation
+            if status is GenerationStatus.FAILED
+            else self.persistence.cancel_generation
+        )
         try:
-            await self.persistence.cancel_generation(
+            await persist(
                 organization_public_id=request.organization_public_id,
                 generation=replace(
                     generation,
-                    status=GenerationStatus.CANCELLED,
+                    status=status,
                     completed_at=datetime.now(UTC),
+                    error_kind=error_kind,
                 ),
             )
         except Exception:  # noqa: BLE001 - cancellation persistence is best effort
