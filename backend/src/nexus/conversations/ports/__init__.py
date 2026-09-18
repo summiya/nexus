@@ -1,5 +1,9 @@
 """Conversation capability ports."""
 
+from nexus.conversations.ports.persistence import (
+    ConversationPersistence,
+    PreparedGeneration,
+)
 from nexus.conversations.ports.repositories import (
     ConversationEntityNotFoundError,
     ConversationPersistenceError,
@@ -12,10 +16,12 @@ from nexus.conversations.ports.repositories import (
 
 __all__ = [
     "ConversationEntityNotFoundError",
+    "ConversationPersistence",
     "ConversationPersistenceError",
     "ConversationReferenceError",
     "ConversationRepository",
     "ConversationRepositoryError",
     "GenerationRepository",
     "MessageRepository",
+    "PreparedGeneration",
 ]
