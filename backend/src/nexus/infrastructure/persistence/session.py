@@ -1,14 +1,13 @@
-"""SQLAlchemy session boundary for application use cases."""
+"""SQLAlchemy database resources owned by one NEXUS application."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable
+from dataclasses import dataclass
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
-
-from nexus.config.settings import settings
 
 
 def _normalize_database_url(database_url: str) -> str:
@@ -18,13 +17,26 @@ def _normalize_database_url(database_url: str) -> str:
     return url.render_as_string(hide_password=False)
 
 
-engine = create_engine(
-    _normalize_database_url(settings.database_url), pool_pre_ping=True
-)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+@dataclass(frozen=True)
+class Database:
+    """Application-scoped SQLAlchemy engine and session factory."""
+
+    engine: Engine
+    session_factory: Callable[[], Session]
+
+    def dispose(self) -> None:
+        self.engine.dispose()
 
 
-def get_db_session() -> Iterator[Session]:
-    """Yield one database session for a request."""
-    with SessionLocal() as session:
-        yield session
+def build_database(database_url: str) -> Database:
+    """Build database resources from the owning application's configuration."""
+
+    engine = create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+    return Database(
+        engine=engine,
+        session_factory=sessionmaker(
+            bind=engine,
+            autoflush=False,
+            expire_on_commit=False,
+        ),
+    )

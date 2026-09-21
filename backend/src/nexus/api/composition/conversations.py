@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+
+from sqlalchemy.orm import Session
 
 from nexus.config.settings import Settings
 from nexus.conversations.application import (
@@ -12,7 +15,6 @@ from nexus.conversations.application import (
 from nexus.infrastructure.persistence.conversation_operations import (
     SqlAlchemyConversationPersistence,
 )
-from nexus.infrastructure.persistence.session import SessionLocal
 from nexus.llm.application import ModelPolicy, Stream
 
 
@@ -26,8 +28,9 @@ def build_conversation_composition(
     app_settings: Settings,
     llm_stream: Stream,
     model_policy: ModelPolicy,
+    session_factory: Callable[[], Session],
 ) -> ConversationComposition:
-    persistence = SqlAlchemyConversationPersistence(SessionLocal)
+    persistence = SqlAlchemyConversationPersistence(session_factory)
     return ConversationComposition(
         create=CreateConversation(persistence=persistence),
         stream_message=StreamConversationMessage(

@@ -33,7 +33,7 @@ class RateLimiter(Protocol):
 
 @dataclass(frozen=True)
 class RedisRateLimiter:
-    """Redis-backed fixed-window rate limiter."""
+    """Application-scoped Redis-backed fixed-window rate limiter."""
 
     redis: Redis
 
@@ -56,3 +56,6 @@ class RedisRateLimiter:
             return allowed == 1
         except RedisError as exc:
             raise RateLimitError("Rate limiter is unavailable") from exc
+
+    def close(self) -> None:
+        self.redis.close()
