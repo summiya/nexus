@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 
+from nexus.conversations.application import stream_message as stream_message_module
 from nexus.conversations.application.events import (
     GenerationCompleted,
+    GenerationError,
     GenerationStarted,
     GenerationUsage,
     MessageDelta,
 )
 from nexus.conversations.application.stream_message import (
+    PreparedConversationStream,
     StreamConversationMessage,
     StreamConversationMessageRequest,
 )
@@ -91,27 +95,30 @@ class FakePersistence:
         organization_public_id: UUID,
         assistant_message: Message,
         generation: Generation,
-    ) -> None:
+    ) -> bool:
         assert organization_public_id == ORG_ID
         self.completed.append((assistant_message, generation))
+        return True
 
     async def fail_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None:
+    ) -> bool:
         assert organization_public_id == ORG_ID
         self.failed.append(generation)
+        return True
 
     async def cancel_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None:
+    ) -> bool:
         assert organization_public_id == ORG_ID
         self.cancelled.append(generation)
+        return True
 
 
 class FakeGateway:
@@ -160,6 +167,66 @@ class CancellationGateway(FakeGateway):
     def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
         del request
         return self.iterator
+
+
+class TrackingIterator:
+    def __init__(
+        self,
+        events: list[LLMEvent],
+        *,
+        close_error: Exception | None = None,
+    ) -> None:
+        self.events = events
+        self.close_error = close_error
+        self.index = 0
+        self.close_count = 0
+
+    def __aiter__(self) -> TrackingIterator:
+        return self
+
+    async def __anext__(self) -> LLMEvent:
+        if self.index >= len(self.events):
+            raise StopAsyncIteration
+        event = self.events[self.index]
+        self.index += 1
+        return event
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class TrackingGateway(FakeGateway):
+    def __init__(self, iterator: TrackingIterator) -> None:
+        super().__init__()
+        self.iterator = iterator
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        self.requests.append(request)
+        return self.iterator
+
+
+class BlockingIterator:
+    def __init__(self, first_event: LLMEvent | None = None) -> None:
+        self.first_event = first_event
+        self.first_event_returned = False
+        self.waiting = asyncio.Event()
+        self.close_count = 0
+
+    def __aiter__(self) -> BlockingIterator:
+        return self
+
+    async def __anext__(self) -> LLMEvent:
+        if self.first_event is not None and not self.first_event_returned:
+            self.first_event_returned = True
+            return self.first_event
+        self.waiting.set()
+        await asyncio.Event().wait()
+        raise AssertionError("the blocked provider should be cancelled")
+
+    async def aclose(self) -> None:
+        self.close_count += 1
 
 
 def make_request() -> StreamConversationMessageRequest:
@@ -251,6 +318,183 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
     assert timeline == ["persistence_prepared", "provider_stream_started"]
 
 
+def test_early_close_cancels_generation_and_closes_provider_once() -> None:
+    persistence = FakePersistence()
+    iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+        stream = prepared.__aiter__()
+        assert isinstance(await anext(stream), GenerationStarted)
+        assert isinstance(await anext(stream), MessageDelta)
+        await stream.aclose()
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert iterator.close_count == 1
+    assert len(persistence.cancelled) == 1
+    assert persistence.failed == []
+    assert persistence.completed == []
+
+
+def test_provider_eof_without_completion_fails_generation() -> None:
+    persistence = FakePersistence()
+    iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> list[object]:
+        return [event async for event in await service.prepare(make_request())]
+
+    events = asyncio.run(run())
+
+    assert isinstance(events[-1], GenerationError)
+    assert events[-1].kind == "incomplete_provider_stream"
+    assert iterator.close_count == 1
+    assert persistence.failed[0].error_kind == "incomplete_provider_stream"
+    assert persistence.cancelled == []
+    assert persistence.completed == []
+
+
+def test_stream_does_not_emit_completion_when_database_transition_loses() -> None:
+    class LosingCompletionPersistence(FakePersistence):
+        async def complete_generation(
+            self,
+            *,
+            organization_public_id: UUID,
+            assistant_message: Message,
+            generation: Generation,
+        ) -> bool:
+            assert organization_public_id == ORG_ID
+            self.completed.append((assistant_message, generation))
+            return False
+
+    persistence = LosingCompletionPersistence()
+    iterator = TrackingIterator(
+        [
+            LLMStartedEvent(),
+            LLMTextDeltaEvent(delta="response"),
+            LLMCompletedEvent(),
+        ]
+    )
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> list[object]:
+        return [event async for event in await service.prepare(make_request())]
+
+    events = asyncio.run(run())
+
+    assert not any(isinstance(event, GenerationCompleted) for event in events)
+    assert not any(isinstance(event, GenerationError) for event in events)
+    assert iterator.close_count == 1
+    assert len(persistence.completed) == 1
+    assert persistence.failed == []
+    assert persistence.cancelled == []
+
+
+def test_unexpected_processing_error_is_logged_and_persisted_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persistence = FakePersistence()
+    iterator = TrackingIterator(
+        [
+            LLMStartedEvent(),
+            LLMTextDeltaEvent(delta="partial"),
+            LLMCompletedEvent(),
+        ]
+    )
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+    original = PreparedConversationStream._process_event
+    logged: list[tuple[str, BaseException | None]] = []
+
+    def fail_processing(
+        prepared: PreparedConversationStream,
+        event: LLMEvent,
+        state: object,
+    ) -> object:
+        if isinstance(event, LLMTextDeltaEvent):
+            raise TypeError("event mapper exploded")
+        return original(prepared, event, state)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(PreparedConversationStream, "_process_event", fail_processing)
+    monkeypatch.setattr(
+        stream_message_module.logger,
+        "exception",
+        lambda event, **_context: logged.append((event, sys.exception())),
+    )
+
+    async def run() -> list[object]:
+        return [event async for event in await service.prepare(make_request())]
+
+    events = asyncio.run(run())
+
+    assert isinstance(events[-1], GenerationError)
+    assert events[-1].kind == "stream_processing_failure"
+    assert persistence.failed[0].error_kind == "stream_processing_failure"
+    assert persistence.cancelled == []
+    assert persistence.completed == []
+    assert logged[0][0] == "conversation_stream_processing_failed"
+    assert isinstance(logged[0][1], TypeError)
+    assert str(logged[0][1]) == "event mapper exploded"
+
+
+def test_cleanup_failure_does_not_prevent_cancellation_or_repeat_close() -> None:
+    persistence = FakePersistence()
+    iterator = TrackingIterator(
+        [LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")],
+        close_error=RuntimeError("cleanup failed"),
+    )
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+        await prepared.aclose()
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert iterator.close_count == 1
+    assert len(persistence.cancelled) == 1
+    assert persistence.failed == []
+    assert persistence.completed == []
+
+
 def test_provider_failure_before_first_event_becomes_http_error_and_fails_generation() -> (
     None
 ):
@@ -305,6 +549,68 @@ def test_preflight_cancellation_closes_provider_and_persists_cancelled_generatio
         asyncio.run(run())
 
     assert gateway.iterator.closed is True
+    assert len(persistence.cancelled) == 1
+    assert persistence.failed == []
+    assert persistence.completed == []
+
+
+def test_request_task_cancellation_during_preflight_is_not_processing_failure() -> None:
+    persistence = FakePersistence()
+    iterator = BlockingIterator()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        task = asyncio.create_task(service.prepare(make_request()))
+        await iterator.waiting.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert iterator.close_count == 1
+    assert len(persistence.cancelled) == 1
+    assert persistence.failed == []
+    assert persistence.completed == []
+
+
+def test_request_task_cancellation_during_active_stream_is_not_processing_failure() -> (
+    None
+):
+    persistence = FakePersistence()
+    iterator = BlockingIterator(first_event=LLMStartedEvent())
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+
+        async def consume() -> None:
+            async for _event in prepared:
+                pass
+
+        task = asyncio.create_task(consume())
+        await iterator.waiting.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert iterator.close_count == 1
     assert len(persistence.cancelled) == 1
     assert persistence.failed == []
     assert persistence.completed == []

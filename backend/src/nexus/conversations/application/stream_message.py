@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from nexus.conversations.application.events import (
@@ -61,11 +62,12 @@ class _StreamState:
     text_parts: list[str] = field(default_factory=list)
     usage: LLMUsage | None = None
     finish_reason: GenerationFinishReason = GenerationFinishReason.UNKNOWN
+    provider_completed: bool = False
 
 
 @dataclass
 class PreparedConversationStream:
-    """A preflighted stream returned after Phase A and first-event success."""
+    """Own the normalized LLM iterator after successful preflight."""
 
     service: StreamConversationMessage
     request: StreamConversationMessageRequest
@@ -73,7 +75,13 @@ class PreparedConversationStream:
     generation: Generation
     upstream: AsyncIterator[LLMEvent]
     first_event: LLMEvent
-    closed: bool = False
+    _provider_closed: bool = field(default=False, init=False)
+    _terminal_resolved: bool = field(default=False, init=False)
+    _terminal_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        init=False,
+        repr=False,
+    )
 
     def __aiter__(self) -> AsyncIterator[ConversationEvent]:
         return self._iterate()
@@ -94,14 +102,16 @@ class PreparedConversationStream:
                     yield output
 
             assistant_message, completed_generation = self._build_completion(state)
-            try:
-                await self.service.persistence.complete_generation(
-                    organization_public_id=self.request.organization_public_id,
-                    assistant_message=assistant_message,
-                    generation=completed_generation,
-                )
-            except Exception:  # noqa: BLE001 - persistence failure becomes a safe event
-                yield await self._failure_event("persistence_failure")
+            transitioned = await self._complete_generation(
+                assistant_message,
+                completed_generation,
+            )
+            if transitioned is None:
+                failure = await self._failure_event("persistence_failure")
+                if failure is not None:
+                    yield failure
+                return
+            if not transitioned:
                 return
 
             if state.usage is not None:
@@ -118,12 +128,23 @@ class PreparedConversationStream:
                 finish_reason=state.finish_reason,
             )
         except asyncio.CancelledError:
-            await self.service._persist_cancelled(self.request, self.generation)
             raise
         except _ConversationStreamFailure as exc:
-            yield await self._failure_event(exc.kind)
+            failure = await self._failure_event(exc.kind)
+            if failure is not None:
+                yield failure
         except LLMError as exc:
-            yield await self._failure_event(exc.kind.value)
+            failure = await self._failure_event(exc.kind.value)
+            if failure is not None:
+                yield failure
+        except Exception:
+            logger.exception(
+                "conversation_stream_processing_failed",
+                generation_id=str(self.generation.public_id),
+            )
+            failure = await self._failure_event("stream_processing_failure")
+            if failure is not None:
+                yield failure
         finally:
             await self.aclose()
 
@@ -149,6 +170,7 @@ class PreparedConversationStream:
             return None
         if isinstance(event, LLMCompletedEvent):
             state.finish_reason = _to_generation_finish_reason(event)
+            state.provider_completed = True
             return None
         if isinstance(event, LLMErrorEvent):
             raise _ConversationStreamFailure(event.kind.value)
@@ -164,6 +186,8 @@ class PreparedConversationStream:
         return None
 
     def _build_completion(self, state: _StreamState) -> tuple[Message, Generation]:
+        if not state.provider_completed:
+            raise _ConversationStreamFailure("incomplete_provider_stream")
         if not state.text_parts:
             raise _ConversationStreamFailure("empty_assistant_response")
 
@@ -187,12 +211,39 @@ class PreparedConversationStream:
         )
         return assistant_message, completed_generation
 
-    async def _failure_event(self, kind: str) -> GenerationError:
-        await self.service._persist_failure(
-            self.request,
-            self.generation,
-            kind,
+    async def _complete_generation(
+        self,
+        assistant_message: Message,
+        generation: Generation,
+    ) -> bool | None:
+        async with self._terminal_lock:
+            if self._terminal_resolved:
+                return False
+            try:
+                transitioned = await self.service.persistence.complete_generation(
+                    organization_public_id=self.request.organization_public_id,
+                    assistant_message=assistant_message,
+                    generation=generation,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "conversation_completion_persistence_failed",
+                    generation_id=str(self.generation.public_id),
+                )
+                return None
+
+            self._terminal_resolved = True
+            return transitioned
+
+    async def _failure_event(self, kind: str) -> GenerationError | None:
+        transitioned = await self._transition_terminal(
+            status=GenerationStatus.FAILED,
+            error_kind=kind,
         )
+        if not transitioned:
+            return None
         return GenerationError(
             generation_public_id=self.generation.public_id,
             kind=kind,
@@ -200,9 +251,18 @@ class PreparedConversationStream:
         )
 
     async def aclose(self) -> None:
-        if self.closed:
+        await _finish_cleanup(self._close())
+
+    async def _close(self) -> None:
+        try:
+            await self._close_provider_once()
+        finally:
+            await self._transition_terminal(status=GenerationStatus.CANCELLED)
+
+    async def _close_provider_once(self) -> None:
+        if self._provider_closed:
             return
-        self.closed = True
+        self._provider_closed = True
         close = getattr(self.upstream, "aclose", None)
         if not callable(close):
             return
@@ -216,6 +276,25 @@ class PreparedConversationStream:
                 generation_id=str(self.generation.public_id),
                 exc_info=True,
             )
+
+    async def _transition_terminal(
+        self,
+        *,
+        status: GenerationStatus,
+        error_kind: str | None = None,
+    ) -> bool | None:
+        async with self._terminal_lock:
+            if self._terminal_resolved:
+                return False
+            transitioned = await self.service._persist_terminal(
+                self.request,
+                self.generation,
+                status=status,
+                error_kind=error_kind,
+            )
+            if transitioned is not None:
+                self._terminal_resolved = True
+            return transitioned
 
 
 @dataclass(frozen=True)
@@ -275,13 +354,19 @@ class StreamConversationMessage:
             status=GenerationStatus.RUNNING,
             started_at=now,
         )
-        history = await self.persistence.prepare_generation(
-            organization_public_id=request.organization_public_id,
-            conversation=conversation,
-            message=message,
-            generation=generation,
-            history_limit=self.history_limit,
-        )
+        try:
+            history = await self.persistence.prepare_generation(
+                organization_public_id=request.organization_public_id,
+                conversation=conversation,
+                message=message,
+                generation=generation,
+                history_limit=self.history_limit,
+            )
+        except asyncio.CancelledError:
+            await _finish_cleanup(
+                self._cleanup_cancellation(request, generation, upstream=None)
+            )
+            raise
         try:
             bounded_history = _bounded_history(
                 history,
@@ -327,12 +412,15 @@ class StreamConversationMessage:
             upstream = self.llm_stream.execute(llm_request)
             first_event = await anext(upstream)
         except asyncio.CancelledError:
-            await _close_iterator_during_cancellation(upstream)
-            await self._persist_cancelled(request, generation)
+            await _finish_cleanup(
+                self._cleanup_cancellation(request, generation, upstream=upstream)
+            )
             raise
         except (LLMError, StopAsyncIteration) as exc:
             kind = (
-                exc.kind.value if isinstance(exc, LLMError) else "empty_provider_stream"
+                exc.kind.value
+                if isinstance(exc, LLMError)
+                else "incomplete_provider_stream"
             )
             await self._cleanup_preflight_failure(request, generation, upstream, kind)
             raise NexusError(
@@ -377,13 +465,25 @@ class StreamConversationMessage:
         await self._persist_failure(request, generation, kind)
         await _close_iterator(upstream)
 
+    async def _cleanup_cancellation(
+        self,
+        request: StreamConversationMessageRequest,
+        generation: Generation,
+        *,
+        upstream: AsyncIterator[LLMEvent] | None,
+    ) -> None:
+        try:
+            await _close_iterator(upstream)
+        finally:
+            await self._persist_cancelled(request, generation)
+
     async def _persist_failure(
         self,
         request: StreamConversationMessageRequest,
         generation: Generation,
         kind: str,
-    ) -> None:
-        await self._persist_terminal(
+    ) -> bool | None:
+        return await self._persist_terminal(
             request,
             generation,
             status=GenerationStatus.FAILED,
@@ -394,8 +494,8 @@ class StreamConversationMessage:
         self,
         request: StreamConversationMessageRequest,
         generation: Generation,
-    ) -> None:
-        await self._persist_terminal(
+    ) -> bool | None:
+        return await self._persist_terminal(
             request,
             generation,
             status=GenerationStatus.CANCELLED,
@@ -408,14 +508,14 @@ class StreamConversationMessage:
         *,
         status: GenerationStatus,
         error_kind: str | None = None,
-    ) -> None:
+    ) -> bool | None:
         persist = (
             self.persistence.fail_generation
             if status is GenerationStatus.FAILED
             else self.persistence.cancel_generation
         )
         try:
-            await persist(
+            return await persist(
                 organization_public_id=request.organization_public_id,
                 generation=replace(
                     generation,
@@ -431,6 +531,7 @@ class StreamConversationMessage:
                 status=status.value,
                 error_kind=error_kind,
             )
+            return None
 
 
 class _ConversationStreamFailure(Exception):
@@ -491,11 +592,22 @@ async def _close_iterator(iterator: AsyncIterator[LLMEvent] | None) -> None:
         logger.warning("conversation_provider_stream_cleanup_failed", exc_info=True)
 
 
-async def _close_iterator_during_cancellation(
-    iterator: AsyncIterator[LLMEvent] | None,
+async def _finish_cleanup(
+    cleanup: Coroutine[Any, Any, None],
 ) -> None:
-    """Attempt provider cleanup without replacing the original cancellation."""
-    try:
-        await _close_iterator(iterator)
-    except BaseException:  # noqa: BLE001 - cancellation remains the primary outcome
-        return
+    """Finish cleanup even if the awaiting request receives another cancellation."""
+    task = asyncio.create_task(cleanup)
+    cancellation: asyncio.CancelledError | None = None
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError as exc:
+            cancellation = exc
+        except BaseException:  # noqa: BLE001 - re-raised through task.result below
+            break
+
+    if cancellation is not None:
+        if not task.cancelled():
+            task.exception()
+        raise cancellation
+    task.result()

@@ -37,10 +37,11 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         conversation_public_id: UUID,
     ) -> Conversation | None:
-        return await asyncio.to_thread(
-            self._get_conversation,
-            organization_public_id,
-            conversation_public_id,
+        return await self._run_worker(
+            lambda: self._get_conversation(
+                organization_public_id,
+                conversation_public_id,
+            )
         )
 
     async def prepare_generation(
@@ -79,36 +80,44 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         assistant_message: Message,
         generation: Generation,
-    ) -> None:
-        def complete(session: Session) -> None:
+    ) -> bool:
+        def complete(session: Session) -> bool:
+            model = queries.lock_generation_for_terminal_transition(
+                session,
+                organization_public_id=organization_public_id,
+                generation=generation,
+            )
+            if model is None:
+                return False
             queries.insert_message(
                 session,
                 organization_public_id=organization_public_id,
                 message=assistant_message,
             )
-            queries.update_generation(
+            queries.apply_generation_terminal_transition(
                 session,
-                organization_public_id=organization_public_id,
+                model=model,
                 generation=generation,
             )
+            return True
 
-        await self._run_transaction(complete)
+        return await self._run_transaction(complete)
 
     async def fail_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None:
-        await self._update_generation(organization_public_id, generation)
+    ) -> bool:
+        return await self._transition_generation(organization_public_id, generation)
 
     async def cancel_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None:
-        await self._update_generation(organization_public_id, generation)
+    ) -> bool:
+        return await self._transition_generation(organization_public_id, generation)
 
     def _get_conversation(
         self,
@@ -127,21 +136,41 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
                 "Conversation persistence failed"
             ) from exc
 
-    async def _update_generation(
+    async def _transition_generation(
         self,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None:
-        await self._run_transaction(
-            lambda session: queries.update_generation(
+    ) -> bool:
+        def transition(session: Session) -> bool:
+            model = queries.lock_generation_for_terminal_transition(
                 session,
                 organization_public_id=organization_public_id,
                 generation=generation,
             )
-        )
+            if model is None:
+                return False
+            queries.apply_generation_terminal_transition(
+                session,
+                model=model,
+                generation=generation,
+            )
+            return True
+
+        return await self._run_transaction(transition)
 
     async def _run_transaction(self, operation: Callable[[Session], T]) -> T:
-        return await asyncio.to_thread(self._run_transaction_sync, operation)
+        return await self._run_worker(
+            lambda: self._run_transaction_sync(operation),
+        )
+
+    async def _run_worker(self, operation: Callable[[], T]) -> T:
+        """Do not abandon a session-owning worker when its caller is cancelled."""
+        worker = asyncio.create_task(asyncio.to_thread(operation))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            await _settle_cancelled_worker(worker)
+            raise
 
     def _run_transaction_sync(self, operation: Callable[[Session], T]) -> T:
         with self._session_factory() as session:
@@ -157,3 +186,18 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
             except Exception:
                 session.rollback()
                 raise
+
+
+async def _settle_cancelled_worker(worker: asyncio.Task[object]) -> None:
+    """Wait until a shielded worker has definitely committed or rolled back."""
+    while not worker.done():
+        try:
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            continue
+        except BaseException:  # noqa: BLE001 - cancellation remains authoritative
+            return
+
+    if worker.cancelled():
+        return
+    worker.exception()

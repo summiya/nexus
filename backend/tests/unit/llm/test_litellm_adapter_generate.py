@@ -8,7 +8,6 @@ import pytest
 
 from nexus.llm.domain import (
     LLMAuthenticationError,
-    LLMCompletedEvent,
     LLMEvent,
     LLMMessage,
     LLMRequest,
@@ -135,7 +134,7 @@ def test_litellm_adapter_rejects_invalid_tool_call_arguments_safely(
     assert arguments not in exc_info.value.message
 
 
-def test_litellm_adapter_streams_with_injected_client() -> None:
+def test_litellm_adapter_does_not_complete_an_empty_provider_stream() -> None:
     fake_client = FakeLiteLLMClient()
     request = LLMRequest(
         model="gpt-test",
@@ -149,7 +148,7 @@ def test_litellm_adapter_streams_with_injected_client() -> None:
 
     events = asyncio.run(collect_events())
 
-    assert events == [LLMStartedEvent(), LLMCompletedEvent()]
+    assert events == [LLMStartedEvent()]
 
 
 async def _empty_provider_stream() -> AsyncIterator[object]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -20,6 +21,7 @@ from nexus.conversations.domain import (
     Message,
 )
 from nexus.conversations.ports.persistence import ConversationReferenceError
+from nexus.infrastructure.persistence import _conversation_queries as queries
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
@@ -469,3 +471,105 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
             )
             == 0
         )
+
+
+def test_concurrent_terminal_transitions_allow_exactly_one_winner(
+    migrated_streaming_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    persistence = _persistence(migrated_streaming_engine)
+    message, generation = _generation(conversation)
+    asyncio.run(
+        persistence.prepare_generation(
+            organization_public_id=organization_public_id,
+            conversation=conversation,
+            message=message,
+            generation=generation,
+            history_limit=10,
+        )
+    )
+    completed_at = TIMESTAMP + timedelta(seconds=1)
+    assistant = Message(
+        public_id=uuid4(),
+        conversation_public_id=conversation.public_id,
+        role=ConversationMessageRole.ASSISTANT,
+        content="Only a completed winner may persist this message",
+        created_at=completed_at,
+    )
+    completed = replace(
+        generation,
+        assistant_message_public_id=assistant.public_id,
+        status=GenerationStatus.COMPLETED,
+        finish_reason=GenerationFinishReason.STOP,
+        completed_at=completed_at,
+    )
+    failed = replace(
+        generation,
+        status=GenerationStatus.FAILED,
+        completed_at=completed_at,
+        error_kind="provider_failure",
+    )
+    cancelled = replace(
+        generation,
+        status=GenerationStatus.CANCELLED,
+        completed_at=completed_at,
+    )
+    barrier = threading.Barrier(3)
+    original_lock = queries.lock_generation_for_terminal_transition
+
+    def race_to_lock(*args: object, **kwargs: object) -> GenerationModel | None:
+        barrier.wait(timeout=5)
+        return original_lock(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        queries,
+        "lock_generation_for_terminal_transition",
+        race_to_lock,
+    )
+
+    async def race() -> tuple[bool, bool, bool]:
+        completed_result, failed_result, cancelled_result = await asyncio.gather(
+            persistence.complete_generation(
+                organization_public_id=organization_public_id,
+                assistant_message=assistant,
+                generation=completed,
+            ),
+            persistence.fail_generation(
+                organization_public_id=organization_public_id,
+                generation=failed,
+            ),
+            persistence.cancel_generation(
+                organization_public_id=organization_public_id,
+                generation=cancelled,
+            ),
+        )
+        return completed_result, failed_result, cancelled_result
+
+    results = asyncio.run(race())
+
+    assert results.count(True) == 1
+    winning_status = (
+        GenerationStatus.COMPLETED,
+        GenerationStatus.FAILED,
+        GenerationStatus.CANCELLED,
+    )[results.index(True)]
+    with Session(migrated_streaming_engine) as session:
+        stored = session.scalar(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        )
+        assert stored is not None
+        assert stored.status == winning_status.value
+        assistant_count = session.scalar(
+            select(func.count(MessageModel.id)).where(
+                MessageModel.public_id == assistant.public_id
+            )
+        )
+        if winning_status is GenerationStatus.COMPLETED:
+            assert stored.assistant_message_id is not None
+            assert assistant_count == 1
+        else:
+            assert stored.assistant_message_id is None
+            assert assistant_count == 0
