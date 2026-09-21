@@ -61,12 +61,35 @@ class SessionService:
         """Create a session and commit the current application transaction."""
 
         try:
-            result = self._stage_session(identity)
+            result = self.stage_session(identity=identity)
             self.transaction.commit()
             return result
         except Exception:
             self.transaction.rollback()
             raise
+
+    def stage_session(
+        self,
+        *,
+        identity: AuthenticationIdentity,
+    ) -> SessionTokenResult:
+        """Stage a session and issue tokens without ending the transaction."""
+
+        refresh_token = _generate_refresh_token()
+        session = AuthenticationSession(
+            public_id=uuid4(),
+            identity=identity,
+            refresh_token_hash=self._hash_refresh_token(refresh_token),
+            expires_at=self.clock()
+            + timedelta(seconds=self.policy.refresh_token_expires_seconds),
+        )
+        self.repository.add_session(session)
+        return SessionTokenResult(
+            access_token=self._issue_access_token(session),
+            refresh_token=refresh_token,
+            token_type=_TOKEN_TYPE,
+            expires_in=self.access_token_gateway.expires_seconds,
+        )
 
     def refresh_session(self, *, refresh_token: str) -> SessionTokenResult:
         """Rotate a refresh token and commit its session update."""
@@ -102,26 +125,6 @@ class SessionService:
         except Exception:
             self.transaction.rollback()
             raise
-
-    def _stage_session(
-        self,
-        identity: AuthenticationIdentity,
-    ) -> SessionTokenResult:
-        refresh_token = _generate_refresh_token()
-        session = AuthenticationSession(
-            public_id=uuid4(),
-            identity=identity,
-            refresh_token_hash=self._hash_refresh_token(refresh_token),
-            expires_at=self.clock()
-            + timedelta(seconds=self.policy.refresh_token_expires_seconds),
-        )
-        self.repository.add_session(session)
-        return SessionTokenResult(
-            access_token=self._issue_access_token(session),
-            refresh_token=refresh_token,
-            token_type=_TOKEN_TYPE,
-            expires_in=self.access_token_gateway.expires_seconds,
-        )
 
     def _load_active_session(self, refresh_token: str) -> AuthenticationSession:
         session = self.repository.get_session_by_refresh_token_hash_for_update(

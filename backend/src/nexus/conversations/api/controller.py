@@ -10,16 +10,16 @@ from fastapi import APIRouter
 from fastapi.encoders import jsonable_encoder
 from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
 
-from nexus.api.dependencies.conversations import (
+from nexus.authentication.api.security import CurrentAuthContextDep
+from nexus.conversations.api.dependencies import (
     CreateConversationDep,
     StreamConversationMessageDep,
 )
-from nexus.api.schemas.conversations import (
+from nexus.conversations.api.schemas import (
     ConversationResponseBody,
     CreateConversationRequestBody,
     CreateMessageRequestBody,
 )
-from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.conversations.application.events import (
     ConversationEvent,
     GenerationCompleted,

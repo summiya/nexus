@@ -192,9 +192,8 @@ class SignupService:
                 )
             )
             self.repository.update_otp_challenge(replace(challenge, consumed_at=now))
-            # Session creation is the final signup write and commits the shared
-            # application transaction so account, OTP, and session stay atomic.
-            token_result = self.session_service.create_session(identity=identity)
+            token_result = self.session_service.stage_session(identity=identity)
+            self.transaction.commit()
         except _OtpVerificationFailed as exc:
             try:
                 if exc.persist_attempt_state:

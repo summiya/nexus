@@ -122,6 +122,36 @@ def test_create_session_commits_and_hides_plaintext_refresh_token() -> None:
     assert repository.added[0].refresh_token_hash != result.refresh_token
     assert result.refresh_token not in repository.added[0].refresh_token_hash
     assert transaction.committed is True
+    assert transaction.rolled_back is False
+
+
+def test_stage_session_does_not_commit_or_roll_back() -> None:
+    repository = FakeAuthenticationRepository()
+    transaction = FakeTransaction()
+
+    result = service(
+        repository=repository,
+        transaction=transaction,
+    ).stage_session(identity=identity())
+
+    assert result.access_token
+    assert len(repository.added) == 1
+    assert transaction.committed is False
+    assert transaction.rolled_back is False
+
+
+def test_stage_session_failure_does_not_commit_or_roll_back() -> None:
+    transaction = FakeTransaction()
+
+    with pytest.raises(NexusError) as exc_info:
+        service(
+            transaction=transaction,
+            token_gateway=FakeAccessTokenGateway(fail=True),
+        ).stage_session(identity=identity())
+
+    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+    assert transaction.committed is False
+    assert transaction.rolled_back is False
 
 
 def test_refresh_session_rotates_token_and_commits_last_used_at() -> None:

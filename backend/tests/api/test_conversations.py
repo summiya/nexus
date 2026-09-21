@@ -5,10 +5,10 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from nexus.api.dependencies.conversations import get_stream_conversation_message
 from nexus.authentication.api.security import get_current_auth_context
 from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
+from nexus.conversations.api.dependencies import get_stream_conversation_message
 from nexus.conversations.application.events import (
     ConversationEvent,
     GenerationCompleted,
