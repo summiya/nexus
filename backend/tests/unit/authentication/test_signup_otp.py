@@ -9,25 +9,23 @@ import pytest
 from nexus.application.authentication.gateways import AuthenticationEmailError
 from nexus.application.authentication.repository import OtpChallenge
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
     SignupOtpRequest,
+    SignupPolicy,
+    SignupService,
 )
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.security.otp import digest_otp, generate_numeric_otp
 
 
-def policy() -> AuthenticationPolicy:
-    return AuthenticationPolicy(
+def policy() -> SignupPolicy:
+    return SignupPolicy(
         otp_hmac_secret="test-secret-value-with-enough-length",
         signup_otp_ttl_seconds=600,
         signup_otp_max_attempts=5,
         signup_otp_length=6,
         signup_otp_rate_limit_window_seconds=900,
         signup_otp_rate_limit_max_requests=5,
-        refresh_token_secret="test-refresh-token-secret-with-enough-length",
-        refresh_token_expires_seconds=2_592_000,
     )
 
 
@@ -96,29 +94,20 @@ class FakeAuthenticationRepository:
         self.added.append(challenge)
 
 
-@dataclass(frozen=True)
-class StubAccessTokenGateway:
-    expires_seconds: int = 900
-
-    def issue_access_token(self, claims: object) -> str:
-        del claims
-        return "access-token"
-
-
 def build_service(
     *,
     email_gateway: FakeEmailGateway | None = None,
     rate_limiter: FakeRateLimiter | None = None,
     transaction: FakeTransaction | None = None,
     repository: FakeAuthenticationRepository | None = None,
-) -> AuthenticationService:
-    return AuthenticationService(
+) -> SignupService:
+    return SignupService(
         policy=policy(),
         transaction=transaction or FakeTransaction(),
         repository=repository or FakeAuthenticationRepository(),  # type: ignore[arg-type]
+        session_service=None,  # type: ignore[arg-type]
         email_gateway=email_gateway or FakeEmailGateway(),
         rate_limiter=rate_limiter or FakeRateLimiter(),
-        access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
         clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
     )
 

@@ -14,8 +14,10 @@ from nexus.application.authentication.gateways import (
     RateLimiter,
 )
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
+    SessionPolicy,
+    SessionService,
+    SignupPolicy,
+    SignupService,
 )
 from nexus.config.settings import Settings
 from nexus.infrastructure.authentication import (
@@ -65,9 +67,22 @@ class AuthenticationComposition:
     access_authentication_service: AccessAuthenticationService
     close_callback: Callable[[], None] = _noop
 
-    def build_authentication_service(self, session: Session) -> AuthenticationService:
-        return AuthenticationService(
-            policy=AuthenticationPolicy(
+    def build_signup_service(self, session: Session) -> SignupService:
+        transaction = SqlAlchemyTransactionManager(session)
+        repository = SqlAlchemyAuthenticationRepository(session)
+        session_service = SessionService(
+            policy=SessionPolicy(
+                refresh_token_secret=self.settings.refresh_token_secret,
+                refresh_token_expires_seconds=(
+                    self.settings.refresh_token_expires_seconds
+                ),
+            ),
+            transaction=transaction,
+            repository=repository,
+            access_token_gateway=self.access_token_gateway,
+        )
+        return SignupService(
+            policy=SignupPolicy(
                 otp_hmac_secret=self.settings.otp_hmac_secret,
                 signup_otp_length=self.settings.signup_otp_length,
                 signup_otp_ttl_seconds=self.settings.signup_otp_ttl_seconds,
@@ -78,6 +93,17 @@ class AuthenticationComposition:
                 signup_otp_rate_limit_window_seconds=(
                     self.settings.signup_otp_rate_limit_window_seconds
                 ),
+            ),
+            transaction=transaction,
+            repository=repository,
+            session_service=session_service,
+            email_gateway=self.email_gateway,
+            rate_limiter=self.rate_limiter,
+        )
+
+    def build_session_service(self, session: Session) -> SessionService:
+        return SessionService(
+            policy=SessionPolicy(
                 refresh_token_secret=self.settings.refresh_token_secret,
                 refresh_token_expires_seconds=(
                     self.settings.refresh_token_expires_seconds
@@ -85,8 +111,6 @@ class AuthenticationComposition:
             ),
             transaction=SqlAlchemyTransactionManager(session),
             repository=SqlAlchemyAuthenticationRepository(session),
-            email_gateway=self.email_gateway,
-            rate_limiter=self.rate_limiter,
             access_token_gateway=self.access_token_gateway,
         )
 

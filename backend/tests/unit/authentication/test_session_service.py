@@ -15,8 +15,8 @@ from nexus.application.authentication.repository import (
     AuthenticationSession,
 )
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
+    SessionPolicy,
+    SessionService,
 )
 from nexus.errors import ErrorCode, NexusError
 
@@ -58,22 +58,6 @@ class FakeAuthenticationRepository:
 
 
 @dataclass(frozen=True)
-class StubEmailGateway:
-    def send_signup_otp(self, **kwargs: object) -> None:
-        del kwargs
-
-    def send_welcome_email(self, **kwargs: object) -> None:
-        del kwargs
-
-
-@dataclass(frozen=True)
-class AllowingRateLimiter:
-    def allow(self, **kwargs: object) -> bool:
-        del kwargs
-        return True
-
-
-@dataclass(frozen=True)
 class FakeAccessTokenGateway:
     expires_seconds: int = 900
     fail: bool = False
@@ -97,29 +81,21 @@ def service(
     repository: FakeAuthenticationRepository | None = None,
     transaction: FakeTransaction | None = None,
     token_gateway: FakeAccessTokenGateway | None = None,
-) -> AuthenticationService:
-    return AuthenticationService(
-        policy=AuthenticationPolicy(
-            otp_hmac_secret="test-secret-value-with-enough-length",
-            signup_otp_length=6,
-            signup_otp_ttl_seconds=600,
-            signup_otp_max_attempts=5,
-            signup_otp_rate_limit_max_requests=5,
-            signup_otp_rate_limit_window_seconds=900,
+) -> SessionService:
+    return SessionService(
+        policy=SessionPolicy(
             refresh_token_secret="test-refresh-token-secret-with-enough-length",
             refresh_token_expires_seconds=2_592_000,
         ),
         transaction=transaction or FakeTransaction(),
         repository=repository or FakeAuthenticationRepository(),  # type: ignore[arg-type]
-        email_gateway=StubEmailGateway(),  # type: ignore[arg-type]
-        rate_limiter=AllowingRateLimiter(),  # type: ignore[arg-type]
         access_token_gateway=token_gateway or FakeAccessTokenGateway(),
         clock=lambda: now or datetime(2026, 9, 16, tzinfo=UTC),
     )
 
 
 def active_session(
-    auth_service: AuthenticationService,
+    auth_service: SessionService,
     *,
     refresh_token: str,
 ) -> AuthenticationSession:

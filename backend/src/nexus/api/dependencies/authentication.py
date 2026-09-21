@@ -9,7 +9,7 @@ from fastapi import Depends
 from nexus.api.composition.authentication import AuthenticationComposition
 from nexus.api.dependencies import AppContainerDep
 from nexus.api.dependencies.database import RequestSession
-from nexus.application.authentication.service import AuthenticationService
+from nexus.application.authentication.service import SessionService, SignupService
 from nexus.services.access_authentication import AccessAuthenticationService
 
 
@@ -25,11 +25,18 @@ AuthenticationCompositionDep = Annotated[
 ]
 
 
-def get_authentication_service(
+def get_signup_service(
     session: RequestSession,
     composition: AuthenticationCompositionDep,
-) -> AuthenticationService:
-    return composition.build_authentication_service(session)
+) -> SignupService:
+    return composition.build_signup_service(session)
+
+
+def get_session_service(
+    session: RequestSession,
+    composition: AuthenticationCompositionDep,
+) -> SessionService:
+    return composition.build_session_service(session)
 
 
 def get_access_authentication_service(
@@ -38,9 +45,13 @@ def get_access_authentication_service(
     return composition.access_authentication_service
 
 
-AuthenticationServiceDep = Annotated[
-    AuthenticationService,
-    Depends(get_authentication_service),
+SignupServiceDep = Annotated[
+    SignupService,
+    Depends(get_signup_service),
+]
+SessionServiceDep = Annotated[
+    SessionService,
+    Depends(get_session_service),
 ]
 AccessAuthenticationServiceDep = Annotated[
     AccessAuthenticationService,

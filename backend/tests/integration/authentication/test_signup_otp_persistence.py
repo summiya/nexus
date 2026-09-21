@@ -17,9 +17,11 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
+    SessionPolicy,
+    SessionService,
     SignupOtpRequest,
+    SignupPolicy,
+    SignupService,
 )
 from nexus.config.settings import Settings, load_settings
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
@@ -131,8 +133,10 @@ def test_signup_request_persists_secure_otp_challenge(
     email_provider = FakeEmailProvider()
     with Session(migrated_engine) as session:
         settings_value = build_settings()
-        service = AuthenticationService(
-            policy=AuthenticationPolicy(
+        transaction = SqlAlchemyTransactionManager(session)
+        repository = SqlAlchemyAuthenticationRepository(session)
+        service = SignupService(
+            policy=SignupPolicy(
                 otp_hmac_secret=settings_value.otp_hmac_secret,
                 signup_otp_length=settings_value.signup_otp_length,
                 signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
@@ -143,16 +147,22 @@ def test_signup_request_persists_secure_otp_challenge(
                 signup_otp_rate_limit_window_seconds=(
                     settings_value.signup_otp_rate_limit_window_seconds
                 ),
-                refresh_token_secret=settings_value.refresh_token_secret,
-                refresh_token_expires_seconds=(
-                    settings_value.refresh_token_expires_seconds
-                ),
             ),
-            transaction=SqlAlchemyTransactionManager(session),
-            repository=SqlAlchemyAuthenticationRepository(session),
+            transaction=transaction,
+            repository=repository,
+            session_service=SessionService(
+                policy=SessionPolicy(
+                    refresh_token_secret=settings_value.refresh_token_secret,
+                    refresh_token_expires_seconds=(
+                        settings_value.refresh_token_expires_seconds
+                    ),
+                ),
+                transaction=transaction,
+                repository=repository,
+                access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
+            ),
             email_gateway=email_provider,
             rate_limiter=AllowingRateLimiter(),
-            access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
         )
         service.request_signup_otp(
             request=SignupOtpRequest(

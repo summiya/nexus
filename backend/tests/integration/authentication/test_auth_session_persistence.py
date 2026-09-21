@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 
 from nexus.application.authentication.repository import AuthenticationIdentity
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
+    SessionPolicy,
+    SessionService,
 )
 from nexus.config.settings import load_settings
 from nexus.errors import ErrorCode, NexusError
@@ -89,7 +89,7 @@ def migrated_engine() -> Iterator[Engine]:
         admin_engine.dispose()
 
 
-def build_service(session: Session) -> AuthenticationService:
+def build_service(session: Session) -> SessionService:
     return _build_service(
         session,
         AccessTokenService(
@@ -101,7 +101,7 @@ def build_service(session: Session) -> AuthenticationService:
     )
 
 
-def build_failing_service(session: Session) -> AuthenticationService:
+def build_failing_service(session: Session) -> SessionService:
     return _build_service(
         session,
         FailingAccessTokenService(
@@ -116,22 +116,14 @@ def build_failing_service(session: Session) -> AuthenticationService:
 def _build_service(
     session: Session,
     token_service: AccessTokenService,
-) -> AuthenticationService:
-    return AuthenticationService(
-        policy=AuthenticationPolicy(
-            otp_hmac_secret="test-secret-value-with-enough-length",
-            signup_otp_length=6,
-            signup_otp_ttl_seconds=600,
-            signup_otp_max_attempts=5,
-            signup_otp_rate_limit_max_requests=5,
-            signup_otp_rate_limit_window_seconds=900,
+) -> SessionService:
+    return SessionService(
+        policy=SessionPolicy(
             refresh_token_secret="test-refresh-token-secret-with-enough-length",
             refresh_token_expires_seconds=2_592_000,
         ),
         transaction=SqlAlchemyTransactionManager(session),
         repository=SqlAlchemyAuthenticationRepository(session),
-        email_gateway=None,  # type: ignore[arg-type]
-        rate_limiter=None,  # type: ignore[arg-type]
         access_token_gateway=JwtAccessTokenGateway(token_service),
         clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
     )

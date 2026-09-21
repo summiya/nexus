@@ -22,8 +22,10 @@ from nexus.application.authentication.gateways import (
     AuthenticationEmailError,
 )
 from nexus.application.authentication.service import (
-    AuthenticationPolicy,
-    AuthenticationService,
+    SessionPolicy,
+    SessionService,
+    SignupPolicy,
+    SignupService,
     SignupVerificationRequest,
 )
 from nexus.authorization.bootstrap import ADMINISTRATOR_ROLE_NAME
@@ -153,10 +155,15 @@ def build_service(
     settings_value: Settings | None = None,
     welcome_sender: RecordingWelcomeEmailSender | None = None,
     access_token_gateway: AccessTokenGateway | None = None,
-) -> AuthenticationService:
+) -> SignupService:
     settings_value = settings_value or build_settings()
-    return AuthenticationService(
-        policy=AuthenticationPolicy(
+    transaction = SqlAlchemyTransactionManager(session)
+    repository = SqlAlchemyAuthenticationRepository(session)
+    resolved_access_token_gateway = access_token_gateway or JwtAccessTokenGateway(
+        _access_token_service(settings_value)
+    )
+    return SignupService(
+        policy=SignupPolicy(
             otp_hmac_secret=settings_value.otp_hmac_secret,
             signup_otp_length=settings_value.signup_otp_length,
             signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
@@ -167,19 +174,23 @@ def build_service(
             signup_otp_rate_limit_window_seconds=(
                 settings_value.signup_otp_rate_limit_window_seconds
             ),
-            refresh_token_secret=settings_value.refresh_token_secret,
-            refresh_token_expires_seconds=(
-                settings_value.refresh_token_expires_seconds
-            ),
         ),
-        transaction=SqlAlchemyTransactionManager(session),
-        repository=SqlAlchemyAuthenticationRepository(session),
+        transaction=transaction,
+        repository=repository,
+        session_service=SessionService(
+            policy=SessionPolicy(
+                refresh_token_secret=settings_value.refresh_token_secret,
+                refresh_token_expires_seconds=(
+                    settings_value.refresh_token_expires_seconds
+                ),
+            ),
+            transaction=transaction,
+            repository=repository,
+            access_token_gateway=resolved_access_token_gateway,
+            clock=lambda: datetime.now(UTC),
+        ),
         email_gateway=welcome_sender or RecordingWelcomeEmailSender(),
         rate_limiter=AllowingRateLimiter(),
-        access_token_gateway=(
-            access_token_gateway
-            or JwtAccessTokenGateway(_access_token_service(settings_value))
-        ),
         clock=lambda: datetime.now(UTC),
     )
 
