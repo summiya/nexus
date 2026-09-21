@@ -19,8 +19,8 @@ from nexus.conversations.domain import (
     GenerationStatus,
     Message,
 )
-from nexus.conversations.ports.repositories import ConversationReferenceError
-from nexus.infrastructure.persistence.conversation_operations import (
+from nexus.conversations.ports.persistence import ConversationReferenceError
+from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
 from nexus.infrastructure.persistence.models.conversation import (
@@ -181,7 +181,7 @@ def test_prepare_generation_commits_running_user_message_and_generation(
         )
     )
 
-    assert prepared.conversation == conversation
+    assert prepared == (message,)
     with Session(migrated_streaming_engine) as session:
         assert (
             session.scalar(
@@ -234,7 +234,7 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
         )
         messages.append(message)
 
-    assert prepared.history == tuple(messages[-2:])
+    assert prepared == tuple(messages[-2:])
 
 
 def test_prepare_generation_rolls_back_message_when_generation_is_invalid(

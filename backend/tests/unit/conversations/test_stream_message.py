@@ -18,7 +18,6 @@ from nexus.conversations.application.stream_message import (
     StreamConversationMessageRequest,
 )
 from nexus.conversations.domain import Conversation, Generation, Message
-from nexus.conversations.ports.persistence import PreparedGeneration
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelPolicy, Stream
 from nexus.llm.domain import (
@@ -79,12 +78,12 @@ class FakePersistence:
         message: Message,
         generation: Generation,
         history_limit: int,
-    ) -> PreparedGeneration:
+    ) -> tuple[Message, ...]:
         assert organization_public_id == ORG_ID
         assert conversation.public_id == CONVERSATION_ID
         assert history_limit == 10
         self.prepared.append((message, generation))
-        return PreparedGeneration(conversation, (message,))
+        return (message,)
 
     async def complete_generation(
         self,
@@ -218,7 +217,7 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
             message: Message,
             generation: Generation,
             history_limit: int,
-        ) -> PreparedGeneration:
+        ) -> tuple[Message, ...]:
             prepared = await super().prepare_generation(
                 organization_public_id=organization_public_id,
                 conversation=conversation,
@@ -351,7 +350,7 @@ def test_history_is_bounded_before_provider_invocation() -> None:
             message: Message,
             generation: Generation,
             history_limit: int,
-        ) -> PreparedGeneration:
+        ) -> tuple[Message, ...]:
             del organization_public_id, generation, history_limit
             old = Message(
                 public_id=uuid4(),
@@ -367,7 +366,7 @@ def test_history_is_bounded_before_provider_invocation() -> None:
                 content="abcd",
                 created_at=NOW,
             )
-            return PreparedGeneration(conversation, (old, recent, message))
+            return old, recent, message
 
     persistence = HistoryPersistence()
     gateway = FakeGateway()

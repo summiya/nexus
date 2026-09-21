@@ -275,7 +275,7 @@ class StreamConversationMessage:
             status=GenerationStatus.RUNNING,
             started_at=now,
         )
-        prepared = await self.persistence.prepare_generation(
+        history = await self.persistence.prepare_generation(
             organization_public_id=request.organization_public_id,
             conversation=conversation,
             message=message,
@@ -283,13 +283,13 @@ class StreamConversationMessage:
             history_limit=self.history_limit,
         )
         try:
-            history = _bounded_history(
-                prepared.history,
+            bounded_history = _bounded_history(
+                history,
                 max_chars=self.history_max_chars,
             )
             llm_request = LLMRequest(
                 model=model,
-                messages=tuple(_to_llm_message(item) for item in history),
+                messages=tuple(_to_llm_message(item) for item in bounded_history),
                 tools=(),
             )
         except Exception:

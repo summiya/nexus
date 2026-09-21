@@ -1,20 +1,23 @@
-"""Application-facing Conversation persistence operations."""
+"""Application-facing Conversation persistence boundary."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from nexus.conversations.domain import Conversation, Generation, Message
 
 
-@dataclass(frozen=True)
-class PreparedGeneration:
-    """Committed input state and history prepared for provider execution."""
+class ConversationPersistenceError(Exception):
+    """An unexpected Conversation persistence failure occurred."""
 
-    conversation: Conversation
-    history: tuple[Message, ...]
+
+class ConversationReferenceError(Exception):
+    """A required tenant, Conversation, or Message reference is invalid."""
+
+
+class ConversationEntityNotFoundError(Exception):
+    """A requested Conversation entity cannot be updated."""
 
 
 class ConversationPersistence(Protocol):
@@ -37,7 +40,7 @@ class ConversationPersistence(Protocol):
         message: Message,
         generation: Generation,
         history_limit: int,
-    ) -> PreparedGeneration: ...
+    ) -> tuple[Message, ...]: ...
 
     async def complete_generation(
         self,
@@ -62,4 +65,9 @@ class ConversationPersistence(Protocol):
     ) -> None: ...
 
 
-__all__ = ["ConversationPersistence", "PreparedGeneration"]
+__all__ = [
+    "ConversationEntityNotFoundError",
+    "ConversationPersistence",
+    "ConversationPersistenceError",
+    "ConversationReferenceError",
+]
