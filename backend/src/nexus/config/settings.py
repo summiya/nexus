@@ -38,10 +38,16 @@ class Settings(BaseSettings):
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
 
     model_config = SettingsConfigDict(
-        env_file=ROOT_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
 
-settings = Settings()  # type: ignore[call-arg]
+def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
+    """Load one explicit settings instance for an application or CLI entrypoint."""
+
+    return Settings(_env_file=env_file)  # type: ignore[call-arg]
+
+
+# Transitional compatibility while runtime modules move to explicit composition.
+settings = load_settings()
