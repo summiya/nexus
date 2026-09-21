@@ -1,4 +1,4 @@
-"""Authentication API schemas."""
+"""Authentication HTTP schemas."""
 
 from __future__ import annotations
 

@@ -19,7 +19,7 @@ from nexus.api.schemas.conversations import (
     CreateConversationRequestBody,
     CreateMessageRequestBody,
 )
-from nexus.api.security.authentication import CurrentAuthContextDep
+from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.conversations.application.events import (
     ConversationEvent,
     GenerationCompleted,

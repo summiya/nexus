@@ -8,16 +8,16 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.gateways import (
+from nexus.authentication.gateways import (
     AccessTokenGateway,
     AuthenticationEmailGateway,
     RateLimiter,
 )
-from nexus.application.authentication.service import (
-    SessionPolicy,
-    SessionService,
-    SignupPolicy,
-    SignupService,
+from nexus.authentication.session_service import SessionPolicy, SessionService
+from nexus.authentication.signup_service import SignupPolicy, SignupService
+from nexus.authentication.tokens import (
+    AccessAuthenticationService,
+    AccessTokenService,
 )
 from nexus.config.settings import Settings
 from nexus.infrastructure.authentication import (
@@ -31,8 +31,6 @@ from nexus.infrastructure.persistence.repositories.authentication import (
 )
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 from nexus.infrastructure.rate_limit import RedisRateLimiter
-from nexus.security.authentication_tokens import AccessTokenService
-from nexus.services.access_authentication import AccessAuthenticationService
 
 
 def _noop() -> None:

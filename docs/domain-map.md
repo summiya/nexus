@@ -116,7 +116,7 @@ Each domain entry defines purpose, ownership, tests, documentation, dependencies
 ### Authentication
 
 - **Purpose:** Establish and verify user identity, sessions, credentials, and authentication tokens.
-- **Backend ownership:** `backend/src/nexus/security/authentication/`, authentication-specific code under `backend/src/nexus/application/` and `backend/src/nexus/domain/`, and relevant API routes/dependencies.
+- **Backend ownership:** the feature-first `backend/src/nexus/authentication/` package, with concrete provider and persistence adapters under `backend/src/nexus/infrastructure/` and object construction under `backend/src/nexus/composition/`.
 - **Frontend ownership:** `frontend/src/features/authentication/`.
 - **Tests:** Authentication-focused backend unit/API/integration tests and frontend authentication unit/component/integration/E2E tests.
 - **Documentation:** `docs/07-security.md` plus `docs/domains/authentication/` when domain-specific documentation exists.

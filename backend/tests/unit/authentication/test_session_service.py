@@ -6,15 +6,15 @@ from uuid import uuid4
 
 import pytest
 
-from nexus.application.authentication.gateways import (
+from nexus.authentication.gateways import (
     AccessTokenClaims,
     AccessTokenGatewayError,
 )
-from nexus.application.authentication.repository import (
+from nexus.authentication.repository import (
     AuthenticationIdentity,
     AuthenticationSession,
 )
-from nexus.application.authentication.service import (
+from nexus.authentication.session_service import (
     SessionPolicy,
     SessionService,
 )

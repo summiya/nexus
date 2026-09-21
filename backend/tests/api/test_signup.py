@@ -7,15 +7,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nexus.api.composition.authentication import build_email_provider
-from nexus.api.dependencies.authentication import (
+from nexus.authentication.api.dependencies import (
     get_signup_service,
 )
-from nexus.application.authentication.service import (
+from nexus.authentication.signup_service import (
     SignupOtpRequest,
     SignupVerificationRequest,
     SignupVerificationResult,
 )
+from nexus.composition.authentication import build_email_provider
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
