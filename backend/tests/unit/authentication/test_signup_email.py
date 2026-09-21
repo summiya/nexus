@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nexus.application.authentication.email import DefaultSignupOtpEmailSender
+from nexus.application.authentication.gateways import AuthenticationEmailError
+from nexus.infrastructure.authentication import ProviderAuthenticationEmailGateway
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 
 
@@ -25,7 +26,7 @@ def test_signup_otp_email_sender_composes_and_delegates_message() -> None:
     provider = FakeEmailProvider()
     expires_at = datetime(2026, 9, 16, 12, 30, tzinfo=UTC)
 
-    DefaultSignupOtpEmailSender(email_provider=provider).send_signup_otp(
+    ProviderAuthenticationEmailGateway(email_provider=provider).send_signup_otp(
         email="person@example.com",
         otp="123456",
         expires_at=expires_at,
@@ -44,8 +45,8 @@ def test_signup_otp_email_sender_composes_and_delegates_message() -> None:
 
 
 def test_signup_otp_email_sender_propagates_delivery_failure() -> None:
-    with pytest.raises(EmailDeliveryError):
-        DefaultSignupOtpEmailSender(
+    with pytest.raises(AuthenticationEmailError):
+        ProviderAuthenticationEmailGateway(
             email_provider=FakeEmailProvider(fail=True)
         ).send_signup_otp(
             email="person@example.com",
@@ -58,7 +59,9 @@ def test_signup_otp_email_sender_does_not_log_otp(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     with caplog.at_level(logging.INFO):
-        DefaultSignupOtpEmailSender(email_provider=FakeEmailProvider()).send_signup_otp(
+        ProviderAuthenticationEmailGateway(
+            email_provider=FakeEmailProvider()
+        ).send_signup_otp(
             email="person@example.com",
             otp="123456",
             expires_at=datetime(2026, 9, 16, 12, 30, tzinfo=UTC),

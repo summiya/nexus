@@ -13,11 +13,11 @@ from nexus.api.composition.conversations import (
     build_conversation_composition,
 )
 from nexus.api.composition.llm import LLMComposition, build_llm_composition
+from nexus.application.authentication.gateways import RateLimiter
 from nexus.config.settings import Settings
 from nexus.events import EventPublisher, InProcessEventPublisher
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.session import Database, build_database
-from nexus.infrastructure.rate_limit import RateLimiter
 from nexus.llm.ports import LLMGateway
 
 

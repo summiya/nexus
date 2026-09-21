@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import cast
 
 from redis import Redis
 from redis.exceptions import RedisError
+
+from nexus.application.authentication.gateways import RateLimitError
 
 _FIXED_WINDOW_RATE_LIMIT_SCRIPT = """
 local current = redis.call("INCR", KEYS[1])
@@ -18,17 +20,6 @@ if current <= tonumber(ARGV[1]) then
 end
 return 0
 """
-
-
-class RateLimitError(Exception):
-    """Raised when the rate limiter cannot make a safe decision."""
-
-
-class RateLimiter(Protocol):
-    """Focused rate-limiter contract."""
-
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
-        """Return whether the key is allowed within the configured window."""
 
 
 @dataclass(frozen=True)

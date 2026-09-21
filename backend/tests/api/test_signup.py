@@ -9,11 +9,10 @@ from fastapi.testclient import TestClient
 
 from nexus.api.composition.authentication import build_email_provider
 from nexus.api.dependencies.authentication import (
-    get_signup_otp_service,
-    get_signup_verification_service,
+    get_authentication_service,
 )
-from nexus.application.authentication.signup import SignupOtpRequest
-from nexus.application.authentication.signup_verification import (
+from nexus.application.authentication.service import (
+    SignupOtpRequest,
     SignupVerificationRequest,
     SignupVerificationResult,
 )
@@ -23,24 +22,20 @@ from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 from nexus.infrastructure.mailer.providers import ResendEmailProvider
 
 
-class FakeSignupService:
+class FakeAuthenticationService:
     def __init__(self) -> None:
-        self.requests: list[SignupOtpRequest] = []
+        self.otp_requests: list[SignupOtpRequest] = []
+        self.verification_requests: list[SignupVerificationRequest] = []
 
     def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
-        self.requests.append(request)
-
-
-class FakeSignupVerificationService:
-    def __init__(self) -> None:
-        self.requests: list[SignupVerificationRequest] = []
+        self.otp_requests.append(request)
 
     def complete_signup(
         self,
         *,
         request: SignupVerificationRequest,
     ) -> SignupVerificationResult:
-        self.requests.append(request)
+        self.verification_requests.append(request)
         return SignupVerificationResult(
             status="completed",
             access_token="access-token",
@@ -64,35 +59,23 @@ def build_settings(**overrides: object) -> Settings:
 
 
 @contextmanager
-def override_signup_service(
+def override_authentication_service(
     app: FastAPI,
-    service: FakeSignupService,
+    service: FakeAuthenticationService,
 ) -> Iterator[None]:
-    app.dependency_overrides[get_signup_otp_service] = lambda: service
+    app.dependency_overrides[get_authentication_service] = lambda: service
     try:
         yield
     finally:
-        app.dependency_overrides.pop(get_signup_otp_service, None)
-
-
-@contextmanager
-def override_signup_verification_service(
-    app: FastAPI,
-    service: FakeSignupVerificationService,
-) -> Iterator[None]:
-    app.dependency_overrides[get_signup_verification_service] = lambda: service
-    try:
-        yield
-    finally:
-        app.dependency_overrides.pop(get_signup_verification_service, None)
+        app.dependency_overrides.pop(get_authentication_service, None)
 
 
 def test_signup_endpoint_returns_generic_accepted_response(
     app: FastAPI,
     client: TestClient,
 ) -> None:
-    service = FakeSignupService()
-    with override_signup_service(app, service):
+    service = FakeAuthenticationService()
+    with override_authentication_service(app, service):
         response = client.post(
             "/api/v1/auth/signup",
             json={
@@ -105,7 +88,7 @@ def test_signup_endpoint_returns_generic_accepted_response(
 
     assert response.status_code == 202
     assert response.json() == {"status": "accepted"}
-    assert service.requests == [
+    assert service.otp_requests == [
         SignupOtpRequest(
             organization_name="Acme AI",
             first_name="Summiya",
@@ -119,8 +102,8 @@ def test_signup_endpoint_rejects_client_supplied_purpose(
     app: FastAPI,
     client: TestClient,
 ) -> None:
-    service = FakeSignupService()
-    with override_signup_service(app, service):
+    service = FakeAuthenticationService()
+    with override_authentication_service(app, service):
         response = client.post(
             "/api/v1/auth/signup",
             json={
@@ -133,15 +116,15 @@ def test_signup_endpoint_rejects_client_supplied_purpose(
         )
 
     assert response.status_code == 422
-    assert service.requests == []
+    assert service.otp_requests == []
 
 
 def test_signup_verify_endpoint_returns_completed_response(
     app: FastAPI,
     client: TestClient,
 ) -> None:
-    service = FakeSignupVerificationService()
-    with override_signup_verification_service(app, service):
+    service = FakeAuthenticationService()
+    with override_authentication_service(app, service):
         response = client.post(
             "/api/v1/auth/signup/verify",
             json={
@@ -161,7 +144,7 @@ def test_signup_verify_endpoint_returns_completed_response(
         "token_type": "bearer",
         "expires_in": 900,
     }
-    assert service.requests == [
+    assert service.verification_requests == [
         SignupVerificationRequest(
             email="summiya@acme.com",
             otp="123456",
@@ -181,7 +164,7 @@ def test_signup_verify_endpoint_requires_all_fields(
     client: TestClient,
     missing_field: str,
 ) -> None:
-    service = FakeSignupVerificationService()
+    service = FakeAuthenticationService()
     body = {
         "email": "summiya@acme.com",
         "otp": "123456",
@@ -191,12 +174,12 @@ def test_signup_verify_endpoint_requires_all_fields(
     }
     body.pop(missing_field)
 
-    with override_signup_verification_service(app, service):
+    with override_authentication_service(app, service):
         response = client.post("/api/v1/auth/signup/verify", json=body)
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == ErrorCode.VALIDATION_ERROR
-    assert service.requests == []
+    assert service.verification_requests == []
 
 
 def test_build_email_provider_uses_resend_settings() -> None:

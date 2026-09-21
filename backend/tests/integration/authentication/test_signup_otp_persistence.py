@@ -16,13 +16,16 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.signup import SignupOtpRequest, SignupOtpService
+from nexus.application.authentication.service import (
+    AuthenticationPolicy,
+    AuthenticationService,
+    SignupOtpRequest,
+)
 from nexus.config.settings import Settings, load_settings
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
-from nexus.infrastructure.persistence.repositories.otp_challenge import (
-    SqlAlchemyOtpChallengeRepository,
+from nexus.infrastructure.persistence.repositories.authentication import (
+    SqlAlchemyAuthenticationRepository,
 )
-from nexus.infrastructure.persistence.repositories.user import SqlAlchemyUserRepository
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
@@ -104,6 +107,9 @@ class FakeEmailProvider:
     ) -> None:
         self.sent.append({"email": email, "otp": otp, "expires_at": expires_at})
 
+    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+        del email, display_name
+
 
 class AllowingRateLimiter:
     def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
@@ -111,18 +117,42 @@ class AllowingRateLimiter:
         return True
 
 
+class StubAccessTokenGateway:
+    expires_seconds = 900
+
+    def issue_access_token(self, claims: object) -> str:
+        del claims
+        return "access-token"
+
+
 def test_signup_request_persists_secure_otp_challenge(
     migrated_engine: Engine,
 ) -> None:
     email_provider = FakeEmailProvider()
     with Session(migrated_engine) as session:
-        service = SignupOtpService(
-            settings=build_settings(),
+        settings_value = build_settings()
+        service = AuthenticationService(
+            policy=AuthenticationPolicy(
+                otp_hmac_secret=settings_value.otp_hmac_secret,
+                signup_otp_length=settings_value.signup_otp_length,
+                signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
+                signup_otp_max_attempts=settings_value.signup_otp_max_attempts,
+                signup_otp_rate_limit_max_requests=(
+                    settings_value.signup_otp_rate_limit_max_requests
+                ),
+                signup_otp_rate_limit_window_seconds=(
+                    settings_value.signup_otp_rate_limit_window_seconds
+                ),
+                refresh_token_secret=settings_value.refresh_token_secret,
+                refresh_token_expires_seconds=(
+                    settings_value.refresh_token_expires_seconds
+                ),
+            ),
             transaction=SqlAlchemyTransactionManager(session),
-            user_repository=SqlAlchemyUserRepository(session),
-            otp_challenge_repository=SqlAlchemyOtpChallengeRepository(session),
-            email_sender=email_provider,
+            repository=SqlAlchemyAuthenticationRepository(session),
+            email_gateway=email_provider,
             rate_limiter=AllowingRateLimiter(),
+            access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
         )
         service.request_signup_otp(
             request=SignupOtpRequest(

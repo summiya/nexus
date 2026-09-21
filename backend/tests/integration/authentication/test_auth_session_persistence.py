@@ -14,20 +14,26 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from nexus.application.authentication.repository import AuthenticationIdentity
+from nexus.application.authentication.service import (
+    AuthenticationPolicy,
+    AuthenticationService,
+)
 from nexus.config.settings import load_settings
 from nexus.errors import ErrorCode, NexusError
+from nexus.infrastructure.authentication import JwtAccessTokenGateway
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
-from nexus.infrastructure.persistence.repositories.auth_session import (
-    SqlAlchemyAuthSessionRepository,
+from nexus.infrastructure.persistence.repositories.authentication import (
+    SqlAlchemyAuthenticationRepository,
 )
+from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 from nexus.security.authentication_tokens import (
     AccessTokenError,
     AccessTokenService,
     AuthTokenContext,
 )
-from nexus.services.authentication_session import AuthenticationSessionService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
@@ -83,33 +89,58 @@ def migrated_engine() -> Iterator[Engine]:
         admin_engine.dispose()
 
 
-def build_service(session: Session) -> AuthenticationSessionService:
-    return AuthenticationSessionService(
-        access_token_service=AccessTokenService(
+def build_service(session: Session) -> AuthenticationService:
+    return _build_service(
+        session,
+        AccessTokenService(
             secret="test-auth-token-secret-with-enough-length",
             expires_seconds=900,
             issuer="nexus-test",
             clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
         ),
-        refresh_token_secret="test-refresh-token-secret-with-enough-length",
-        refresh_token_expires_seconds=2_592_000,
-        auth_session_repository=SqlAlchemyAuthSessionRepository(session),
+    )
+
+
+def build_failing_service(session: Session) -> AuthenticationService:
+    return _build_service(
+        session,
+        FailingAccessTokenService(
+            secret="test-auth-token-secret-with-enough-length",
+            expires_seconds=900,
+            issuer="nexus-test",
+            clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
+        ),
+    )
+
+
+def _build_service(
+    session: Session,
+    token_service: AccessTokenService,
+) -> AuthenticationService:
+    return AuthenticationService(
+        policy=AuthenticationPolicy(
+            otp_hmac_secret="test-secret-value-with-enough-length",
+            signup_otp_length=6,
+            signup_otp_ttl_seconds=600,
+            signup_otp_max_attempts=5,
+            signup_otp_rate_limit_max_requests=5,
+            signup_otp_rate_limit_window_seconds=900,
+            refresh_token_secret="test-refresh-token-secret-with-enough-length",
+            refresh_token_expires_seconds=2_592_000,
+        ),
+        transaction=SqlAlchemyTransactionManager(session),
+        repository=SqlAlchemyAuthenticationRepository(session),
+        email_gateway=None,  # type: ignore[arg-type]
+        rate_limiter=None,  # type: ignore[arg-type]
+        access_token_gateway=JwtAccessTokenGateway(token_service),
         clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
     )
 
 
-def build_failing_service(session: Session) -> AuthenticationSessionService:
-    return AuthenticationSessionService(
-        access_token_service=FailingAccessTokenService(
-            secret="test-auth-token-secret-with-enough-length",
-            expires_seconds=900,
-            issuer="nexus-test",
-            clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
-        ),
-        refresh_token_secret="test-refresh-token-secret-with-enough-length",
-        refresh_token_expires_seconds=2_592_000,
-        auth_session_repository=SqlAlchemyAuthSessionRepository(session),
-        clock=lambda: datetime(2026, 9, 16, tzinfo=UTC),
+def identity_for(user: User) -> AuthenticationIdentity:
+    return AuthenticationIdentity(
+        user_public_id=user.public_id,
+        organization_public_id=user.organization.public_id,
     )
 
 
@@ -131,8 +162,7 @@ def test_create_session_persists_hash_without_plaintext(
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         user = create_user(session)
-        result = auth_service.create_session(user=user)
-        session.commit()
+        result = auth_service.create_session(identity=identity_for(user))
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
@@ -147,15 +177,13 @@ def test_refresh_rotates_token_and_invalidates_old_token(
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         user = create_user(session)
-        first = auth_service.create_session(user=user)
-        session.commit()
+        first = auth_service.create_session(identity=identity_for(user))
 
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         second = auth_service.refresh_session(
             refresh_token=first.refresh_token,
         )
-        session.commit()
 
     assert second.refresh_token != first.refresh_token
 
@@ -177,28 +205,26 @@ def test_revoke_persists_revoked_at(migrated_engine: Engine) -> None:
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         user = create_user(session)
-        result = auth_service.create_session(user=user)
-        session.commit()
+        result = auth_service.create_session(identity=identity_for(user))
 
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         auth_service.revoke_session(refresh_token=result.refresh_token)
-        session.commit()
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
         assert auth_session.revoked_at == datetime(2026, 9, 16, tzinfo=UTC)
 
 
-def test_outer_rollback_removes_created_session(migrated_engine: Engine) -> None:
+def test_create_session_owns_commit(migrated_engine: Engine) -> None:
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         user = create_user(session)
-        auth_service.create_session(user=user)
+        auth_service.create_session(identity=identity_for(user))
         session.rollback()
 
     with Session(migrated_engine) as session:
-        assert session.scalar(select(func.count(AuthSession.id))) == 0
+        assert session.scalar(select(func.count(AuthSession.id))) == 1
 
 
 def test_create_session_token_failure_rolls_back_persisted_session(
@@ -208,10 +234,9 @@ def test_create_session_token_failure_rolls_back_persisted_session(
         auth_service = build_failing_service(session)
         user = create_user(session)
         with pytest.raises(NexusError) as exc_info:
-            auth_service.create_session(user=user)
+            auth_service.create_session(identity=identity_for(user))
 
         assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
-        session.rollback()
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(AuthSession.id))) == 0
@@ -223,8 +248,7 @@ def test_refresh_session_token_failure_rolls_back_rotation(
     with Session(migrated_engine) as session:
         auth_service = build_service(session)
         user = create_user(session)
-        first = auth_service.create_session(user=user)
-        session.commit()
+        first = auth_service.create_session(identity=identity_for(user))
 
     original_hash = auth_service._hash_refresh_token(first.refresh_token)
 
@@ -236,7 +260,6 @@ def test_refresh_session_token_failure_rolls_back_rotation(
             )
 
         assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
-        session.rollback()
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
@@ -248,6 +271,5 @@ def test_refresh_session_token_failure_rolls_back_rotation(
         refreshed = auth_service.refresh_session(
             refresh_token=first.refresh_token,
         )
-        session.commit()
 
     assert refreshed.refresh_token != first.refresh_token

@@ -4,18 +4,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from nexus.api.dependencies.authentication import (
-    SignupOtpServiceDep,
-    SignupVerificationServiceDep,
-)
+from nexus.api.dependencies.authentication import AuthenticationServiceDep
 from nexus.api.schemas.authentication import (
     SignupRequestBody,
     SignupResponseBody,
     SignupVerificationRequestBody,
     SignupVerificationResponseBody,
 )
-from nexus.application.authentication.signup import SignupOtpRequest
-from nexus.application.authentication.signup_verification import (
+from nexus.application.authentication.service import (
+    SignupOtpRequest,
     SignupVerificationRequest,
 )
 
@@ -25,7 +22,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.post("/signup", response_model=SignupResponseBody, status_code=202)
 def request_signup_otp(
     body: SignupRequestBody,
-    service: SignupOtpServiceDep,
+    service: AuthenticationServiceDep,
 ) -> SignupResponseBody:
     service.request_signup_otp(
         request=SignupOtpRequest(
@@ -41,7 +38,7 @@ def request_signup_otp(
 @router.post("/signup/verify", response_model=SignupVerificationResponseBody)
 def verify_signup(
     body: SignupVerificationRequestBody,
-    service: SignupVerificationServiceDep,
+    service: AuthenticationServiceDep,
 ) -> SignupVerificationResponseBody:
     result = service.complete_signup(
         request=SignupVerificationRequest(
