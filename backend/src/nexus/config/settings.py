@@ -49,5 +49,9 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
     return Settings(_env_file=env_file)  # type: ignore[call-arg]
 
 
-# Transitional compatibility while runtime modules move to explicit composition.
-settings = load_settings()
+def __getattr__(name: str) -> Settings:
+    """Provide temporary lazy compatibility for legacy test imports."""
+
+    if name == "settings":
+        return load_settings()
+    raise AttributeError(name)

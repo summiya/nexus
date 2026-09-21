@@ -7,8 +7,20 @@ from nexus.config.settings import Settings
 from nexus.main import create_app
 
 
+def build_settings() -> Settings:
+    return Settings(
+        _env_file=None,
+        database_url="postgresql://test:test@localhost:5432/test",
+        redis_url="redis://localhost:6379/15",
+        cors_allowed_origins=["http://localhost:5173"],
+        otp_hmac_secret="test-secret-value-with-enough-length",
+        auth_token_secret="test-auth-token-secret-with-enough-length",
+        refresh_token_secret="test-refresh-token-secret-with-enough-length",
+    )
+
+
 def test_settings_include_log_level_default() -> None:
-    settings = Settings()
+    settings = build_settings()
 
     assert settings.log_level == "INFO"
 
@@ -26,7 +38,7 @@ def test_configure_logging_sets_level_and_emits_message(capsys) -> None:
 
 
 def test_create_app_logs_startup_and_shutdown(capsys) -> None:
-    app = create_app()
+    app = create_app(build_settings())
 
     with TestClient(app):
         pass

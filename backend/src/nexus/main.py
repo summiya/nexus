@@ -8,8 +8,11 @@ from nexus.api.composition.authentication import (
     AuthenticationComposition,
     build_authentication_composition,
 )
-from nexus.api.composition.conversations import build_conversation_composition
-from nexus.api.composition.llm import build_llm_composition
+from nexus.api.composition.conversations import (
+    ConversationComposition,
+    build_conversation_composition,
+)
+from nexus.api.composition.llm import LLMComposition, build_llm_composition
 from nexus.api.router import api_router
 from nexus.config.settings import Settings, load_settings
 from nexus.errors.handlers import register_exception_handlers
@@ -60,21 +63,44 @@ def create_app(
         lifespan=lifespan,
     )
 
+    llm: LLMComposition = build_llm_composition(
+        resolved_settings,
+        gateway=llm_gateway,
+    )
+    resolved_database = (
+        database
+        if database is not None
+        else build_database(resolved_settings.database_url)
+    )
+    authentication: AuthenticationComposition | None = None
+    try:
+        authentication = build_authentication_composition(
+            resolved_settings,
+            rate_limiter=rate_limiter,
+            email_provider=email_provider,
+        )
+        conversations: ConversationComposition = build_conversation_composition(
+            resolved_settings,
+            llm_stream=llm.stream,
+            model_policy=llm.model_policy,
+            session_factory=resolved_database.session_factory,
+        )
+    except Exception:
+        if authentication is not None:
+            authentication.close()
+        resolved_database.dispose()
+        raise
+
     app.state.settings = resolved_settings
-    app.state.database = database or build_database(resolved_settings.database_url)
-    app.state.authentication = build_authentication_composition(
-        resolved_settings,
-        rate_limiter=rate_limiter,
-        email_provider=email_provider,
+    app.state.database = resolved_database
+    app.state.authentication = authentication
+    app.state.event_publisher = (
+        event_publisher
+        if event_publisher is not None
+        else InProcessEventPublisher()
     )
-    app.state.event_publisher = event_publisher or InProcessEventPublisher()
-    app.state.llm = build_llm_composition(resolved_settings, gateway=llm_gateway)
-    app.state.conversations = build_conversation_composition(
-        resolved_settings,
-        llm_stream=app.state.llm.stream,
-        model_policy=app.state.llm.model_policy,
-        session_factory=app.state.database.session_factory,
-    )
+    app.state.llm = llm
+    app.state.conversations = conversations
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=resolved_settings.api_prefix)
@@ -87,6 +113,3 @@ def create_app(
     )
     app.add_middleware(RequestContextMiddleware)
     return app
-
-
-app = create_app()
