@@ -207,6 +207,21 @@ def test_stream_keeps_first_finish_reason_and_emits_completion_once() -> None:
     assert stream.close_count == 1
 
 
+def test_stream_eof_without_finish_does_not_synthesize_completion() -> None:
+    fake_client = FakeLiteLLMClient()
+    stream = FakeAsyncStream([chunk(content="partial")])
+    fake_client.stream = stream
+
+    events = asyncio.run(collect_events(LiteLLMAdapter(client=fake_client)))
+
+    assert events == [
+        LLMStartedEvent(),
+        LLMTextDeltaEvent(delta="partial"),
+    ]
+    assert_no_completed(events)
+    assert stream.close_count == 1
+
+
 def test_stream_accepts_usage_only_chunk_after_finish_reason() -> None:
     fake_client = FakeLiteLLMClient()
     fake_client.stream = FakeAsyncStream(

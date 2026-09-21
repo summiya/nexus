@@ -11,6 +11,7 @@ from nexus.conversations.domain import (
     Conversation,
     ConversationMessageRole,
     Generation,
+    GenerationStatus,
     Message,
 )
 from nexus.conversations.ports.persistence import (
@@ -204,12 +205,19 @@ def insert_generation(
     session.flush()
 
 
-def update_generation(
+def lock_generation_for_terminal_transition(
     session: Session,
     *,
     organization_public_id: UUID,
     generation: Generation,
-) -> None:
+) -> GenerationModel | None:
+    if generation.status not in {
+        GenerationStatus.COMPLETED,
+        GenerationStatus.FAILED,
+        GenerationStatus.CANCELLED,
+    }:
+        raise ValueError("generation transition must target a terminal status")
+
     row = session.execute(
         select(GenerationModel, MessageModel.public_id)
         .join(Organization, GenerationModel.organization_id == Organization.id)
@@ -229,6 +237,7 @@ def update_generation(
             ConversationModel.public_id == generation.conversation_public_id,
             GenerationModel.public_id == generation.public_id,
         )
+        .with_for_update(of=GenerationModel)
     ).one_or_none()
     if row is None:
         raise ConversationEntityNotFoundError("Generation was not found")
@@ -242,6 +251,23 @@ def update_generation(
             "Generation identity does not match the stored Generation"
         )
 
+    if model.status in {
+        GenerationStatus.COMPLETED.value,
+        GenerationStatus.FAILED.value,
+        GenerationStatus.CANCELLED.value,
+    }:
+        return None
+    if model.status != GenerationStatus.RUNNING.value:
+        raise ValueError("stored Generation is not ready for a terminal transition")
+    return model
+
+
+def apply_generation_terminal_transition(
+    session: Session,
+    *,
+    model: GenerationModel,
+    generation: Generation,
+) -> None:
     model.assistant_message_id = _assistant_message_reference(
         session,
         organization_id=model.organization_id,

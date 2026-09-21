@@ -64,6 +64,9 @@ class LiteLLMAdapter:
         - provider failure before ``LLMStartedEvent`` raises a Nexus LLM error;
         - provider failure after ``LLMStartedEvent`` yields one ``LLMErrorEvent``;
         - local mapping/programming errors and cancellation propagate after cleanup.
+
+        This adapter exclusively owns and closes the raw provider iterator. Its
+        caller owns only this normalized iterator.
         """
 
         payload = to_litellm_payload(request)
@@ -115,7 +118,21 @@ class LiteLLMAdapter:
                     completion = chunk_completion
 
             if completion is None:
-                completion = LLMCompletedEvent()
+                upstream_to_close = upstream
+                upstream = None
+                try:
+                    await _close_upstream(
+                        upstream_to_close,
+                        self.client.exception_types,
+                        suppress_errors=False,
+                    )
+                except LLMError as close_error:
+                    yield LLMErrorEvent(
+                        kind=close_error.kind,
+                        message=close_error.message,
+                        retryable=close_error.retryable,
+                    )
+                return
 
             tool_call_events = assembler.complete()
 
@@ -145,11 +162,11 @@ class LiteLLMAdapter:
                     self.client.exception_types,
                     suppress_errors=False,
                 )
-            except LLMError as error:
+            except LLMError as close_error:
                 yield LLMErrorEvent(
-                    kind=error.kind,
-                    message=error.message,
-                    retryable=error.retryable,
+                    kind=close_error.kind,
+                    message=close_error.message,
+                    retryable=close_error.retryable,
                 )
                 return
             yield completion

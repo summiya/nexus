@@ -21,7 +21,12 @@ class ConversationEntityNotFoundError(Exception):
 
 
 class ConversationPersistence(Protocol):
-    """Short transaction operations used by Conversation application code."""
+    """Short transaction operations used by Conversation application code.
+
+    Terminal methods return ``True`` only when they commit the authoritative
+    transition from ``RUNNING``. A ``False`` result means another terminal
+    state already won and must not be overwritten or reported by the caller.
+    """
 
     async def create_conversation(self, conversation: Conversation) -> None: ...
 
@@ -48,21 +53,21 @@ class ConversationPersistence(Protocol):
         organization_public_id: UUID,
         assistant_message: Message,
         generation: Generation,
-    ) -> None: ...
+    ) -> bool: ...
 
     async def fail_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None: ...
+    ) -> bool: ...
 
     async def cancel_generation(
         self,
         *,
         organization_public_id: UUID,
         generation: Generation,
-    ) -> None: ...
+    ) -> bool: ...
 
 
 __all__ = [
