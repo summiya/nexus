@@ -28,8 +28,6 @@ from nexus.conversations.ports.persistence import ConversationPersistence
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelNotAllowedError, ModelPolicy, Stream
 from nexus.logging import get_logger
-logger = get_logger(__name__)
-
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -45,6 +43,8 @@ from nexus.llm.domain import (
     LLMUsage,
     LLMUsageEvent,
 )
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
