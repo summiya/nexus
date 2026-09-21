@@ -27,7 +27,6 @@ from nexus.conversations.domain import (
 from nexus.conversations.ports.persistence import ConversationPersistence
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelNotAllowedError, ModelPolicy, Stream
-from nexus.logging import get_logger
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -43,6 +42,7 @@ from nexus.llm.domain import (
     LLMUsage,
     LLMUsageEvent,
 )
+from nexus.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -210,7 +210,7 @@ class PreparedConversationStream:
             await close()
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 - cleanup must not hide the primary error
+        except Exception:
             logger.warning(
                 "conversation_provider_stream_cleanup_failed",
                 generation_id=str(self.generation.public_id),
@@ -424,13 +424,12 @@ class StreamConversationMessage:
                     error_kind=error_kind,
                 ),
             )
-        except Exception:  # noqa: BLE001 - terminal persistence is best effort
-            logger.error(
+        except Exception:
+            logger.exception(
                 "conversation_terminal_persistence_failed",
                 generation_id=str(generation.public_id),
                 status=status.value,
                 error_kind=error_kind,
-                exc_info=True,
             )
 
 
@@ -488,7 +487,7 @@ async def _close_iterator(iterator: AsyncIterator[LLMEvent] | None) -> None:
         await close()
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001 - cleanup must not hide the primary error
+    except Exception:
         logger.warning("conversation_provider_stream_cleanup_failed", exc_info=True)
 
 
