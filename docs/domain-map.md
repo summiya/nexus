@@ -176,12 +176,12 @@ Each domain entry defines purpose, ownership, tests, documentation, dependencies
 ### Conversations
 
 - **Purpose:** Own conversation lifecycle, conversation state, participants/context, and conversation-level orchestration boundaries.
-- **Backend ownership:** conversation-specific application/domain/API code under `backend/src/nexus/`.
+- **Backend ownership:** the feature-first `backend/src/nexus/conversations/` package (`api/`, `application/`, `domain/`, and `ports/`), with SQLAlchemy persistence under `backend/src/nexus/infrastructure/persistence/`, provider-independent LLM contracts and adapters under `backend/src/nexus/llm/`, and object construction under `backend/src/nexus/composition/`.
 - **Frontend ownership:** `frontend/src/features/conversations/`.
 - **Tests:** Conversation-focused backend and frontend tests.
-- **Documentation:** `docs/domains/conversations/` when implementation begins; API/data docs when contracts change.
-- **Shared dependencies:** Projects when project-scoped, persistence, errors, logging, events where required.
-- **Allowed dependencies:** Messages, Models, Streaming/Runs, Authorization when contracts require them.
+- **Documentation:** `docs/domains/conversations/architecture.md`; API/data docs when contracts change.
+- **Shared dependencies:** persistence, provider-independent LLM contracts, configuration/composition, errors, logging, and Authentication for trusted request identity.
+- **Allowed dependencies:** LLM model execution; Projects and Authorization when future project/workspace-scoped contracts require them. Messages and Generation lifecycle are currently owned inside Conversations.
 - **Explicitly unrelated domains:** Files, Knowledge/RAG, Agents, MCP, Memory, Workflows unless an approved conversation feature explicitly depends on them.
 - **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
 

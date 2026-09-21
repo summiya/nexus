@@ -16,6 +16,12 @@ APPLICATION_ROOT = (
     / "conversations"
     / "application"
 )
+API_ROOT = (
+    Path(__file__).resolve().parents[3] / "src" / "nexus" / "conversations" / "api"
+)
+LLM_APPLICATION_ROOT = (
+    Path(__file__).resolve().parents[3] / "src" / "nexus" / "llm" / "application"
+)
 
 FORBIDDEN_IMPORTS = (
     "alembic",
@@ -50,6 +56,14 @@ def _application_files() -> list[Path]:
     return sorted(APPLICATION_ROOT.rglob("*.py"))
 
 
+def _api_files() -> list[Path]:
+    return sorted(API_ROOT.rglob("*.py"))
+
+
+def _llm_application_files() -> list[Path]:
+    return sorted(LLM_APPLICATION_ROOT.rglob("*.py"))
+
+
 def _imports(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imports: set[str] = set()
@@ -59,6 +73,11 @@ def _imports(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module)
     return imports
+
+
+def _defined_classes(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
 
 
 def test_conversation_domain_has_no_infrastructure_or_transport_dependencies() -> None:
@@ -96,7 +115,21 @@ def test_conversation_ports_depend_only_on_conversation_contracts() -> None:
 
 
 def test_conversation_application_has_no_transport_or_infrastructure_imports() -> None:
-    forbidden = ("fastapi", "litellm", "nexus.infrastructure", "sqlalchemy")
+    forbidden = (
+        "anthropic",
+        "azure.ai",
+        "fastapi",
+        "google.genai",
+        "google.generativeai",
+        "litellm",
+        "nexus.api",
+        "nexus.conversations.api",
+        "nexus.infrastructure",
+        "nexus.llm.infrastructure",
+        "openai",
+        "sqlalchemy",
+        "starlette",
+    )
 
     for path in _application_files():
         imports = _imports(path)
@@ -105,3 +138,47 @@ def test_conversation_application_has_no_transport_or_infrastructure_imports() -
             for module in imports
             for blocked in forbidden
         ), path
+
+
+def test_conversation_api_has_no_concrete_persistence_or_provider_imports() -> None:
+    forbidden = (
+        "anthropic",
+        "azure.ai",
+        "google.genai",
+        "google.generativeai",
+        "litellm",
+        "nexus.infrastructure",
+        "nexus.llm.infrastructure",
+        "openai",
+        "sqlalchemy",
+    )
+
+    for path in _api_files():
+        imports = _imports(path)
+        assert not any(
+            module == blocked or module.startswith(f"{blocked}.")
+            for module in imports
+            for blocked in forbidden
+        ), path
+
+
+def test_conversation_ports_keep_one_cohesive_persistence_contract() -> None:
+    prohibited_contracts = {
+        "ConversationRepository",
+        "GenerationRepository",
+        "MessageRepository",
+    }
+
+    defined_contracts = {
+        class_name for path in _port_files() for class_name in _defined_classes(path)
+    }
+
+    assert "ConversationPersistence" in defined_contracts
+    assert defined_contracts.isdisjoint(prohibited_contracts)
+
+
+def test_llm_application_does_not_restore_behaviorless_generation_wrappers() -> None:
+    removed_wrappers = {"Generate", "Stream"}
+
+    for path in _llm_application_files():
+        assert _defined_classes(path).isdisjoint(removed_wrappers), path
