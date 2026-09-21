@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from nexus.config.settings import Settings
-from nexus.llm.application import Generate, Stream
+from nexus.llm.application import Generate, ModelPolicy, Stream
 from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
 from nexus.llm.ports import LLMGateway
 
@@ -15,6 +15,7 @@ class LLMComposition:
     """Application-scoped LLM dependencies composed at startup."""
 
     gateway: LLMGateway
+    model_policy: ModelPolicy
     generate: Generate
     stream: Stream
 
@@ -30,6 +31,7 @@ def build_llm_composition(
     )
     return LLMComposition(
         gateway=resolved_gateway,
+        model_policy=ModelPolicy.from_models(app_settings.llm_allowed_models),
         generate=Generate(gateway=resolved_gateway),
         stream=Stream(gateway=resolved_gateway),
     )
