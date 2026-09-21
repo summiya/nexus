@@ -1,9 +1,10 @@
-# Nexus AI — Python AI SDK Interfaces
+# Nexus AI — Python AI Capability and REST API Contracts
 
 **Document:** `docs/05-api-sdk.md`  
 **Document Type:** Canonical technical specification  
 **Audience:** AI coding agents, backend engineers, architects, platform engineers, security engineers  
-**Status:** Implementation baseline  
+**Status:** Implemented LLM/Conversation baseline with clearly marked future targets
+
 **Primary backend:** Python + FastAPI  
 **Primary language:** Python 3.12+  
 **Primary database:** PostgreSQL  
@@ -13,9 +14,11 @@
 
 ## 1. Purpose
 
-This document defines the canonical Python AI SDK boundary for Nexus.
+This document records the implemented provider-independent LLM boundary and public Conversation API, then preserves target contracts for capabilities that have not yet been built.
 
-The SDK provides stable, vendor-neutral interfaces for:
+Only sections explicitly marked **Implemented** describe the current repository and are authoritative for current behavior. Sections marked **Future target**, and unmarked capability requirements retained from the broader platform design, are design direction only: they must not be treated as existing packages, routes, or behavior, and they do not authorize implementation outside an approved task.
+
+The current LLM capability provides stable, vendor-neutral interfaces for model generation and streaming. Future targets in this document cover:
 
 - LLM providers
 - Model routing
@@ -150,339 +153,137 @@ Security-sensitive context must never be inferred from untrusted model output.
 
 ---
 
-# 3. Package Architecture
+# 3. Implemented LLM Package Architecture
 
-Recommended package structure:
+The current provider-independent LLM capability is feature-first:
 
 ```text
-nexus/
-├── sdk/
-│   ├── __init__.py
-│   ├── types/
-│   │   ├── messages.py
-│   │   ├── models.py
-│   │   ├── events.py
-│   │   ├── tools.py
-│   │   ├── retrieval.py
-│   │   ├── memory.py
-│   │   ├── mcp.py
-│   │   ├── errors.py
-│   │   └── context.py
-│   │
-│   ├── interfaces/
-│   │   ├── llm.py
-│   │   ├── router.py
-│   │   ├── retrieval.py
-│   │   ├── embeddings.py
-│   │   ├── tools.py
-│   │   ├── agents.py
-│   │   ├── memory.py
-│   │   └── mcp.py
-│   │
-│   ├── providers/
-│   │   ├── openai/
-│   │   ├── anthropic/
-│   │   ├── google/
-│   │   ├── azure/
-│   │   └── local/
-│   │
-│   ├── routing/
-│   ├── runtime/
-│   ├── registry/
-│   └── security/
-│
+backend/src/nexus/llm/
 ├── application/
-├── api/
+│   └── model_policy.py
+├── domain/
+│   ├── messages.py
+│   ├── requests.py
+│   ├── responses.py
+│   ├── events.py
+│   ├── errors.py
+│   ├── tools.py
+│   └── usage.py
+├── ports/
+│   └── gateway.py
 └── infrastructure/
+    ├── gateway_factory.py
+    └── adapters/litellm/
 ```
 
-Interfaces must remain independent of provider implementations.
+Application code depends on the domain contracts and `LLMGateway`. Concrete provider selection and LiteLLM mapping remain in infrastructure and composition.
 
 ---
 
-# 4. Core Types
+# 4. Future Target: Trusted Request Context
 
-## 4.1 Request Context
-
-```python
-from dataclasses import dataclass, field
-from typing import Any
-
-
-@dataclass(frozen=True)
-class RequestContext:
-    request_id: str
-    tenant_id: str
-    project_id: str
-    user_id: str | None = None
-    conversation_id: str | None = None
-    agent_id: str | None = None
-    trace_id: str | None = None
-    deadline_ms: int | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-```
-
-The context is trusted infrastructure metadata.
-
-Model-generated values must never overwrite:
-
-- tenant ID
-- project ID
-- user ID
-- permission context
-- audit identity
+A shared SDK-wide `RequestContext` has not been implemented. Future retrieval, agent, tool, and MCP capabilities may require a trusted context carrying request, organization, project, user, trace, deadline, and permission information. Such values must come from trusted server state and must never be overwritten by model output or untrusted request fields.
 
 ---
 
-# 5. Message Model
+# 5. Implemented LLM Message Contract
 
-All LLM providers must normalize messages into a common representation.
+Providers normalize messages into the immutable `LLMMessage` contract:
 
 ```python
-from dataclasses import dataclass
-from typing import Any, Literal
-
-
-Role = Literal[
-    "system",
-    "developer",
-    "user",
-    "assistant",
-    "tool",
-]
+class LLMRole(StrEnum):
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
 
 
 @dataclass(frozen=True)
-class Message:
-    role: Role
-    content: str
+class LLMMessage:
+    role: LLMRole
+    content: str | None = None
     name: str | None = None
     tool_call_id: str | None = None
-    metadata: dict[str, Any] | None = None
 ```
 
-Multimodal content should be represented through typed content parts rather than vendor-specific objects.
+Tool messages require a tool-call ID. Provider SDK message objects must not cross this boundary. Multimodal content and a developer role are future targets, not current fields.
 
-Future-compatible design:
+---
+
+# 6. Implemented `LLMGateway`
+
+`LLMGateway` is the current provider-independent model execution port:
+
+```python
+class LLMGateway(Protocol):
+    async def generate(self, request: LLMRequest) -> LLMResponse: ...
+
+    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]: ...
+```
+
+It owns no application authorization, tenant persistence, Conversation lifecycle, or business orchestration. The `LiteLLMAdapter` implements this port, translates provider failures into Nexus LLM errors, owns the raw provider iterator, and exposes only normalized Nexus responses and events.
+
+---
+
+# 7. Implemented `LLMRequest`
 
 ```python
 @dataclass(frozen=True)
-class ContentPart:
-    type: str
-    data: Any
-```
-
----
-
-# 6. LLMProvider
-
-## 6.1 Responsibility
-
-`LLMProvider` represents a normalized interface to a language model provider.
-
-It is responsible for:
-
-- model invocation
-- streaming
-- tool calls
-- structured output
-- usage reporting
-- provider error normalization
-
-It is **not** responsible for:
-
-- application-level authorization
-- tenant isolation
-- agent orchestration
-- persistent memory
-- business logic
-
----
-
-## 6.2 Interface
-
-```python
-from typing import AsyncIterator, Protocol
-
-
-class LLMProvider(Protocol):
-
-    @property
-    def provider_name(self) -> str:
-        ...
-
-    async def complete(
-        self,
-        request: CompletionRequest,
-        *,
-        context: RequestContext,
-    ) -> CompletionResponse:
-        ...
-
-    async def stream(
-        self,
-        request: CompletionRequest,
-        *,
-        context: RequestContext,
-    ) -> AsyncIterator[CompletionEvent]:
-        ...
-
-    async def health_check(
-        self,
-        *,
-        context: RequestContext,
-    ) -> ProviderHealth:
-        ...
-```
-
----
-
-# 7. CompletionRequest
-
-```python
-@dataclass(frozen=True)
-class CompletionRequest:
+class LLMRequest:
     model: str
-    messages: list[Message]
-
+    messages: Sequence[LLMMessage]
     temperature: float | None = None
-    max_tokens: int | None = None
-    top_p: float | None = None
-
-    tools: list[ToolDefinition] | None = None
-    tool_choice: str | None = None
-
-    response_format: ResponseFormat | None = None
-
-    stop: list[str] | None = None
-
-    metadata: dict[str, Any] = field(default_factory=dict)
+    max_output_tokens: int | None = None
+    tools: Sequence[LLMToolDefinition] = field(default_factory=tuple)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 ```
 
-Provider adapters must translate this structure into provider-specific request formats.
+The contract requires a model and at least one message. Provider adapters translate it into provider-specific request shapes. Additional routing, response-format, and stop controls are future targets unless added through an approved contract change.
 
 ---
 
-# 8. CompletionResponse
+# 8. Implemented `LLMResponse`
 
 ```python
 @dataclass(frozen=True)
-class CompletionResponse:
-    id: str
-    model: str
-    provider: str
-
-    message: Message
-
-    finish_reason: str | None = None
-
-    usage: Usage | None = None
-
-    tool_calls: list[ToolCall] = field(default_factory=list)
-
-    metadata: dict[str, Any] = field(default_factory=dict)
+class LLMResponse:
+    message: LLMMessage
+    finish_reason: LLMFinishReason = LLMFinishReason.UNKNOWN
+    usage: LLMUsage | None = None
+    tool_calls: Sequence[LLMToolCall] = field(default_factory=tuple)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 ```
+
+Finish reasons are normalized as `stop`, `length`, `tool_calls`, `content_filter`, `error`, or `unknown`. Provider identifiers and raw response objects are not part of the application-facing response.
 
 ---
 
-# 9. Streaming Events
+# 9. Implemented Normalized LLM Events
 
-Streaming must use normalized events.
+`LLMGateway.stream()` returns `AsyncIterator[LLMEvent]`, where `LLMEvent` is the union of:
 
-```python
-class CompletionEvent:
-    type: str
-```
+- `LLMStartedEvent`;
+- `LLMTextDeltaEvent`;
+- `LLMToolCallStartedEvent`;
+- `LLMToolCallDeltaEvent`;
+- `LLMToolCallCompletedEvent`;
+- `LLMUsageEvent`;
+- `LLMCompletedEvent`;
+- `LLMErrorEvent`.
 
-Recommended event types:
-
-```text
-completion.started
-completion.delta
-completion.tool_call
-completion.completed
-completion.failed
-```
-
-Example:
-
-```python
-@dataclass(frozen=True)
-class TextDelta:
-    type: str = "completion.delta"
-    text: str = ""
-```
-
-Providers may emit additional metadata, but application code must not depend on vendor-specific event types.
+Applications consume these typed events without importing LiteLLM or another provider SDK. Provider metadata may be retained only in the normalized contracts intended for it.
 
 ---
 
-# 10. ModelRouter
+# 10. Implemented Model Policy and Future Routing
 
-## 10.1 Responsibility
-
-`ModelRouter` selects the appropriate model/provider for a request.
-
-Routing may consider:
-
-- task type
-- model capability
-- latency
-- cost
-- availability
-- context length
-- tenant policy
-- project policy
-- provider health
-- data residency
-- privacy requirements
-- tool support
-- structured output support
+The current `ModelPolicy` accepts only model identifiers present in the configured allowlist. Nexus does not currently implement a `ModelRouter`, provider registry, health-based routing, cost routing, tenant routing, or model-list API. Those remain future targets and must not be inferred from the current allowlist.
 
 ---
 
-## 10.2 Interface
+# Future Capability Targets
 
-```python
-class ModelRouter(Protocol):
-
-    async def route(
-        self,
-        request: CompletionRequest,
-        *,
-        context: RequestContext,
-    ) -> ModelRoute:
-        ...
-
-    async def list_models(
-        self,
-        *,
-        context: RequestContext,
-    ) -> list[ModelInfo]:
-        ...
-```
-
----
-
-## 10.3 ModelRoute
-
-```python
-@dataclass(frozen=True)
-class ModelRoute:
-    provider: str
-    model: str
-
-    estimated_cost: float | None = None
-    estimated_latency_ms: int | None = None
-
-    reason: str | None = None
-
-    metadata: dict[str, Any] = field(default_factory=dict)
-```
-
-The router must not bypass security policy.
-
----
+Sections 11–79 describe possible contracts for retrieval, embeddings, tools, agents, memory, MCP, runtime orchestration, policy, observability, and related platform capabilities. They are not implemented unless a section explicitly says otherwise.
 
 # 11. RetrievalProvider
 
@@ -2524,62 +2325,54 @@ This boundary is mandatory for Nexus and must be preserved as the system grows.
 
 # REST API Contract
 
-## 80. API Boundary
+## 80. Implemented API Boundary
 
 The Nexus REST API is the external application boundary for web clients, SDK clients, integrations, and other trusted consumers.
 
-The API is versioned under:
+The configured default API prefix is:
 
 ```text
-/v1
+/api/v1
 ```
 
-The REST layer must depend on application services and Nexus SDK/runtime interfaces. Routes must not instantiate vendor AI clients directly.
+The REST layer depends on application services and provider-independent ports. Routes do not instantiate database or vendor AI clients directly.
 
-Canonical flow:
+The implemented Conversation flow is:
 
 ```text
 Client
   ↓
-HTTP /v1
+HTTP /api/v1
   ↓
 Authentication
   ↓
-Authorization
+Conversation controller
   ↓
-RequestContext
+Conversation application service
   ↓
-Application Service
+ConversationPersistence / LLMGateway
   ↓
-Agent Runtime / SDK Interfaces
-  ↓
-Persistence / Providers
+SQLAlchemy persistence / LiteLLM adapter
 ```
 
 The REST API must enforce the security requirements defined by `docs/07-security.md`.
 
 ---
 
-## 81. Initial Endpoints
+## 81. Implemented Conversation Endpoints
 
-The initial public API surface is:
+The current Conversation API surface is:
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| POST | `/v1/conversations` | Create a conversation |
-| GET | `/v1/conversations` | List conversations accessible to the caller |
-| GET | `/v1/conversations/{id}` | Retrieve a conversation |
-| POST | `/v1/conversations/{id}/messages` | Add a message and execute the conversation turn |
-| POST | `/v1/conversations/{id}/stream` | Execute a conversation turn using streaming |
-| GET | `/v1/models` | List models available to the caller |
-| POST | `/v1/files` | Upload a file |
-| POST | `/v1/projects` | Create a project |
+| POST | `/api/v1/conversations` | Create a standalone Conversation |
+| POST | `/api/v1/conversations/{conversation_public_id}/messages` | Persist a user Message and stream the generated response as SSE |
 
-Unknown `/v1` routes should return a normalized API error.
+There is no implemented Conversation list, Conversation detail, separate `/stream`, model-list, file, or project endpoint. Those remain future targets.
 
 ---
 
-## 82. Authentication
+## 82. Implemented Authentication Boundary
 
 Every protected endpoint requires authentication.
 
@@ -2594,18 +2387,16 @@ The authentication layer is responsible for validating the token and constructin
 Authentication must establish, where available:
 
 ```text
-user_id
-tenant_id
-roles
-permissions
-token/session metadata
+user_public_id
+organization_public_id
+session_public_id
 ```
 
-Clients must never be allowed to supply or override trusted `tenant_id`, `user_id`, roles, or permissions through ordinary request JSON.
+Clients cannot supply or override these trusted values through Conversation request JSON.
 
 Unauthenticated requests must fail before application execution.
 
-Recommended response:
+Unauthenticated requests use:
 
 ```http
 401 Unauthorized
@@ -2621,30 +2412,13 @@ Provider credentials and API keys used by Nexus itself must never be accepted as
 
 ---
 
-## 83. Request Context
+## 83. Future Target: Shared Request Context
 
-After authentication and authorization, the API creates a trusted `RequestContext`.
-
-At minimum:
-
-```python
-RequestContext(
-    request_id=...,
-    tenant_id=...,
-    project_id=...,
-    user_id=...,
-    conversation_id=...,
-    trace_id=...,
-)
-```
-
-The context must propagate through application services, agent runtime, providers, tools, retrieval, memory, and MCP.
-
-Client-controlled values must be validated against the trusted context.
+Nexus has request-ID middleware and a trusted authentication context, but it does not currently expose the speculative SDK-wide `RequestContext` described by earlier designs. Any future shared context must preserve trusted organization, user, permission, and correlation values without accepting client assertions as authority.
 
 ---
 
-## 84. Common API Conventions
+## 84. API Conventions
 
 ### 84.1 Content Type
 
@@ -2654,7 +2428,7 @@ JSON endpoints use:
 Content-Type: application/json
 ```
 
-File upload uses:
+File upload is a future target and is expected to use:
 
 ```http
 Content-Type: multipart/form-data
@@ -2664,7 +2438,7 @@ Content-Type: multipart/form-data
 
 Resource IDs are opaque strings. Clients must not rely on their internal representation.
 
-### 84.3 Timestamps
+### 84.3 Future timestamp convention
 
 Timestamps must be serialized as RFC 3339 / ISO 8601 UTC timestamps.
 
@@ -2676,23 +2450,21 @@ Example:
 
 ### 84.4 Request IDs
 
-The server should accept an optional:
+`RequestContextMiddleware` accepts an optional:
 
 ```http
 X-Request-ID: <client-request-id>
 ```
 
-If absent, Nexus generates one.
-
-The response should include:
+Nexus preserves a valid caller-provided request ID and generates a new one when the header is absent or invalid. The middleware binds the value to the logging/request context and structured logging context, stores it in ASGI request state as `request.state.request_id`, and returns it in every response as:
 
 ```http
 X-Request-ID: <request-id>
 ```
 
-The server-generated/request-provided ID must be propagated into `RequestContext`.
+The existing logging `RequestContext` carries request-scoped logging metadata; it is not the future shared SDK `RequestContext` described in section 83. Propagating the request ID into a future shared SDK context remains future behavior.
 
-### 84.5 Idempotency
+### 84.5 Future idempotency support
 
 Operations that may create durable resources or external side effects should support:
 
@@ -2704,14 +2476,14 @@ When supported, repeated requests with the same key must not unintentionally cre
 
 ---
 
-## 85. Pagination
+## 85. Future Target: Pagination
 
-List endpoints use cursor-based pagination.
+Conversation list endpoints are not implemented. When list APIs are added, cursor-based pagination is the target contract.
 
 Request:
 
 ```http
-GET /v1/conversations?limit=20&cursor=<cursor>
+GET /api/v1/conversations?limit=20&cursor=<cursor>
 ```
 
 Rules:
@@ -2735,25 +2507,23 @@ Pagination metadata must not leak resources outside the caller's authorization s
 
 ---
 
-# 86. Conversation API
+# 86. Implemented Conversation API
 
 ## 86.1 Create Conversation
 
 ```http
-POST /v1/conversations
+POST /api/v1/conversations
 ```
 
 Request:
 
 ```json
 {
-  "project_id": "project_123",
-  "title": "Customer support",
-  "metadata": {}
+  "title": "Customer support"
 }
 ```
 
-`project_id` is optional only where the authenticated user has a valid tenant-level conversation scope. If supplied, it must be authorized against the authenticated tenant and user.
+`title` is optional, trimmed by the API/application boundary, and limited to 255 characters. The authenticated organization and user are authoritative; they are not accepted in the request body. Current creation produces a standalone Conversation with no workspace or project scope.
 
 Response:
 
@@ -2763,163 +2533,55 @@ Response:
 
 ```json
 {
-  "id": "conv_123",
-  "project_id": "project_123",
-  "title": "Customer support",
-  "created_at": "2026-09-09T10:30:00Z",
-  "updated_at": "2026-09-09T10:30:00Z",
-  "metadata": {}
+  "public_id": "4a1af83b-7b67-4bc0-8d40-e312629474b9",
+  "organization_public_id": "e1355285-6fca-4c8c-b9b4-ff40a0a89959",
+  "created_by_user_public_id": "356010a7-9941-4562-a7de-5d4a8ffad247",
+  "workspace_public_id": null,
+  "project_public_id": null,
+  "title": "Customer support"
 }
 ```
 
-The API must never accept a caller-supplied `tenant_id` as the authority for tenancy.
+The API never accepts a caller-supplied organization or user ID as authority for tenancy or ownership.
 
 ---
 
-## 86.2 List Conversations
+# 87. Implemented Message API
+
+## 87.1 Add Message and Stream Generation
 
 ```http
-GET /v1/conversations
+POST /api/v1/conversations/{conversation_public_id}/messages
 ```
 
-Optional query parameters:
+Request:
+
+```json
+{
+  "content": "Summarize this conversation.",
+  "model": "gpt-4o-mini"
+}
+```
+
+Both fields are required and must be non-blank. Extra fields are rejected. The model must be present in the configured `ModelPolicy` allowlist. The server controls message roles and trusted instructions.
+
+Response:
+
+```http
+200 OK
+```
 
 ```text
-project_id
-limit
-cursor
+SSE stream described in section 88
 ```
-
-Response:
-
-```http
-200 OK
-```
-
-```json
-{
-  "data": [
-    {
-      "id": "conv_123",
-      "project_id": "project_123",
-      "title": "Customer support",
-      "created_at": "2026-09-09T10:30:00Z",
-      "updated_at": "2026-09-09T10:30:00Z"
-    }
-  ],
-  "next_cursor": null,
-  "has_more": false
-}
-```
-
-Only conversations authorized for the authenticated principal may be returned.
 
 ---
 
-## 86.3 Get Conversation
+# 88. Implemented Conversation SSE Contract
 
-```http
-GET /v1/conversations/{id}
-```
+## 88.1 Stream establishment
 
-Response:
-
-```http
-200 OK
-```
-
-```json
-{
-  "id": "conv_123",
-  "project_id": "project_123",
-  "title": "Customer support",
-  "created_at": "2026-09-09T10:30:00Z",
-  "updated_at": "2026-09-09T10:30:00Z",
-  "metadata": {}
-}
-```
-
-If the resource does not exist or is not visible to the caller, the API should not disclose cross-tenant/resource existence.
-
----
-
-# 87. Message API
-
-## 87.1 Add Message
-
-```http
-POST /v1/conversations/{id}/messages
-```
-
-Request:
-
-```json
-{
-  "message": {
-    "role": "user",
-    "content": "Summarize this project."
-  },
-  "model": "optional-model-id",
-  "metadata": {}
-}
-```
-
-The initial public API accepts user messages. The server controls system/developer messages and trusted execution instructions.
-
-The `model` field is optional and must be validated against the caller's authorized model policy. It must not bypass the `ModelRouter` or security policy.
-
-Response:
-
-```http
-200 OK
-```
-
-```json
-{
-  "id": "msg_123",
-  "conversation_id": "conv_123",
-  "role": "assistant",
-  "content": "Here is the summary...",
-  "created_at": "2026-09-09T10:31:00Z",
-  "model": "model-id",
-  "usage": {
-    "input_tokens": 100,
-    "output_tokens": 50,
-    "total_tokens": 150,
-    "estimated_cost": null,
-    "currency": "USD"
-  },
-  "citations": [],
-  "tool_calls": []
-}
-```
-
-The response must use normalized Nexus types rather than provider-specific response objects.
-
----
-
-# 88. Streaming API
-
-## 88.1 Start Stream
-
-```http
-POST /v1/conversations/{id}/stream
-```
-
-Request:
-
-```json
-{
-  "message": {
-    "role": "user",
-    "content": "Analyze this project."
-  },
-  "model": "optional-model-id",
-  "metadata": {}
-}
-```
-
-The endpoint returns Server-Sent Events.
+`POST /api/v1/conversations/{conversation_public_id}/messages` preflights the provider and then returns Server-Sent Events. There is no separate `/stream` route.
 
 Response:
 
@@ -2937,44 +2599,47 @@ event: <event_type>
 data: <JSON>
 ```
 
-Events should be normalized into the Nexus event model rather than exposing vendor-specific events.
+Provider events are mapped to Conversation events; provider-specific events and payloads are never exposed.
 
-Recommended public event sequence:
+Successful public event sequence:
 
 ```text
-message.started
+generation.started
 message.delta
-tool.started
-tool.completed
-message.completed
-error
+generation.usage       # when usage is available
+generation.completed
 ```
 
-Agent/runtime events may also be mapped into the public stream where appropriate.
-
-Example:
+Implemented event payloads are:
 
 ```text
-event: message.started
-data: {"message_id":"msg_123"}
+event: generation.started
+data: {"conversation_id":"<uuid>","generation_id":"<uuid>","model":"gpt-4o-mini"}
 
 event: message.delta
-data: {"text":"Here is "}
+data: {"conversation_id":"<uuid>","generation_id":"<uuid>","delta":"Here is "}
 
-event: message.delta
-data: {"text":"the analysis."}
+event: generation.usage
+data: {"generation_id":"<uuid>","input_tokens":10,"output_tokens":5,"total_tokens":15}
 
-event: message.completed
-data: {"message_id":"msg_123","finish_reason":"stop","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}
+event: generation.completed
+data: {"conversation_id":"<uuid>","generation_id":"<uuid>","assistant_message_id":"<uuid>","finish_reason":"stop"}
+
+event: generation.error
+data: {"generation_id":"<uuid>","kind":"<stable-kind>","message":"The generation could not be completed."}
 ```
 
-The stream must terminate after a terminal event.
+For a normally consumed stream, `generation.completed` or `generation.error` is terminal. A disconnected/cancelled consumer may not receive an SSE terminal event, but the server still resolves the persisted Generation lifecycle.
 
-Errors occurring before the stream is established use the normal HTTP error contract. Errors occurring after streaming begins must be represented by a normalized `error` event before the connection is closed.
+Errors occurring before the stream is established use the normal safe HTTP error contract. Errors after streaming begins are represented by `generation.error` only when the corresponding `FAILED` database transition succeeds. A terminal transition that loses a race is not emitted as if it won.
 
-The API must not expose private chain-of-thought or internal reasoning merely because an internal runtime event exists. Only explicitly approved public status/events may be streamed.
+The API does not expose raw provider errors, private chain-of-thought, or internal reasoning.
 
 ---
+
+# Future REST API Targets
+
+Sections 89–102 describe future model, file, project, common-envelope, and broader API targets unless explicitly marked as implemented. They are not current routes or behavior.
 
 # 89. Model API
 

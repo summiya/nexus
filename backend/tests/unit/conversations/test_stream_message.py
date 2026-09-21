@@ -415,6 +415,58 @@ def test_stream_does_not_emit_completion_when_database_transition_loses() -> Non
     assert persistence.cancelled == []
 
 
+def test_completion_persistence_failure_emits_safe_failure_and_closes_provider() -> (
+    None
+):
+    class FailingCompletionPersistence(FakePersistence):
+        def __init__(self) -> None:
+            super().__init__()
+            self.completion_attempts: list[tuple[Message, Generation]] = []
+
+        async def complete_generation(
+            self,
+            *,
+            organization_public_id: UUID,
+            assistant_message: Message,
+            generation: Generation,
+        ) -> bool:
+            assert organization_public_id == ORG_ID
+            self.completion_attempts.append((assistant_message, generation))
+            raise RuntimeError("database unavailable")
+
+    persistence = FailingCompletionPersistence()
+    provider_events: list[LLMEvent] = [
+        LLMStartedEvent(),
+        LLMTextDeltaEvent(delta="response"),
+        LLMCompletedEvent(),
+    ]
+    iterator = TrackingIterator(provider_events)
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_gateway=TrackingGateway(iterator),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> list[object]:
+        return [event async for event in await service.prepare(make_request())]
+
+    events = asyncio.run(run())
+
+    assert iterator.index == len(provider_events)
+    assert len(persistence.completion_attempts) == 1
+    assert not any(isinstance(event, GenerationCompleted) for event in events)
+    assert isinstance(events[-1], GenerationError)
+    assert events[-1].kind == "persistence_failure"
+    assert events[-1].message == "The generation could not be completed."
+    assert len(persistence.failed) == 1
+    assert persistence.failed[0].error_kind == "persistence_failure"
+    assert persistence.cancelled == []
+    assert iterator.close_count == 1
+
+
 def test_unexpected_processing_error_is_logged_and_persisted_safely(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
