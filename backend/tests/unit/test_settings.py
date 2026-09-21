@@ -22,6 +22,7 @@ SETTINGS_ENV_KEYS = [
     "CORS_ALLOWED_ORIGINS",
     "LOG_LEVEL",
     "LLM_GATEWAY",
+    "LLM_ALLOWED_MODELS",
     "OTP_HMAC_SECRET",
     "SIGNUP_OTP_TTL_SECONDS",
     "SIGNUP_OTP_MAX_ATTEMPTS",
@@ -36,6 +37,9 @@ SETTINGS_ENV_KEYS = [
     "ACCESS_TOKEN_EXPIRES_SECONDS",
     "REFRESH_TOKEN_EXPIRES_SECONDS",
     "AUTH_TOKEN_ISSUER",
+    "CONVERSATION_HISTORY_LIMIT",
+    "CONVERSATION_HISTORY_MAX_CHARS",
+    "CONVERSATION_MESSAGE_MAX_LENGTH",
 ]
 
 
@@ -84,6 +88,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.cors_allowed_origins == ["http://localhost:5173"]
     assert settings.log_level == "INFO"
     assert settings.llm_gateway == "litellm"
+    assert settings.llm_allowed_models == ["gpt-4o-mini"]
     assert settings.signup_otp_ttl_seconds == 600
     assert settings.signup_otp_max_attempts == 5
     assert settings.signup_otp_length == 6
@@ -94,6 +99,9 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.access_token_expires_seconds == 900
     assert settings.refresh_token_expires_seconds == 2_592_000
     assert settings.auth_token_issuer is None
+    assert settings.conversation_history_limit == 50
+    assert settings.conversation_history_max_chars == 120_000
+    assert settings.conversation_message_max_length == 32_000
 
 
 def test_database_url_is_required(clean_environment) -> None:
@@ -137,6 +145,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://localhost:5173"]')
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("LLM_GATEWAY", "litellm")
+    monkeypatch.setenv("LLM_ALLOWED_MODELS", '["gpt-test","claude-test"]')
     monkeypatch.setenv("OTP_HMAC_SECRET", "env-secret-value-with-enough-length")
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
     monkeypatch.setenv("EMAIL_FROM_ADDRESS", "no-reply@example.com")
@@ -161,6 +170,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.cors_allowed_origins == ["http://localhost:5173"]
     assert reloaded.log_level == "DEBUG"
     assert reloaded.llm_gateway == "litellm"
+    assert reloaded.llm_allowed_models == ["gpt-test", "claude-test"]
     assert reloaded.otp_hmac_secret == "env-secret-value-with-enough-length"
     assert reloaded.email_provider == "resend"
     assert reloaded.email_from_address == "no-reply@example.com"

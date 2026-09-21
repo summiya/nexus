@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: list[str]
     log_level: str = "INFO"
     llm_gateway: str = Field(default="litellm", min_length=1)
+    llm_allowed_models: list[str] = Field(default_factory=lambda: ["gpt-4o-mini"])
     otp_hmac_secret: str = Field(min_length=32)
     signup_otp_ttl_seconds: int = Field(default=600, gt=0)
     signup_otp_max_attempts: int = Field(default=5, gt=0)
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     refresh_token_expires_seconds: int = Field(default=2_592_000, gt=0)
     auth_token_issuer: str | None = None
     conversation_history_limit: int = Field(default=50, ge=1, le=200)
+    conversation_history_max_chars: int = Field(default=120_000, ge=1, le=1_000_000)
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
 
     model_config = SettingsConfigDict(

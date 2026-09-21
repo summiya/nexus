@@ -20,7 +20,7 @@ from nexus.conversations.application.stream_message import (
 from nexus.conversations.domain import Conversation, Generation, Message
 from nexus.conversations.ports.persistence import PreparedGeneration
 from nexus.errors import ErrorCode, NexusError
-from nexus.llm.application import Stream
+from nexus.llm.application import ModelPolicy, Stream
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMEvent,
@@ -179,7 +179,9 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     service = StreamConversationMessage(
         persistence=persistence,
         llm_stream=Stream(gateway=gateway),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
+        history_max_chars=1_000,
         message_max_length=100,
     )
 
@@ -221,7 +223,9 @@ def test_provider_failure_before_first_event_becomes_http_error_and_fails_genera
     service = StreamConversationMessage(
         persistence=persistence,
         llm_stream=Stream(gateway=FailingGateway()),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
+        history_max_chars=1_000,
         message_max_length=100,
     )
 
@@ -243,7 +247,9 @@ def test_preflight_cancellation_closes_provider_and_persists_cancelled_generatio
     service = StreamConversationMessage(
         persistence=persistence,
         llm_stream=Stream(gateway=gateway),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
+        history_max_chars=1_000,
         message_max_length=100,
     )
 
@@ -257,3 +263,81 @@ def test_preflight_cancellation_closes_provider_and_persists_cancelled_generatio
     assert len(persistence.cancelled) == 1
     assert persistence.failed == []
     assert persistence.completed == []
+
+
+def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> None:
+    persistence = FakePersistence()
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=gateway),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+    request = StreamConversationMessageRequest(
+        organization_public_id=ORG_ID,
+        user_public_id=USER_ID,
+        conversation_public_id=CONVERSATION_ID,
+        content="hello",
+        model="not-allowed",
+    )
+
+    async def run() -> None:
+        await service.prepare(request)
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(run())
+
+    assert exc_info.value.code is ErrorCode.VALIDATION_ERROR
+    assert persistence.prepared == []
+    assert gateway.requests == []
+
+
+def test_history_is_bounded_before_provider_invocation() -> None:
+    class HistoryPersistence(FakePersistence):
+        async def prepare_generation(
+            self,
+            *,
+            organization_public_id: UUID,
+            conversation: Conversation,
+            message: Message,
+            generation: Generation,
+            history_limit: int,
+        ) -> PreparedGeneration:
+            del organization_public_id, generation, history_limit
+            old = Message(
+                public_id=uuid4(),
+                conversation_public_id=conversation.public_id,
+                role=message.role,
+                content="123456",
+                created_at=NOW,
+            )
+            recent = Message(
+                public_id=uuid4(),
+                conversation_public_id=conversation.public_id,
+                role=message.role,
+                content="abcd",
+                created_at=NOW,
+            )
+            return PreparedGeneration(conversation, (old, recent, message))
+
+    persistence = HistoryPersistence()
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_stream=Stream(gateway=gateway),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=9,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert [item.content for item in gateway.requests[0].messages] == ["abcd", "hello"]

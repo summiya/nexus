@@ -48,6 +48,7 @@ def create_app(
     app.state.conversations = build_conversation_composition(
         app_settings,
         llm_stream=app.state.llm.stream,
+        model_policy=app.state.llm.model_policy,
     )
 
     register_exception_handlers(app)
