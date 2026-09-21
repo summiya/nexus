@@ -156,14 +156,13 @@ def test_default_event_publisher_is_application_scoped() -> None:
         )
 
 
-def test_llm_gateway_and_use_cases_are_application_scoped() -> None:
+def test_llm_gateway_and_model_policy_are_application_scoped() -> None:
     gateway = FakeLLMGateway()
     app = create_test_app(build_settings(), llm_gateway=gateway)
 
     with TestClient(app):
         assert app.state.container.llm.gateway is gateway
-        assert app.state.container.llm.generate.gateway is gateway
-        assert app.state.container.llm.stream.gateway is gateway
+        assert app.state.container.conversations.stream_message.llm_gateway is gateway
 
 
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
