@@ -28,6 +28,8 @@ from nexus.conversations.ports.persistence import ConversationPersistence
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelNotAllowedError, ModelPolicy, Stream
 from nexus.logging import get_logger
+logger = get_logger(__name__)
+
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -486,8 +488,8 @@ async def _close_iterator(iterator: AsyncIterator[LLMEvent] | None) -> None:
         await close()
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001 - upstream cleanup is best effort
-        return
+    except Exception:  # noqa: BLE001 - cleanup must not hide the primary error
+        logger.warning("conversation_provider_stream_cleanup_failed", exc_info=True)
 
 
 async def _close_iterator_during_cancellation(
