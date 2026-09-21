@@ -26,7 +26,8 @@ from nexus.conversations.domain import (
 )
 from nexus.conversations.ports.persistence import ConversationPersistence
 from nexus.errors import ErrorCode, NexusError
-from nexus.llm.application import Stream
+from nexus.llm.application import ModelNotAllowedError, ModelPolicy, Stream
+from nexus.logging import get_logger
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -208,14 +209,20 @@ class PreparedConversationStream:
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - cleanup must not hide the primary error
-            return
+            logger.warning(
+                "conversation_provider_stream_cleanup_failed",
+                generation_id=str(self.generation.public_id),
+                exc_info=True,
+            )
 
 
 @dataclass(frozen=True)
 class StreamConversationMessage:
     persistence: ConversationPersistence
     llm_stream: Stream
+    model_policy: ModelPolicy
     history_limit: int
+    history_max_chars: int
     message_max_length: int
 
     async def prepare(
@@ -223,11 +230,15 @@ class StreamConversationMessage:
         request: StreamConversationMessageRequest,
     ) -> PreparedConversationStream:
         content = request.content.strip()
-        model = request.model.strip()
         if not content or len(content) > self.message_max_length:
             raise NexusError(ErrorCode.VALIDATION_ERROR, "Invalid message content.")
-        if not model:
-            raise NexusError(ErrorCode.VALIDATION_ERROR, "Invalid model.")
+        try:
+            model = self.model_policy.resolve(request.model)
+        except ModelNotAllowedError as exc:
+            raise NexusError(
+                ErrorCode.VALIDATION_ERROR,
+                "The requested model is not available.",
+            ) from exc
 
         conversation = await self.persistence.get_conversation(
             organization_public_id=request.organization_public_id,
@@ -270,9 +281,13 @@ class StreamConversationMessage:
             history_limit=self.history_limit,
         )
         try:
+            history = _bounded_history(
+                prepared.history,
+                max_chars=self.history_max_chars,
+            )
             llm_request = LLMRequest(
                 model=model,
-                messages=tuple(_to_llm_message(item) for item in prepared.history),
+                messages=tuple(_to_llm_message(item) for item in history),
                 tools=(),
             )
         except Exception:
@@ -407,14 +422,42 @@ class StreamConversationMessage:
                     error_kind=error_kind,
                 ),
             )
-        except Exception:  # noqa: BLE001 - cancellation persistence is best effort
-            return
+        except Exception:  # noqa: BLE001 - terminal persistence is best effort
+            logger.error(
+                "conversation_terminal_persistence_failed",
+                generation_id=str(generation.public_id),
+                status=status.value,
+                error_kind=error_kind,
+                exc_info=True,
+            )
 
 
 class _ConversationStreamFailure(Exception):
     def __init__(self, kind: str) -> None:
         super().__init__(kind)
         self.kind = kind
+
+
+def _bounded_history(
+    history: tuple[Message, ...],
+    *,
+    max_chars: int,
+) -> tuple[Message, ...]:
+    """Keep the newest chronological history that fits the configured budget."""
+
+    selected: list[Message] = []
+    used_chars = 0
+    for message in reversed(history):
+        next_size = len(message.content)
+        if selected and used_chars + next_size > max_chars:
+            break
+        if not selected and next_size > max_chars:
+            selected.append(message)
+            break
+        selected.append(message)
+        used_chars += next_size
+    selected.reverse()
+    return tuple(selected)
 
 
 def _to_llm_message(message: Message) -> LLMMessage:
