@@ -207,13 +207,23 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
     persistence = _persistence(migrated_streaming_engine)
     messages: list[Message] = []
 
-    for offset, content in enumerate(("first", "second", "third")):
+    timestamps = (
+        TIMESTAMP,
+        TIMESTAMP + timedelta(seconds=1),
+        TIMESTAMP + timedelta(seconds=1),
+        TIMESTAMP + timedelta(seconds=1),
+    )
+    for created_at, content in zip(
+        timestamps,
+        ("first", "second", "third", "fourth"),
+        strict=True,
+    ):
         message = Message(
             public_id=uuid4(),
             conversation_public_id=conversation.public_id,
             role=ConversationMessageRole.USER,
             content=content,
-            created_at=TIMESTAMP + timedelta(seconds=offset),
+            created_at=created_at,
         )
         generation = Generation(
             public_id=uuid4(),
@@ -229,12 +239,12 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
                 conversation=conversation,
                 message=message,
                 generation=generation,
-                history_limit=2,
+                history_limit=3,
             )
         )
         messages.append(message)
 
-    assert prepared == tuple(messages[-2:])
+    assert prepared == tuple(messages[-3:])
 
 
 def test_prepare_generation_rolls_back_message_when_generation_is_invalid(
@@ -399,11 +409,14 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
     migrated_streaming_engine: Engine,
 ) -> None:
     organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
-    _organization_public_id, other_conversation = _seed_conversation(
-        migrated_streaming_engine
-    )
-    message, generation = _generation(conversation)
     persistence = _persistence(migrated_streaming_engine)
+    other_conversation = replace(
+        conversation,
+        public_id=uuid4(),
+        title="Other conversation in the same tenant",
+    )
+    asyncio.run(persistence.create_conversation(other_conversation))
+    message, generation = _generation(conversation)
     asyncio.run(
         persistence.prepare_generation(
             organization_public_id=organization_public_id,
@@ -428,7 +441,10 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
         completed_at=TIMESTAMP + timedelta(seconds=1),
     )
 
-    with pytest.raises(ConversationReferenceError):
+    with pytest.raises(
+        ConversationReferenceError,
+        match="assistant Message reference was not found",
+    ):
         asyncio.run(
             persistence.complete_generation(
                 organization_public_id=organization_public_id,
