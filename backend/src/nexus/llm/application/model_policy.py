@@ -16,6 +16,10 @@ class ModelPolicy:
 
     allowed_models: frozenset[str]
 
+    def __post_init__(self) -> None:
+        if not self.allowed_models or any(not model for model in self.allowed_models):
+            raise ValueError("At least one non-blank LLM model must be configured")
+
     @classmethod
     def from_models(cls, models: Iterable[str]) -> ModelPolicy:
         return cls(frozenset(model.strip() for model in models))
