@@ -206,6 +206,52 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     assert persistence.completed[0][0].content == "Hello"
 
 
+def test_generation_preparation_finishes_before_provider_streaming_starts() -> None:
+    timeline: list[str] = []
+
+    class OrderedPersistence(FakePersistence):
+        async def prepare_generation(
+            self,
+            *,
+            organization_public_id: UUID,
+            conversation: Conversation,
+            message: Message,
+            generation: Generation,
+            history_limit: int,
+        ) -> PreparedGeneration:
+            prepared = await super().prepare_generation(
+                organization_public_id=organization_public_id,
+                conversation=conversation,
+                message=message,
+                generation=generation,
+                history_limit=history_limit,
+            )
+            timeline.append("persistence_prepared")
+            return prepared
+
+    class OrderedGateway(FakeGateway):
+        def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+            timeline.append("provider_stream_started")
+            return super().stream(request)
+
+    service = StreamConversationMessage(
+        persistence=OrderedPersistence(),
+        llm_stream=Stream(gateway=OrderedGateway()),
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert timeline == ["persistence_prepared", "provider_stream_started"]
+
+
 def test_provider_failure_before_first_event_becomes_http_error_and_fails_generation() -> (
     None
 ):
