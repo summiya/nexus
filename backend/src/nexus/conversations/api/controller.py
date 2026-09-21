@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 from fastapi.encoders import jsonable_encoder
 from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
 
@@ -62,6 +63,10 @@ async def stream_conversation_message(
     body: CreateMessageRequestBody,
     auth_context: CurrentAuthContextDep,
     service: StreamConversationMessageDep,
+    idempotency_key: Annotated[
+        UUID | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
 ) -> EventSourceResponse:
     prepared = await service.prepare(
         StreamConversationMessageRequest(
@@ -70,6 +75,7 @@ async def stream_conversation_message(
             conversation_public_id=conversation_public_id,
             content=body.content,
             model=body.model,
+            idempotency_key=idempotency_key,
         )
     )
 

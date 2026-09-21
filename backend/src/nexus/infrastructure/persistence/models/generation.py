@@ -101,6 +101,21 @@ class Generation(Base):
             "assistant_message_id",
             postgresql_where=text("assistant_message_id IS NOT NULL"),
         ),
+        Index(
+            "uq_generations_one_running_per_conversation",
+            "organization_id",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("status = 'running'"),
+        ),
+        Index(
+            "uq_generations_conversation_idempotency_key",
+            "organization_id",
+            "conversation_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -113,6 +128,7 @@ class Generation(Base):
     assistant_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     model: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

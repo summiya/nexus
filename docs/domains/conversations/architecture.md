@@ -120,6 +120,23 @@ start and await external LLM stream
 
 No SQLAlchemy session or database transaction remains open while Nexus waits for provider events.
 
+PostgreSQL enforces at most one `RUNNING` Generation per Conversation with
+the explicitly named partial unique index
+`uq_generations_one_running_per_conversation`. A competing preparation rolls
+back both its user Message and Generation before the provider is invoked and
+is returned as a safe conflict. Only a violation of this known index is
+translated to the active-generation conflict; unrelated integrity failures
+remain persistence failures.
+
+The message endpoint also supports optional at-most-once submission through a
+UUID `Idempotency-Key`. The key is persisted with the Generation and protected
+by `uq_generations_conversation_idempotency_key`. A repeated key for the same
+Conversation returns a conflict without another Message, Generation, or
+provider call, including after the original Generation is terminal. This is
+request deduplication, not SSE replay or resumption. Because the key is scoped
+by organization and Conversation, the same key may be used for a different
+Conversation.
+
 Terminal persistence uses a separate short transaction:
 
 - completion atomically inserts the assistant Message and changes the Generation to `COMPLETED`;

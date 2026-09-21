@@ -2464,15 +2464,22 @@ X-Request-ID: <request-id>
 
 The existing logging `RequestContext` carries request-scoped logging metadata; it is not the future shared SDK `RequestContext` described in section 83. Propagating the request ID into a future shared SDK context remains future behavior.
 
-### 84.5 Future idempotency support
+### 84.5 Message submission deduplication
 
-Operations that may create durable resources or external side effects should support:
+The implemented Conversation message endpoint accepts an optional UUID:
 
 ```http
-Idempotency-Key: <unique-key>
+Idempotency-Key: <uuid>
 ```
 
-When supported, repeated requests with the same key must not unintentionally create duplicate resources or repeat an external side effect.
+Reusing a key for the same Conversation provides at-most-once submission: it
+does not create another Message or Generation and does not invoke the model
+provider again. The duplicate request returns `409 Conflict`; Nexus does not
+replay or resume the original SSE stream. The same key may be reused for a
+different Conversation because deduplication is scoped by organization and
+Conversation.
+
+Supporting idempotency for other future durable operations remains a target.
 
 ---
 
@@ -2554,6 +2561,12 @@ The API never accepts a caller-supplied organization or user ID as authority for
 POST /api/v1/conversations/{conversation_public_id}/messages
 ```
 
+Optional header:
+
+```http
+Idempotency-Key: 4a1af83b-7b67-4bc0-8d40-e312629474b9
+```
+
 Request:
 
 ```json
@@ -2574,6 +2587,12 @@ Response:
 ```text
 SSE stream described in section 88
 ```
+
+If the Conversation already has a `RUNNING` Generation, Nexus returns a safe
+`409 Conflict` before invoking the provider. A duplicate `Idempotency-Key` for
+that Conversation also returns `409 Conflict`, even after the original
+Generation has completed, failed, or been cancelled. These conflicts never
+persist the losing request's Message or Generation.
 
 ---
 

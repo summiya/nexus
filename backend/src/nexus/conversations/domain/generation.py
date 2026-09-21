@@ -46,6 +46,7 @@ class Generation:
     user_message_public_id: UUID
     model: str
     status: GenerationStatus
+    idempotency_key: UUID | None = None
     assistant_message_public_id: UUID | None = None
     finish_reason: GenerationFinishReason | None = None
     input_tokens: int = 0

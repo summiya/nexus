@@ -7,17 +7,22 @@ from collections.abc import Callable
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from nexus.conversations.domain import Conversation, Generation, Message
 from nexus.conversations.ports.persistence import (
+    ConversationGenerationInProgressError,
     ConversationPersistence,
     ConversationPersistenceError,
+    ConversationRequestAlreadySubmittedError,
 )
 from nexus.infrastructure.persistence import _conversation_queries as queries
 
 T = TypeVar("T")
+
+_ACTIVE_GENERATION_INDEX = "uq_generations_one_running_per_conversation"
+_IDEMPOTENCY_INDEX = "uq_generations_conversation_idempotency_key"
 
 
 class SqlAlchemyConversationPersistence(ConversationPersistence):
@@ -178,6 +183,20 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
                 result = operation(session)
                 session.commit()
                 return result
+            except IntegrityError as exc:
+                session.rollback()
+                constraint_name = _constraint_name(exc)
+                if constraint_name == _ACTIVE_GENERATION_INDEX:
+                    raise ConversationGenerationInProgressError(
+                        "Conversation already has a running Generation"
+                    ) from exc
+                if constraint_name == _IDEMPOTENCY_INDEX:
+                    raise ConversationRequestAlreadySubmittedError(
+                        "Conversation message request was already submitted"
+                    ) from exc
+                raise ConversationPersistenceError(
+                    "Conversation persistence failed"
+                ) from exc
             except SQLAlchemyError as exc:
                 session.rollback()
                 raise ConversationPersistenceError(
@@ -186,6 +205,13 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
             except Exception:
                 session.rollback()
                 raise
+
+
+def _constraint_name(exc: IntegrityError) -> str | None:
+    """Return PostgreSQL's violated constraint/index name when available."""
+    diagnostic = getattr(exc.orig, "diag", None)
+    name = getattr(diagnostic, "constraint_name", None)
+    return name if isinstance(name, str) else None
 
 
 async def _settle_cancelled_worker(worker: asyncio.Task[object]) -> None:
