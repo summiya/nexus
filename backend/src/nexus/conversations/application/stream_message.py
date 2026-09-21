@@ -16,7 +16,11 @@ from nexus.conversations.domain import (
     GenerationStatus,
     Message,
 )
-from nexus.conversations.ports.persistence import ConversationPersistence
+from nexus.conversations.ports.persistence import (
+    ConversationGenerationInProgressError,
+    ConversationPersistence,
+    ConversationRequestAlreadySubmittedError,
+)
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelNotAllowedError, ModelPolicy
 from nexus.llm.domain import LLMError, LLMMessage, LLMRequest, LLMRole
@@ -30,6 +34,7 @@ class StreamConversationMessageRequest:
     conversation_public_id: UUID
     content: str
     model: str
+    idempotency_key: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,7 @@ class StreamConversationMessage:
             user_message_public_id=message.public_id,
             model=model,
             status=GenerationStatus.RUNNING,
+            idempotency_key=request.idempotency_key,
             started_at=now,
         )
         lifecycle = ConversationStreamLifecycle(
@@ -104,6 +110,16 @@ class StreamConversationMessage:
                 generation=generation,
                 history_limit=self.history_limit,
             )
+        except ConversationGenerationInProgressError as exc:
+            raise NexusError(
+                ErrorCode.CONFLICT,
+                "A generation is already in progress for this conversation.",
+            ) from exc
+        except ConversationRequestAlreadySubmittedError as exc:
+            raise NexusError(
+                ErrorCode.CONFLICT,
+                "This message request has already been accepted.",
+            ) from exc
         except asyncio.CancelledError:
             await lifecycle.cancel()
             raise

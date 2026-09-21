@@ -20,6 +20,7 @@ from nexus.conversations.application.events import (
     MessageDelta,
 )
 from nexus.conversations.application.stream_events import ConversationEventAssembler
+from nexus.conversations.application.stream_lifecycle import ConversationStreamLifecycle
 from nexus.conversations.application.stream_message import (
     StreamConversationMessage,
     StreamConversationMessageRequest,
@@ -29,6 +30,7 @@ from nexus.conversations.domain import (
     ConversationMessageRole,
     GenerationStatus,
 )
+from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence import _conversation_queries as queries
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -185,13 +187,17 @@ def _request(
     organization_public_id: UUID,
     user_public_id: UUID,
     conversation: Conversation,
+    *,
+    content: str = "Generate a response",
+    idempotency_key: UUID | None = None,
 ) -> StreamConversationMessageRequest:
     return StreamConversationMessageRequest(
         organization_public_id=organization_public_id,
         user_public_id=user_public_id,
         conversation_public_id=conversation.public_id,
-        content="Generate a response",
+        content=content,
         model="gpt-test",
+        idempotency_key=idempotency_key,
     )
 
 
@@ -221,6 +227,220 @@ def _assert_terminal_state(
                 )
             )
             == assistant_count
+        )
+
+
+def test_concurrent_messages_to_one_conversation_accept_exactly_one_request(
+    migrated_lifecycle_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id, user_id, conversation = _seed_conversation(
+        migrated_lifecycle_engine
+    )
+    gateways = [
+        TestGateway(EventIterator([LLMStartedEvent()])),
+        TestGateway(EventIterator([LLMStartedEvent()])),
+    ]
+    services = [_service(migrated_lifecycle_engine, gateway) for gateway in gateways]
+    barrier = threading.Barrier(2)
+    original_insert = queries.insert_generation
+
+    def race_generation_insert(*args: object, **kwargs: object) -> None:
+        barrier.wait(timeout=5)
+        original_insert(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(queries, "insert_generation", race_generation_insert)
+
+    async def attempt(
+        service: StreamConversationMessage,
+        content: str,
+    ) -> ConversationStreamLifecycle | NexusError:
+        try:
+            return await service.prepare(
+                _request(
+                    organization_id,
+                    user_id,
+                    conversation,
+                    content=content,
+                )
+            )
+        except NexusError as exc:
+            return exc
+
+    async def run() -> tuple[ConversationStreamLifecycle, NexusError]:
+        results = await asyncio.gather(
+            attempt(services[0], "first concurrent request"),
+            attempt(services[1], "second concurrent request"),
+        )
+        prepared = [
+            result
+            for result in results
+            if isinstance(result, ConversationStreamLifecycle)
+        ]
+        conflicts = [result for result in results if isinstance(result, NexusError)]
+        assert len(prepared) == 1
+        assert len(conflicts) == 1
+        return prepared[0], conflicts[0]
+
+    prepared, conflict = asyncio.run(run())
+
+    assert conflict.code is ErrorCode.CONFLICT
+    assert sum(len(gateway.requests) for gateway in gateways) == 1
+    with Session(migrated_lifecycle_engine) as session:
+        assert session.scalar(select(func.count(GenerationModel.id))) == 1
+        assert (
+            session.scalar(
+                select(func.count(GenerationModel.id)).where(
+                    GenerationModel.status == GenerationStatus.RUNNING.value
+                )
+            )
+            == 1
+        )
+        assert session.scalar(select(func.count(MessageModel.id))) == 1
+
+    asyncio.run(prepared.aclose())
+
+
+def test_different_conversations_run_concurrently_and_may_reuse_idempotency_key(
+    migrated_lifecycle_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id, user_id, first_conversation = _seed_conversation(
+        migrated_lifecycle_engine
+    )
+    second_conversation = Conversation(
+        public_id=uuid4(),
+        organization_public_id=organization_id,
+        created_by_user_public_id=user_id,
+        title="Second lifecycle conversation",
+        created_at=TIMESTAMP,
+        updated_at=TIMESTAMP,
+    )
+    persistence = SqlAlchemyConversationPersistence(
+        lambda: Session(migrated_lifecycle_engine)
+    )
+    asyncio.run(persistence.create_conversation(second_conversation))
+    gateways = [
+        TestGateway(EventIterator([LLMStartedEvent()])),
+        TestGateway(EventIterator([LLMStartedEvent()])),
+    ]
+    services = [_service(migrated_lifecycle_engine, gateway) for gateway in gateways]
+    idempotency_key = uuid4()
+    barrier = threading.Barrier(2)
+    original_insert = queries.insert_generation
+
+    def race_generation_insert(*args: object, **kwargs: object) -> None:
+        barrier.wait(timeout=5)
+        original_insert(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(queries, "insert_generation", race_generation_insert)
+
+    async def run() -> tuple[
+        ConversationStreamLifecycle,
+        ConversationStreamLifecycle,
+    ]:
+        first, second = await asyncio.gather(
+            services[0].prepare(
+                _request(
+                    organization_id,
+                    user_id,
+                    first_conversation,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+            services[1].prepare(
+                _request(
+                    organization_id,
+                    user_id,
+                    second_conversation,
+                    idempotency_key=idempotency_key,
+                )
+            ),
+        )
+        return first, second
+
+    prepared = asyncio.run(run())
+
+    assert sum(len(gateway.requests) for gateway in gateways) == 2
+    with Session(migrated_lifecycle_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(GenerationModel.id)).where(
+                    GenerationModel.status == GenerationStatus.RUNNING.value
+                )
+            )
+            == 2
+        )
+        assert session.scalar(select(func.count(MessageModel.id))) == 2
+
+    async def close() -> None:
+        await asyncio.gather(*(stream.aclose() for stream in prepared))
+
+    asyncio.run(close())
+
+
+def test_completed_idempotent_request_is_not_submitted_again(
+    migrated_lifecycle_engine: Engine,
+) -> None:
+    organization_id, user_id, conversation = _seed_conversation(
+        migrated_lifecycle_engine
+    )
+    idempotency_key = uuid4()
+    first_gateway = TestGateway(
+        EventIterator(
+            [
+                LLMStartedEvent(),
+                LLMTextDeltaEvent(delta="completed response"),
+                LLMCompletedEvent(),
+            ]
+        )
+    )
+    first_service = _service(migrated_lifecycle_engine, first_gateway)
+
+    async def complete_first_request() -> None:
+        prepared = await first_service.prepare(
+            _request(
+                organization_id,
+                user_id,
+                conversation,
+                idempotency_key=idempotency_key,
+            )
+        )
+        events = [event async for event in prepared]
+        assert isinstance(events[-1], GenerationCompleted)
+
+    asyncio.run(complete_first_request())
+
+    with Session(migrated_lifecycle_engine) as session:
+        original_message_count = session.scalar(select(func.count(MessageModel.id)))
+        original_generation_count = session.scalar(
+            select(func.count(GenerationModel.id))
+        )
+
+    retry_gateway = TestGateway(EventIterator([LLMStartedEvent()]))
+    retry_service = _service(migrated_lifecycle_engine, retry_gateway)
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            retry_service.prepare(
+                _request(
+                    organization_id,
+                    user_id,
+                    conversation,
+                    content="retry must not be persisted",
+                    idempotency_key=idempotency_key,
+                )
+            )
+        )
+
+    assert exc_info.value.code is ErrorCode.CONFLICT
+    assert exc_info.value.message == "This message request has already been accepted."
+    assert retry_gateway.requests == []
+    with Session(migrated_lifecycle_engine) as session:
+        assert session.scalar(select(func.count(MessageModel.id))) == (
+            original_message_count
+        )
+        assert session.scalar(select(func.count(GenerationModel.id))) == (
+            original_generation_count
         )
 
 

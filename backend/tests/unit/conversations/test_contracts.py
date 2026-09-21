@@ -18,6 +18,10 @@ from nexus.conversations.domain import (
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 
 
+def test_running_generation_status_uses_the_persisted_lowercase_value() -> None:
+    assert GenerationStatus.RUNNING.value == "running"
+
+
 def conversation(**overrides: object) -> Conversation:
     values: dict[str, object] = {
         "public_id": uuid4(),
@@ -117,6 +121,7 @@ def test_domain_contracts_reject_naive_timestamps() -> None:
 
 
 def test_generation_supports_status_finish_reason_and_usage() -> None:
+    idempotency_key = uuid4()
     value = Generation(
         public_id=uuid4(),
         conversation_public_id=uuid4(),
@@ -124,6 +129,7 @@ def test_generation_supports_status_finish_reason_and_usage() -> None:
         assistant_message_public_id=uuid4(),
         model="gpt-test",
         status=GenerationStatus.COMPLETED,
+        idempotency_key=idempotency_key,
         finish_reason=GenerationFinishReason.STOP,
         input_tokens=3,
         output_tokens=2,
@@ -133,6 +139,7 @@ def test_generation_supports_status_finish_reason_and_usage() -> None:
     )
 
     assert value.status is GenerationStatus.COMPLETED
+    assert value.idempotency_key == idempotency_key
     assert value.finish_reason is GenerationFinishReason.STOP
     assert value.input_tokens == 3
     assert value.output_tokens == 2

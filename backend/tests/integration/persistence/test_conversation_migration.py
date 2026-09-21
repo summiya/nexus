@@ -9,6 +9,9 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 PREVIOUS_HEAD = "20260916_0005"
+CONCURRENCY_PREVIOUS_HEAD = "20260916_0006"
+ACTIVE_GENERATION_INDEX = "uq_generations_one_running_per_conversation"
+IDEMPOTENCY_INDEX = "uq_generations_conversation_idempotency_key"
 
 
 def upgrade(config: Config) -> None:
@@ -147,6 +150,7 @@ def insert_generation(
     output_tokens: int = 0,
     total_tokens: int = 0,
     error_kind: str | None = None,
+    idempotency_key: uuid.UUID | None = None,
 ) -> int:
     return connection.execute(
         text(
@@ -159,6 +163,7 @@ def insert_generation(
                 assistant_message_id,
                 model,
                 status,
+                idempotency_key,
                 finish_reason,
                 input_tokens,
                 output_tokens,
@@ -173,6 +178,7 @@ def insert_generation(
                 :assistant_message_id,
                 :model,
                 :status,
+                :idempotency_key,
                 :finish_reason,
                 :input_tokens,
                 :output_tokens,
@@ -190,11 +196,61 @@ def insert_generation(
             "assistant_message_id": assistant_message_id,
             "model": model,
             "status": status,
+            "idempotency_key": (
+                str(idempotency_key) if idempotency_key is not None else None
+            ),
             "finish_reason": finish_reason,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
             "error_kind": error_kind,
+        },
+    ).scalar_one()
+
+
+def insert_legacy_generation(
+    connection: sa.Connection,
+    organization_id: int,
+    conversation_id: int,
+    user_message_id: int,
+    *,
+    status: str,
+) -> int:
+    """Insert a Generation before the idempotency column exists."""
+    return connection.execute(
+        text(
+            """
+            INSERT INTO generations (
+                public_id,
+                organization_id,
+                conversation_id,
+                user_message_id,
+                model,
+                status,
+                input_tokens,
+                output_tokens,
+                total_tokens
+            )
+            VALUES (
+                :public_id,
+                :organization_id,
+                :conversation_id,
+                :user_message_id,
+                'gpt-test',
+                :status,
+                0,
+                0,
+                0
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "public_id": str(uuid.uuid4()),
+            "organization_id": organization_id,
+            "conversation_id": conversation_id,
+            "user_message_id": user_message_id,
+            "status": status,
         },
     ).scalar_one()
 
@@ -232,6 +288,7 @@ def test_upgrade_creates_conversation_schema(
     assert generation_columns["assistant_message_id"]["nullable"] is True
     assert generation_columns["created_at"]["nullable"] is False
     assert generation_columns["updated_at"]["nullable"] is False
+    assert generation_columns["idempotency_key"]["nullable"] is True
 
     unique_constraints = {
         constraint["name"]
@@ -260,6 +317,8 @@ def test_upgrade_creates_conversation_schema(
         "ix_generations_conversation_created_at",
         "ix_generations_user_message",
         "ix_generations_assistant_message",
+        ACTIVE_GENERATION_INDEX,
+        IDEMPOTENCY_INDEX,
     }
     generation_indexes = {
         index["name"]: index
@@ -284,6 +343,29 @@ def test_upgrade_creates_conversation_schema(
         .strip("()")
         .strip()
         == "assistant_message_id IS NOT NULL"
+    )
+    assert generation_indexes[ACTIVE_GENERATION_INDEX]["unique"] is True
+    assert generation_indexes[ACTIVE_GENERATION_INDEX]["column_names"] == [
+        "organization_id",
+        "conversation_id",
+    ]
+    active_predicate = generation_indexes[ACTIVE_GENERATION_INDEX]["dialect_options"][
+        "postgresql_where"
+    ]
+    assert "'running'" in active_predicate
+    assert "'RUNNING'" not in active_predicate
+    assert generation_indexes[IDEMPOTENCY_INDEX]["unique"] is True
+    assert generation_indexes[IDEMPOTENCY_INDEX]["column_names"] == [
+        "organization_id",
+        "conversation_id",
+        "idempotency_key",
+    ]
+    assert (
+        generation_indexes[IDEMPOTENCY_INDEX]["dialect_options"]["postgresql_where"]
+        .strip()
+        .strip("()")
+        .strip()
+        == "idempotency_key IS NOT NULL"
     )
 
     foreign_keys = {
@@ -516,6 +598,152 @@ def test_postgresql_rejects_invalid_generation_references_and_values(
                 user_message_one,
                 **values,
             )
+
+
+def test_generation_indexes_enforce_running_and_idempotency_scope(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    upgrade(config)
+    idempotency_key = uuid.uuid4()
+
+    with engine.begin() as connection:
+        organization_id = insert_organization(connection, "generation-guards")
+        user_id = insert_user(connection, organization_id, "guards@example.com")
+        first_conversation = insert_conversation(
+            connection,
+            organization_id,
+            user_id,
+        )
+        second_conversation = insert_conversation(
+            connection,
+            organization_id,
+            user_id,
+        )
+        first_message = insert_message(
+            connection,
+            organization_id,
+            first_conversation,
+            content="first",
+        )
+        competing_message = insert_message(
+            connection,
+            organization_id,
+            first_conversation,
+            content="competing",
+        )
+        other_conversation_message = insert_message(
+            connection,
+            organization_id,
+            second_conversation,
+            content="other conversation",
+        )
+        insert_generation(
+            connection,
+            organization_id,
+            first_conversation,
+            first_message,
+            status="running",
+            idempotency_key=idempotency_key,
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        insert_generation(
+            connection,
+            organization_id,
+            first_conversation,
+            competing_message,
+            status="running",
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        insert_generation(
+            connection,
+            organization_id,
+            first_conversation,
+            competing_message,
+            status="failed",
+            idempotency_key=idempotency_key,
+        )
+
+    with engine.begin() as connection:
+        insert_generation(
+            connection,
+            organization_id,
+            first_conversation,
+            competing_message,
+            status="completed",
+        )
+        insert_generation(
+            connection,
+            organization_id,
+            second_conversation,
+            other_conversation_message,
+            status="running",
+            idempotency_key=idempotency_key,
+        )
+
+
+def test_concurrency_migration_rejects_existing_duplicate_running_generations(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, CONCURRENCY_PREVIOUS_HEAD)
+
+    with engine.begin() as connection:
+        organization_id = insert_organization(connection, "duplicate-running")
+        user_id = insert_user(connection, organization_id, "duplicate@example.com")
+        conversation_id = insert_conversation(connection, organization_id, user_id)
+        first_message = insert_message(
+            connection,
+            organization_id,
+            conversation_id,
+            content="first",
+        )
+        second_message = insert_message(
+            connection,
+            organization_id,
+            conversation_id,
+            content="second",
+        )
+        insert_legacy_generation(
+            connection,
+            organization_id,
+            conversation_id,
+            first_message,
+            status="running",
+        )
+        insert_legacy_generation(
+            connection,
+            organization_id,
+            conversation_id,
+            second_message,
+            status="running",
+        )
+
+    with pytest.raises(RuntimeError, match="duplicate running Generations"):
+        command.upgrade(config, "head")
+
+
+def test_concurrency_migration_downgrade_removes_indexes_and_column(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    upgrade(config)
+
+    command.downgrade(config, CONCURRENCY_PREVIOUS_HEAD)
+
+    inspector = inspect(engine)
+    index_names = {index["name"] for index in inspector.get_indexes("generations")}
+    column_names = {column["name"] for column in inspector.get_columns("generations")}
+    assert ACTIVE_GENERATION_INDEX not in index_names
+    assert IDEMPOTENCY_INDEX not in index_names
+    assert "idempotency_key" not in column_names
+
+    upgrade(config)
+    assert "idempotency_key" in {
+        column["name"] for column in inspect(engine).get_columns("generations")
+    }
 
 
 def test_delete_semantics_preserve_generation_on_direct_message_delete_and_cascade_tenant(

@@ -20,6 +20,7 @@ from nexus.conversations.domain import (
 )
 from nexus.conversations.ports.persistence import (
     ConversationEntityNotFoundError,
+    ConversationPersistenceError,
     ConversationReferenceError,
 )
 from nexus.infrastructure.persistence.conversation import (
@@ -352,6 +353,60 @@ def test_prepare_generation_rejects_a_cross_tenant_message_reference(
             )
             == 0
         )
+
+
+def test_unexpected_integrity_failure_is_not_translated_to_a_conflict(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    first_message = _message(conversation.public_id, "first")
+    first_generation = _generation(conversation.public_id, first_message.public_id)
+    _prepare_generation(
+        persistence,
+        organization_public_id,
+        conversation,
+        first_message,
+        first_generation,
+    )
+    asyncio.run(
+        persistence.fail_generation(
+            organization_public_id=organization_public_id,
+            generation=replace(
+                first_generation,
+                status=GenerationStatus.FAILED,
+                completed_at=TIMESTAMP + timedelta(seconds=1),
+                error_kind="test_setup",
+            ),
+        )
+    )
+    second_message = _message(conversation.public_id, "second")
+    duplicate_public_id = replace(
+        _generation(conversation.public_id, second_message.public_id),
+        public_id=first_generation.public_id,
+    )
+
+    with pytest.raises(ConversationPersistenceError):
+        _prepare_generation(
+            persistence,
+            organization_public_id,
+            conversation,
+            second_message,
+            duplicate_public_id,
+        )
+
+    with Session(migrated_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(MessageModel.id)).where(
+                    MessageModel.public_id == second_message.public_id
+                )
+            )
+            == 0
+        )
+        assert session.scalar(select(func.count(GenerationModel.id))) == 1
 
 
 def test_generation_update_rejects_another_tenant_without_leaking_state(

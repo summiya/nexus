@@ -189,6 +189,7 @@ def insert_generation(
             assistant_message_id=assistant_message_id,
             model=generation.model,
             status=generation.status.value,
+            idempotency_key=generation.idempotency_key,
             finish_reason=(
                 generation.finish_reason.value
                 if generation.finish_reason is not None

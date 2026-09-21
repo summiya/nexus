@@ -20,6 +20,14 @@ class ConversationEntityNotFoundError(Exception):
     """A requested Conversation entity cannot be updated."""
 
 
+class ConversationGenerationInProgressError(Exception):
+    """A Conversation already has a RUNNING Generation."""
+
+
+class ConversationRequestAlreadySubmittedError(Exception):
+    """A message request with this idempotency key already exists."""
+
+
 class ConversationPersistence(Protocol):
     """Short transaction operations used by Conversation application code.
 
@@ -72,7 +80,9 @@ class ConversationPersistence(Protocol):
 
 __all__ = [
     "ConversationEntityNotFoundError",
+    "ConversationGenerationInProgressError",
     "ConversationPersistence",
     "ConversationPersistenceError",
     "ConversationReferenceError",
+    "ConversationRequestAlreadySubmittedError",
 ]

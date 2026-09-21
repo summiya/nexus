@@ -91,3 +91,19 @@ def test_generation_persistence_model_defines_usage_and_message_constraints() ->
         .text
         == "assistant_message_id IS NOT NULL"
     )
+    active_index = indexes["uq_generations_one_running_per_conversation"]
+    assert active_index.unique is True
+    assert active_index.columns.keys() == ["organization_id", "conversation_id"]
+    assert active_index.dialect_options["postgresql"]["where"].text == (
+        "status = 'running'"
+    )
+    idempotency_index = indexes["uq_generations_conversation_idempotency_key"]
+    assert idempotency_index.unique is True
+    assert idempotency_index.columns.keys() == [
+        "organization_id",
+        "conversation_id",
+        "idempotency_key",
+    ]
+    assert idempotency_index.dialect_options["postgresql"]["where"].text == (
+        "idempotency_key IS NOT NULL"
+    )

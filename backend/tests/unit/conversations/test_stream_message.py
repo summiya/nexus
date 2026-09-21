@@ -23,6 +23,10 @@ from nexus.conversations.application.stream_message import (
     StreamConversationMessageRequest,
 )
 from nexus.conversations.domain import Conversation, Generation, Message
+from nexus.conversations.ports.persistence import (
+    ConversationGenerationInProgressError,
+    ConversationRequestAlreadySubmittedError,
+)
 from nexus.errors import ErrorCode, NexusError
 from nexus.llm.application import ModelPolicy
 from nexus.llm.domain import (
@@ -230,14 +234,72 @@ class BlockingIterator:
         self.close_count += 1
 
 
-def make_request() -> StreamConversationMessageRequest:
+def make_request(
+    *,
+    idempotency_key: UUID | None = None,
+) -> StreamConversationMessageRequest:
     return StreamConversationMessageRequest(
         organization_public_id=ORG_ID,
         user_public_id=USER_ID,
         conversation_public_id=CONVERSATION_ID,
         content="  hello  ",
         model=" gpt-test ",
+        idempotency_key=idempotency_key,
     )
+
+
+@pytest.mark.parametrize(
+    ("persistence_error", "message"),
+    [
+        (
+            ConversationGenerationInProgressError("active"),
+            "A generation is already in progress for this conversation.",
+        ),
+        (
+            ConversationRequestAlreadySubmittedError("duplicate"),
+            "This message request has already been accepted.",
+        ),
+    ],
+)
+def test_preparation_conflicts_are_safe_and_do_not_invoke_provider(
+    persistence_error: Exception,
+    message: str,
+) -> None:
+    class ConflictingPersistence(FakePersistence):
+        async def prepare_generation(
+            self,
+            *,
+            organization_public_id: UUID,
+            conversation: Conversation,
+            message: Message,
+            generation: Generation,
+            history_limit: int,
+        ) -> tuple[Message, ...]:
+            del (
+                organization_public_id,
+                conversation,
+                message,
+                generation,
+                history_limit,
+            )
+            raise persistence_error
+
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=ConflictingPersistence(),
+        llm_gateway=gateway,
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(service.prepare(make_request(idempotency_key=uuid4())))
+
+    assert exc_info.value.code is ErrorCode.CONFLICT
+    assert exc_info.value.message == message
+    assert gateway.requests == []
 
 
 def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> None:

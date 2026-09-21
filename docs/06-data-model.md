@@ -765,6 +765,30 @@ Recommended constraint:
 UNIQUE(conversation_id, sequence_number)
 ```
 
+## Implemented Generation concurrency and request deduplication
+
+The current Conversation implementation persists each model attempt in a
+`generations` row. Its status values are stored as lowercase strings, including
+`running`.
+
+PostgreSQL is authoritative for these implemented invariants:
+
+```text
+uq_generations_one_running_per_conversation
+    UNIQUE (organization_id, conversation_id)
+    WHERE status = 'running'
+
+uq_generations_conversation_idempotency_key
+    UNIQUE (organization_id, conversation_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL
+```
+
+The first index permits at most one active generation per Conversation. The
+second provides optional at-most-once message submission when a client sends a
+UUID `Idempotency-Key`. It does not provide SSE replay or resumption. Because
+the idempotency identity includes the Conversation, the same key may be reused
+for a different Conversation.
+
 ---
 
 # 19. Entity: File

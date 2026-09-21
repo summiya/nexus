@@ -245,6 +245,18 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
             )
         )
         messages.append(message)
+        if content != "fourth":
+            asyncio.run(
+                persistence.fail_generation(
+                    organization_public_id=organization_public_id,
+                    generation=replace(
+                        generation,
+                        status=GenerationStatus.FAILED,
+                        completed_at=created_at + timedelta(milliseconds=1),
+                        error_kind="test_history_setup",
+                    ),
+                )
+            )
 
     assert prepared == tuple(messages[-3:])
 
