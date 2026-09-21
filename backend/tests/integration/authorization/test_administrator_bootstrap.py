@@ -17,7 +17,7 @@ from nexus.authorization.bootstrap import (
     ADMINISTRATOR_ROLE_NAME,
     provision_administrator_role,
 )
-from nexus.config.settings import settings
+from nexus.config.settings import load_settings
 from nexus.domain.permissions import PERMISSION_CATALOG
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.permission import Permission
@@ -36,7 +36,7 @@ def _normalize_postgresql_driver(database_url: str) -> str:
 
 @pytest.fixture
 def migrated_engine() -> Iterator[Engine]:
-    database_url = _normalize_postgresql_driver(settings.database_url)
+    database_url = _normalize_postgresql_driver(load_settings().database_url)
     database_name = f"nexus_admin_bootstrap_test_{uuid.uuid4().hex}"
     test_url = make_url(database_url).set(database=database_name)
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")

@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import make_url
 
-from nexus.config.settings import settings
+from nexus.config.settings import load_settings
 from nexus.infrastructure.persistence import models  # noqa: F401
 from nexus.infrastructure.persistence.base import Base
 
@@ -20,7 +20,7 @@ def get_database_url() -> str:
     database_url = config.attributes.get("database_url")
     if isinstance(database_url, str) and database_url:
         return normalize_postgresql_driver(database_url)
-    return normalize_postgresql_driver(settings.database_url)
+    return normalize_postgresql_driver(load_settings().database_url)
 
 
 def normalize_postgresql_driver(database_url: str) -> str:

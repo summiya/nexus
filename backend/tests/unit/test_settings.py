@@ -1,15 +1,16 @@
 import importlib
 import logging
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
-from nexus.config.settings import ROOT_ENV_FILE, Settings
+from nexus.config.settings import ROOT_ENV_FILE, Settings, load_settings
+from nexus.main import create_app
 
 settings_module = importlib.import_module("nexus.config.settings")
-main_module = importlib.import_module("nexus.main")
 
 SETTINGS_ENV_KEYS = [
     "APP_NAME",
@@ -105,33 +106,27 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
 
 
 def test_database_url_is_required(clean_environment) -> None:
+    values = build_settings().model_dump()
+    values.pop("database_url")
+
     with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            redis_url="redis://localhost:6379/15",
-            cors_allowed_origins=["http://localhost:5173"],
-            otp_hmac_secret="test-secret-value-with-enough-length",
-        )
+        Settings(_env_file=None, **values)
 
 
 def test_redis_url_is_required(clean_environment) -> None:
+    values = build_settings().model_dump()
+    values.pop("redis_url")
+
     with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            database_url="postgresql://test:test@localhost:5432/test",
-            cors_allowed_origins=["http://localhost:5173"],
-            otp_hmac_secret="test-secret-value-with-enough-length",
-        )
+        Settings(_env_file=None, **values)
 
 
 def test_cors_allowed_origins_is_required(clean_environment) -> None:
+    values = build_settings().model_dump()
+    values.pop("cors_allowed_origins")
+
     with pytest.raises(ValidationError):
-        Settings(
-            _env_file=None,
-            database_url="postgresql://test:test@localhost:5432/test",
-            redis_url="redis://localhost:6379/15",
-            otp_hmac_secret="test-secret-value-with-enough-length",
-        )
+        Settings(_env_file=None, **values)
 
 
 def test_settings_reads_environment_variables(monkeypatch, clean_environment) -> None:
@@ -186,10 +181,7 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
 
 @pytest.mark.parametrize(
     ("raw_value", "expected"),
-    [
-        ("true", True),
-        ("false", False),
-    ],
+    [("true", True), ("false", False)],
 )
 def test_debug_boolean_values(
     monkeypatch, clean_environment, raw_value: str, expected: bool
@@ -238,47 +230,45 @@ def test_malformed_cors_configuration_fails(monkeypatch, clean_environment) -> N
         Settings(_env_file=None)
 
 
-def test_settings_loads_root_env_file_deterministically() -> None:
-    assert Settings.model_config["env_file"] == ROOT_ENV_FILE
-
-
-def test_application_settings_module_exposes_single_configuration(
-    monkeypatch, clean_environment
+def test_load_settings_uses_explicit_env_file(
+    tmp_path: Path,
+    clean_environment,
 ) -> None:
-    monkeypatch.setenv("APP_NAME", "NEXUS Config")
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("APP_DEBUG", "false")
-    monkeypatch.setenv("API_VERSION", "v2")
-    monkeypatch.setenv("API_PREFIX", "/api/v2")
-    set_required_settings_env(monkeypatch)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "APP_NAME=NEXUS Explicit\n"
+        "DATABASE_URL=postgresql://file:file@localhost:5432/file\n"
+        "REDIS_URL=redis://localhost:6379/8\n"
+        'CORS_ALLOWED_ORIGINS=["http://localhost:5173"]\n'
+        "OTP_HMAC_SECRET=file-secret-value-with-enough-length\n"
+        "AUTH_TOKEN_SECRET=file-auth-token-secret-with-enough-length\n"
+        "REFRESH_TOKEN_SECRET=file-refresh-token-secret-with-enough-length",
+        encoding="utf-8",
+    )
 
-    importlib.reload(settings_module)
+    loaded = load_settings(env_file=env_file)
 
-    assert settings_module.settings.app_name == "NEXUS Config"
-    assert settings_module.settings.app_env == "production"
-    assert settings_module.settings.debug is False
-    assert settings_module.settings.api_version == "v2"
-    assert settings_module.settings.api_prefix == "/api/v2"
-
-    importlib.reload(settings_module)
+    assert loaded.app_name == "NEXUS Explicit"
+    assert loaded.database_url.endswith("/file")
+    assert Settings.model_config.get("env_file") is None
+    assert ROOT_ENV_FILE.name == ".env"
 
 
-def test_create_app_uses_debug_and_api_prefix(monkeypatch, clean_environment) -> None:
-    set_required_settings_env(monkeypatch)
-    monkeypatch.setenv("APP_DEBUG", "true")
-    monkeypatch.setenv("API_PREFIX", "/api/test")
-    importlib.reload(settings_module)
-    reloaded_main = importlib.reload(main_module)
+def test_settings_module_has_no_eager_global_configuration() -> None:
+    assert "settings" not in vars(settings_module)
 
-    app = reloaded_main.create_app()
-    response = TestClient(app).get("/api/test/health")
 
+def test_create_app_uses_explicit_settings() -> None:
+    app_settings = build_settings(APP_DEBUG=True, api_prefix="/api/test")
+    app = create_app(app_settings)
+
+    with TestClient(app) as client:
+        response = client.get("/api/test/health")
+
+    assert app.state.container.settings is app_settings
     assert app.debug is True
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-
-    importlib.reload(settings_module)
-    importlib.reload(main_module)
 
 
 def test_sensitive_configuration_is_not_logged(caplog) -> None:

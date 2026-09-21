@@ -20,7 +20,7 @@ from nexus.application.authentication.signup_verification import (
     SignupVerificationService,
 )
 from nexus.authorization.bootstrap import ADMINISTRATOR_ROLE_NAME
-from nexus.config.settings import Settings, settings
+from nexus.config.settings import Settings, load_settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.mailer import EmailDeliveryError
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
@@ -67,7 +67,7 @@ def normalize_postgresql_driver(database_url: str) -> str:
 
 @pytest.fixture
 def migrated_engine() -> Iterator[Engine]:
-    database_url = normalize_postgresql_driver(settings.database_url)
+    database_url = normalize_postgresql_driver(load_settings().database_url)
     database_name = f"nexus_signup_verify_test_{uuid.uuid4().hex}"
     test_url = make_url(database_url).set(database=database_name)
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from nexus.api.composition.authentication import (
+from nexus.api.dependencies.authentication import (
     SignupOtpServiceDep,
     SignupVerificationServiceDep,
 )
@@ -14,9 +14,7 @@ from nexus.api.schemas.authentication import (
     SignupVerificationRequestBody,
     SignupVerificationResponseBody,
 )
-from nexus.application.authentication.signup import (
-    SignupOtpRequest,
-)
+from nexus.application.authentication.signup import SignupOtpRequest
 from nexus.application.authentication.signup_verification import (
     SignupVerificationRequest,
 )

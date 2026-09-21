@@ -5,8 +5,6 @@ from typing import Any
 
 import structlog
 
-from nexus.config.settings import settings
-
 _SENSITIVE_FIELD_PARTS = frozenset(
     {
         "authorization",
@@ -44,7 +42,7 @@ def _redact_sensitive_fields(
 
 def configure_logging(level: str | None = None) -> None:
     """Configure sink-independent structured JSON logging to stdout."""
-    resolved_level = (level or settings.log_level or "INFO").upper()
+    resolved_level = (level or "INFO").upper()
     numeric_level = getattr(logging, resolved_level, logging.INFO)
 
     logging.basicConfig(
