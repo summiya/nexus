@@ -4,14 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from nexus.api.composition.root import AppContainer, build_app_container
 from nexus.api.router import api_router
+from nexus.authentication.gateways import RateLimiter
+from nexus.composition.root import AppContainer, build_app_container
 from nexus.config.settings import Settings, load_settings
 from nexus.errors.handlers import register_exception_handlers
 from nexus.events import EventPublisher
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.session import Database
-from nexus.infrastructure.rate_limit import RateLimiter
 from nexus.llm.ports import LLMGateway
 from nexus.logging import configure_logging, get_logger
 from nexus.middleware import RequestContextMiddleware

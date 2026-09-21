@@ -15,44 +15,34 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.signup_verification import (
-    SignupVerificationRequest,
-    SignupVerificationService,
+from nexus.authentication.gateways import (
+    AccessTokenClaims,
+    AccessTokenGateway,
+    AccessTokenGatewayError,
+    AuthenticationEmailError,
 )
+from nexus.authentication.session_service import SessionPolicy, SessionService
+from nexus.authentication.signup_service import (
+    SignupPolicy,
+    SignupService,
+    SignupVerificationRequest,
+    digest_otp,
+)
+from nexus.authentication.tokens import AccessTokenService
 from nexus.authorization.bootstrap import ADMINISTRATOR_ROLE_NAME
 from nexus.config.settings import Settings, load_settings
 from nexus.errors import ErrorCode, NexusError
-from nexus.infrastructure.mailer import EmailDeliveryError
+from nexus.infrastructure.authentication import JwtAccessTokenGateway
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.role import Role
 from nexus.infrastructure.persistence.models.user import User
 from nexus.infrastructure.persistence.models.user_role import UserRole
-from nexus.infrastructure.persistence.repositories.administrator_role import (
-    SqlAlchemyAdministratorRoleProvisioner,
-)
-from nexus.infrastructure.persistence.repositories.auth_session import (
-    SqlAlchemyAuthSessionRepository,
-)
-from nexus.infrastructure.persistence.repositories.organization import (
-    SqlAlchemyOrganizationRepository,
-)
-from nexus.infrastructure.persistence.repositories.otp_challenge import (
-    SqlAlchemyOtpChallengeRepository,
-)
-from nexus.infrastructure.persistence.repositories.user import SqlAlchemyUserRepository
-from nexus.infrastructure.persistence.repositories.user_role import (
-    SqlAlchemyUserRoleRepository,
+from nexus.infrastructure.persistence.repositories.authentication import (
+    SqlAlchemyAuthenticationRepository,
 )
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
-from nexus.security.authentication_tokens import AccessTokenService
-from nexus.security.otp import digest_otp
-from nexus.services.authentication_session import (
-    AuthenticationSessionService,
-    SessionTokenResult,
-)
-from nexus.services.otp import OtpVerificationService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 SIGNUP_OTP = "123456"
@@ -129,16 +119,33 @@ class RecordingWelcomeEmailSender:
     sent: list[dict[str, str]] = field(default_factory=list)
     fail: bool = False
 
+    def send_signup_otp(
+        self,
+        *,
+        email: str,
+        otp: str,
+        expires_at: datetime,
+    ) -> None:
+        del email, otp, expires_at
+
     def send_welcome_email(self, *, email: str, display_name: str) -> None:
         if self.fail:
-            raise EmailDeliveryError("welcome email failed")
+            raise AuthenticationEmailError("welcome email failed")
         self.sent.append({"email": email, "display_name": display_name})
 
 
-class UnauthorizedSessionService(AuthenticationSessionService):
-    def create_session(self, *, user: User) -> SessionTokenResult:
-        del user
-        raise NexusError(ErrorCode.UNAUTHORIZED, "Authentication is required.")
+class FailingAccessTokenGateway:
+    expires_seconds = 900
+
+    def issue_access_token(self, claims: AccessTokenClaims) -> str:
+        del claims
+        raise AccessTokenGatewayError("access token issuance failed")
+
+
+class AllowingRateLimiter:
+    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+        del key, limit, window_seconds
+        return True
 
 
 def build_service(
@@ -146,43 +153,43 @@ def build_service(
     *,
     settings_value: Settings | None = None,
     welcome_sender: RecordingWelcomeEmailSender | None = None,
-    session_service: AuthenticationSessionService | None = None,
-) -> SignupVerificationService:
+    access_token_gateway: AccessTokenGateway | None = None,
+) -> SignupService:
     settings_value = settings_value or build_settings()
-    otp_challenge_repository = SqlAlchemyOtpChallengeRepository(session)
-    return SignupVerificationService(
-        transaction=SqlAlchemyTransactionManager(session),
-        user_repository=SqlAlchemyUserRepository(session),
-        organization_repository=SqlAlchemyOrganizationRepository(session),
-        user_role_repository=SqlAlchemyUserRoleRepository(session),
-        administrator_role_provisioner=SqlAlchemyAdministratorRoleProvisioner(session),
-        otp_verifier=OtpVerificationService(
-            settings=settings_value,
-            otp_challenge_repository=otp_challenge_repository,
-        ),
-        session_service=session_service
-        or AuthenticationSessionService(
-            access_token_service=_access_token_service(settings_value),
-            refresh_token_secret=settings_value.refresh_token_secret,
-            refresh_token_expires_seconds=(
-                settings_value.refresh_token_expires_seconds
+    transaction = SqlAlchemyTransactionManager(session)
+    repository = SqlAlchemyAuthenticationRepository(session)
+    resolved_access_token_gateway = access_token_gateway or JwtAccessTokenGateway(
+        _access_token_service(settings_value)
+    )
+    return SignupService(
+        policy=SignupPolicy(
+            otp_hmac_secret=settings_value.otp_hmac_secret,
+            signup_otp_length=settings_value.signup_otp_length,
+            signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
+            signup_otp_max_attempts=settings_value.signup_otp_max_attempts,
+            signup_otp_rate_limit_max_requests=(
+                settings_value.signup_otp_rate_limit_max_requests
             ),
-            auth_session_repository=SqlAlchemyAuthSessionRepository(session),
+            signup_otp_rate_limit_window_seconds=(
+                settings_value.signup_otp_rate_limit_window_seconds
+            ),
+        ),
+        transaction=transaction,
+        repository=repository,
+        session_service=SessionService(
+            policy=SessionPolicy(
+                refresh_token_secret=settings_value.refresh_token_secret,
+                refresh_token_expires_seconds=(
+                    settings_value.refresh_token_expires_seconds
+                ),
+            ),
+            transaction=transaction,
+            repository=repository,
+            access_token_gateway=resolved_access_token_gateway,
             clock=lambda: datetime.now(UTC),
         ),
-        welcome_email_sender=welcome_sender or RecordingWelcomeEmailSender(),
-    )
-
-
-def build_unauthorized_session_service(
-    session: Session,
-    settings_value: Settings,
-) -> UnauthorizedSessionService:
-    return UnauthorizedSessionService(
-        access_token_service=_access_token_service(settings_value),
-        refresh_token_secret=settings_value.refresh_token_secret,
-        refresh_token_expires_seconds=settings_value.refresh_token_expires_seconds,
-        auth_session_repository=SqlAlchemyAuthSessionRepository(session),
+        email_gateway=welcome_sender or RecordingWelcomeEmailSender(),
+        rate_limiter=AllowingRateLimiter(),
         clock=lambda: datetime.now(UTC),
     )
 
@@ -427,7 +434,7 @@ def test_max_attempt_failure_persists_locked_at(
         assert session.scalar(select(func.count(AuthSession.id))) == 0
 
 
-def test_unrelated_unauthorized_rolls_back_partial_signup_state(
+def test_token_issuance_failure_rolls_back_partial_signup_state(
     migrated_engine: Engine,
 ) -> None:
     settings_value = build_settings()
@@ -437,15 +444,12 @@ def test_unrelated_unauthorized_rolls_back_partial_signup_state(
         service = build_service(
             session,
             settings_value=settings_value,
-            session_service=build_unauthorized_session_service(
-                session,
-                settings_value,
-            ),
+            access_token_gateway=FailingAccessTokenGateway(),
         )
         with pytest.raises(NexusError) as exc_info:
             service.complete_signup(request=signup_request())
 
-    assert exc_info.value.code == ErrorCode.UNAUTHORIZED
+    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
 
     with Session(migrated_engine) as session:
         challenge = session.scalars(select(OtpChallenge)).one()

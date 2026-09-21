@@ -6,7 +6,7 @@ from uuid import uuid4
 import jwt
 import pytest
 
-from nexus.security.authentication_tokens import (
+from nexus.authentication.tokens import (
     AccessTokenError,
     AccessTokenExpiredError,
     AccessTokenService,

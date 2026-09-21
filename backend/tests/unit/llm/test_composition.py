@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from nexus.api.composition.llm import build_llm_composition
+from nexus.composition.root import build_llm_composition
 from nexus.config.settings import Settings
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
