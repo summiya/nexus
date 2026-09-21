@@ -57,11 +57,11 @@ Dependencies point inward toward application and domain contracts. Conversation 
 
 ### Conversation HTTP controller
 
-The controller owns HTTP request/response mapping, authenticated context extraction, FastAPI dependency resolution, and Conversation-event-to-SSE serialization. It delegates validation and lifecycle decisions to application code and always closes the prepared normalized stream.
+The API boundary owns transport and schema validation through its Pydantic request schemas. The controller owns HTTP request/response mapping, authenticated context extraction, FastAPI dependency resolution, and Conversation-event-to-SSE serialization. It passes validated schema values to application code and always closes the prepared normalized stream.
 
 ### `StreamConversationMessage`
 
-This use case validates message and model input, applies Conversation access rules, creates the user Message and `RUNNING` Generation records, prepares bounded history, builds the provider-independent `LLMRequest`, and invokes `LLMGateway.stream()` directly. After receiving the normalized iterator, it transfers lifecycle ownership to `ConversationStreamLifecycle`.
+This use case owns use-case validation, model-policy enforcement, Conversation authorization, and streaming orchestration. It creates the user Message and `RUNNING` Generation records, prepares bounded history, builds the provider-independent `LLMRequest`, and invokes `LLMGateway.stream()` directly. After receiving the normalized iterator, it transfers lifecycle ownership to `ConversationStreamLifecycle`.
 
 ### `ConversationPersistence`
 

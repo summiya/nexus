@@ -2450,21 +2450,19 @@ Example:
 
 ### 84.4 Request IDs
 
-The server should accept an optional:
+`RequestContextMiddleware` accepts an optional:
 
 ```http
 X-Request-ID: <client-request-id>
 ```
 
-If absent, Nexus generates one.
-
-The response should include:
+Nexus preserves a valid caller-provided request ID and generates a new one when the header is absent or invalid. The middleware binds the value to the logging/request context and structured logging context, stores it in ASGI request state as `request.state.request_id`, and returns it in every response as:
 
 ```http
 X-Request-ID: <request-id>
 ```
 
-The server-generated/request-provided ID must be propagated into `RequestContext`.
+The existing logging `RequestContext` carries request-scoped logging metadata; it is not the future shared SDK `RequestContext` described in section 83. Propagating the request ID into a future shared SDK context remains future behavior.
 
 ### 84.5 Future idempotency support
 
