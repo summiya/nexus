@@ -1,7 +1,7 @@
 # Configuration & Environment Variable Conventions
 
 **Document Type:** Engineering Convention  
-**Applies To:** Backend, frontend, tests, Docker, CI/CD, migrations, and local development  
+**Applies To:** Backend, frontend, tests, Docker, CI/CD, migrations, and local development
 **Status:** Canonical project guidance
 
 ## 1. Purpose
@@ -69,6 +69,10 @@ Do not add another settings implementation or another `.env` loader.
 ## 4. Composition root
 
 `create_app()` is the application composition root. It owns construction of application-scoped dependencies from one `Settings` instance.
+
+The resulting dependencies are stored in one `AppContainer`. FastAPI exposes only
+`app.state.container`; transport dependencies resolve database, authentication,
+LLM, Conversation, and event capabilities from that container.
 
 ```text
 create_app(settings)

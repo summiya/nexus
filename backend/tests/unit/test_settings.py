@@ -236,17 +236,13 @@ def test_load_settings_uses_explicit_env_file(
 ) -> None:
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "\n".join(
-            [
-                "APP_NAME=NEXUS Explicit",
-                "DATABASE_URL=postgresql://file:file@localhost:5432/file",
-                "REDIS_URL=redis://localhost:6379/8",
-                'CORS_ALLOWED_ORIGINS=[\"http://localhost:5173\"]',
-                "OTP_HMAC_SECRET=file-secret-value-with-enough-length",
-                "AUTH_TOKEN_SECRET=file-auth-token-secret-with-enough-length",
-                "REFRESH_TOKEN_SECRET=file-refresh-token-secret-with-enough-length",
-            ]
-        ),
+        "APP_NAME=NEXUS Explicit\n"
+        "DATABASE_URL=postgresql://file:file@localhost:5432/file\n"
+        "REDIS_URL=redis://localhost:6379/8\n"
+        'CORS_ALLOWED_ORIGINS=["http://localhost:5173"]\n'
+        "OTP_HMAC_SECRET=file-secret-value-with-enough-length\n"
+        "AUTH_TOKEN_SECRET=file-auth-token-secret-with-enough-length\n"
+        "REFRESH_TOKEN_SECRET=file-refresh-token-secret-with-enough-length",
         encoding="utf-8",
     )
 
@@ -269,7 +265,7 @@ def test_create_app_uses_explicit_settings() -> None:
     with TestClient(app) as client:
         response = client.get("/api/test/health")
 
-    assert app.state.settings is app_settings
+    assert app.state.container.settings is app_settings
     assert app.debug is True
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}

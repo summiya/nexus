@@ -10,7 +10,7 @@ from nexus.api.dependencies import get_event_publisher
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
-from nexus.infrastructure.mailer import EmailMessage
+from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
@@ -150,7 +150,10 @@ def test_default_event_publisher_is_application_scoped() -> None:
     app = create_test_app(build_settings())
 
     with TestClient(app):
-        assert isinstance(app.state.event_publisher, InProcessEventPublisher)
+        assert isinstance(
+            app.state.container.event_publisher,
+            InProcessEventPublisher,
+        )
 
 
 def test_llm_gateway_and_use_cases_are_application_scoped() -> None:
@@ -158,9 +161,9 @@ def test_llm_gateway_and_use_cases_are_application_scoped() -> None:
     app = create_test_app(build_settings(), llm_gateway=gateway)
 
     with TestClient(app):
-        assert app.state.llm.gateway is gateway
-        assert app.state.llm.generate.gateway is gateway
-        assert app.state.llm.stream.gateway is gateway
+        assert app.state.container.llm.gateway is gateway
+        assert app.state.container.llm.generate.gateway is gateway
+        assert app.state.container.llm.stream.gateway is gateway
 
 
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
@@ -211,30 +214,51 @@ def test_two_apps_keep_database_redis_and_token_configuration_isolated() -> None
         organization_public_id=uuid4(),
         session_public_id=uuid4(),
     )
-    token_a = app_a.state.authentication.access_token_service.issue_access_token(
-        context
+    token_a = (
+        app_a.state.container.authentication.access_token_service.issue_access_token(
+            context
+        )
     )
 
     with TestClient(app_a), TestClient(app_b):
-        assert app_a.state.settings is settings_a
-        assert app_b.state.settings is settings_b
-        assert app_a.state.database.engine.url.database == "nexus_a"
-        assert app_b.state.database.engine.url.database == "nexus_b"
+        assert app_a.state.container.settings is settings_a
+        assert app_b.state.container.settings is settings_b
+        assert app_a.state.container.database.engine.url.database == "nexus_a"
+        assert app_b.state.container.database.engine.url.database == "nexus_b"
 
-        limiter_a = app_a.state.authentication.rate_limiter
-        limiter_b = app_b.state.authentication.rate_limiter
+        limiter_a = app_a.state.container.authentication.rate_limiter
+        limiter_b = app_b.state.container.authentication.rate_limiter
         assert isinstance(limiter_a, RedisRateLimiter)
         assert isinstance(limiter_b, RedisRateLimiter)
         assert limiter_a.redis.connection_pool.connection_kwargs["db"] == 1
         assert limiter_b.redis.connection_pool.connection_kwargs["db"] == 2
 
-        assert app_a.state.authentication.access_authentication_service.authenticate(
-            token_a
-        ) == context
-        with pytest.raises(NexusError):
-            app_b.state.authentication.access_authentication_service.authenticate(
+        assert (
+            app_a.state.container.authentication.access_authentication_service.authenticate(
                 token_a
             )
+            == context
+        )
+        with pytest.raises(NexusError):
+            app_b.state.container.authentication.access_authentication_service.authenticate(
+                token_a
+            )
+
+
+def test_application_state_exposes_only_the_root_container() -> None:
+    app = create_test_app(build_settings())
+
+    with TestClient(app):
+        assert app.state.container.settings.app_name == "NEXUS"
+        for legacy_name in (
+            "settings",
+            "database",
+            "authentication",
+            "event_publisher",
+            "llm",
+            "conversations",
+        ):
+            assert not hasattr(app.state, legacy_name)
 
 
 def test_lifespan_closes_application_owned_resources() -> None:
@@ -253,3 +277,15 @@ def test_lifespan_closes_application_owned_resources() -> None:
 
     assert database.disposed is True
     assert rate_limiter.closed is True
+
+
+def test_composition_failure_disposes_created_resources() -> None:
+    database = TrackingDatabase()
+
+    with pytest.raises(EmailDeliveryError, match="Unsupported email provider"):
+        create_app(
+            build_settings(email_provider="unsupported"),
+            database=database,  # type: ignore[arg-type]
+        )
+
+    assert database.disposed is True

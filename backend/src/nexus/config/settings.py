@@ -47,11 +47,3 @@ def load_settings(*, env_file: Path | None = ROOT_ENV_FILE) -> Settings:
     """Load one explicit settings instance for an application or CLI entrypoint."""
 
     return Settings(_env_file=env_file)  # type: ignore[call-arg]
-
-
-def __getattr__(name: str) -> Settings:
-    """Provide temporary lazy compatibility for legacy test imports."""
-
-    if name == "settings":
-        return load_settings()
-    raise AttributeError(name)

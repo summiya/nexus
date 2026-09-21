@@ -4,21 +4,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from nexus.api.composition.authentication import (
-    AuthenticationComposition,
-    build_authentication_composition,
-)
-from nexus.api.composition.conversations import (
-    ConversationComposition,
-    build_conversation_composition,
-)
-from nexus.api.composition.llm import LLMComposition, build_llm_composition
+from nexus.api.composition.root import AppContainer, build_app_container
 from nexus.api.router import api_router
 from nexus.config.settings import Settings, load_settings
 from nexus.errors.handlers import register_exception_handlers
-from nexus.events import EventPublisher, InProcessEventPublisher
+from nexus.events import EventPublisher
 from nexus.infrastructure.mailer import EmailProvider
-from nexus.infrastructure.persistence.session import Database, build_database
+from nexus.infrastructure.persistence.session import Database
 from nexus.infrastructure.rate_limit import RateLimiter
 from nexus.llm.ports import LLMGateway
 from nexus.logging import configure_logging, get_logger
@@ -34,13 +26,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        authentication: AuthenticationComposition = app.state.authentication
-        database: Database = app.state.database
-        try:
-            authentication.close()
-        finally:
-            database.dispose()
-            logger.info("application_stopped")
+        container: AppContainer = app.state.container
+        container.close()
+        logger.info("application_stopped")
 
 
 def create_app(
@@ -63,44 +51,15 @@ def create_app(
         lifespan=lifespan,
     )
 
-    llm: LLMComposition = build_llm_composition(
+    container = build_app_container(
         resolved_settings,
-        gateway=llm_gateway,
+        event_publisher=event_publisher,
+        llm_gateway=llm_gateway,
+        database=database,
+        rate_limiter=rate_limiter,
+        email_provider=email_provider,
     )
-    resolved_database = (
-        database
-        if database is not None
-        else build_database(resolved_settings.database_url)
-    )
-    authentication: AuthenticationComposition | None = None
-    try:
-        authentication = build_authentication_composition(
-            resolved_settings,
-            rate_limiter=rate_limiter,
-            email_provider=email_provider,
-        )
-        conversations: ConversationComposition = build_conversation_composition(
-            resolved_settings,
-            llm_stream=llm.stream,
-            model_policy=llm.model_policy,
-            session_factory=resolved_database.session_factory,
-        )
-    except Exception:
-        if authentication is not None:
-            authentication.close()
-        resolved_database.dispose()
-        raise
-
-    app.state.settings = resolved_settings
-    app.state.database = resolved_database
-    app.state.authentication = authentication
-    app.state.event_publisher = (
-        event_publisher
-        if event_publisher is not None
-        else InProcessEventPublisher()
-    )
-    app.state.llm = llm
-    app.state.conversations = conversations
+    app.state.container = container
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=resolved_settings.api_prefix)

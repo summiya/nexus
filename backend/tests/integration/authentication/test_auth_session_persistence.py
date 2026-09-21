@@ -14,7 +14,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.config.settings import settings
+from nexus.config.settings import load_settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.organization import Organization
@@ -46,7 +46,7 @@ def normalize_postgresql_driver(database_url: str) -> str:
 
 @pytest.fixture
 def migrated_engine() -> Iterator[Engine]:
-    database_url = normalize_postgresql_driver(settings.database_url)
+    database_url = normalize_postgresql_driver(load_settings().database_url)
     database_name = f"nexus_auth_session_test_{uuid.uuid4().hex}"
     test_url = make_url(database_url).set(database=database_name)
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")

@@ -17,7 +17,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from nexus.application.authentication.signup import SignupOtpRequest, SignupOtpService
-from nexus.config.settings import Settings, settings
+from nexus.config.settings import Settings, load_settings
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.repositories.otp_challenge import (
     SqlAlchemyOtpChallengeRepository,
@@ -37,7 +37,7 @@ def normalize_postgresql_driver(database_url: str) -> str:
 
 @pytest.fixture
 def migrated_engine() -> Iterator[Engine]:
-    database_url = normalize_postgresql_driver(settings.database_url)
+    database_url = normalize_postgresql_driver(load_settings().database_url)
     database_name = f"nexus_signup_otp_test_{uuid.uuid4().hex}"
     test_url = make_url(database_url).set(database=database_name)
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")

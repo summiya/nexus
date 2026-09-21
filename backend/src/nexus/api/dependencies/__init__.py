@@ -1,10 +1,23 @@
 """Shared API dependencies."""
 
-from fastapi import Request
+from typing import Annotated
 
+from fastapi import Depends, Request
+
+from nexus.api.composition.root import AppContainer
 from nexus.events import EventPublisher
 
 
-def get_event_publisher(request: Request) -> EventPublisher:
+def get_container(request: Request) -> AppContainer:
+    """Return the single application composition container."""
+
+    return request.app.state.container
+
+
+AppContainerDep = Annotated[AppContainer, Depends(get_container)]
+
+
+def get_event_publisher(container: AppContainerDep) -> EventPublisher:
     """Return the application-scoped event publisher for request dependencies."""
-    return request.app.state.event_publisher
+
+    return container.event_publisher

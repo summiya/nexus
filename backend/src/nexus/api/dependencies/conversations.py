@@ -4,20 +4,23 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 
+from nexus.api.dependencies import AppContainerDep
 from nexus.conversations.application import (
     CreateConversation,
     StreamConversationMessage,
 )
 
 
-def get_create_conversation(request: Request) -> CreateConversation:
-    return request.app.state.conversations.create
+def get_create_conversation(container: AppContainerDep) -> CreateConversation:
+    return container.conversations.create
 
 
-def get_stream_conversation_message(request: Request) -> StreamConversationMessage:
-    return request.app.state.conversations.stream_message
+def get_stream_conversation_message(
+    container: AppContainerDep,
+) -> StreamConversationMessage:
+    return container.conversations.stream_message
 
 
 CreateConversationDep = Annotated[

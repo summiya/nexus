@@ -11,7 +11,7 @@ from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from nexus.config.settings import settings
+from nexus.config.settings import load_settings
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
@@ -25,7 +25,7 @@ def normalize_postgresql_driver(database_url: str) -> str:
 
 @pytest.fixture
 def migrated_database() -> Iterator[tuple[Config, Engine]]:
-    database_url = normalize_postgresql_driver(settings.database_url)
+    database_url = normalize_postgresql_driver(load_settings().database_url)
     database_name = f"nexus_auth_session_migration_test_{uuid.uuid4().hex}"
     test_url = make_url(database_url).set(database=database_name)
     admin_engine = create_engine(database_url, isolation_level="AUTOCOMMIT")

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 
 from nexus.api.composition.authentication import AuthenticationComposition
+from nexus.api.dependencies import AppContainerDep
 from nexus.api.dependencies.database import RequestSession
 from nexus.application.authentication.signup import SignupOtpService
 from nexus.application.authentication.signup_verification import (
@@ -15,8 +16,10 @@ from nexus.application.authentication.signup_verification import (
 from nexus.services.access_authentication import AccessAuthenticationService
 
 
-def get_authentication_composition(request: Request) -> AuthenticationComposition:
-    return request.app.state.authentication
+def get_authentication_composition(
+    container: AppContainerDep,
+) -> AuthenticationComposition:
+    return container.authentication
 
 
 AuthenticationCompositionDep = Annotated[

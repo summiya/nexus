@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from nexus.api.dependencies import AppContainerDep
 from nexus.infrastructure.persistence.session import Database
 
 
-def get_database(request: Request) -> Database:
-    return request.app.state.database
+def get_database(container: AppContainerDep) -> Database:
+    return container.database
 
 
 DatabaseDep = Annotated[Database, Depends(get_database)]
