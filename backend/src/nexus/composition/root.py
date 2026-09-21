@@ -23,7 +23,7 @@ from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
 from nexus.infrastructure.persistence.session import Database, build_database
-from nexus.llm.application import Generate, ModelPolicy, Stream
+from nexus.llm.application import ModelPolicy
 from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
 from nexus.llm.ports import LLMGateway
 
@@ -34,8 +34,6 @@ class LLMComposition:
 
     gateway: LLMGateway
     model_policy: ModelPolicy
-    generate: Generate
-    stream: Stream
 
 
 @dataclass(frozen=True)
@@ -48,7 +46,7 @@ def build_llm_composition(
     app_settings: Settings,
     gateway: LLMGateway | None = None,
 ) -> LLMComposition:
-    """Build LLM use cases around one shared gateway instance."""
+    """Build one shared provider-independent LLM gateway and its policy."""
 
     resolved_gateway = (
         gateway if gateway is not None else create_llm_gateway(app_settings.llm_gateway)
@@ -56,14 +54,12 @@ def build_llm_composition(
     return LLMComposition(
         gateway=resolved_gateway,
         model_policy=ModelPolicy.from_models(app_settings.llm_allowed_models),
-        generate=Generate(gateway=resolved_gateway),
-        stream=Stream(gateway=resolved_gateway),
     )
 
 
 def build_conversation_composition(
     app_settings: Settings,
-    llm_stream: Stream,
+    llm_gateway: LLMGateway,
     model_policy: ModelPolicy,
     session_factory: Callable[[], Session],
 ) -> ConversationComposition:
@@ -74,7 +70,7 @@ def build_conversation_composition(
         create=CreateConversation(persistence=persistence),
         stream_message=StreamConversationMessage(
             persistence=persistence,
-            llm_stream=llm_stream,
+            llm_gateway=llm_gateway,
             model_policy=model_policy,
             history_limit=app_settings.conversation_history_limit,
             history_max_chars=app_settings.conversation_history_max_chars,
@@ -127,7 +123,7 @@ def build_app_container(
         )
         conversations = build_conversation_composition(
             app_settings,
-            llm_stream=llm.stream,
+            llm_gateway=llm.gateway,
             model_policy=llm.model_policy,
             session_factory=resolved_database.session_factory,
         )

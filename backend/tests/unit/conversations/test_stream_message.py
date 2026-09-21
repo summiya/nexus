@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 
-from nexus.conversations.application import stream_message as stream_message_module
+from nexus.conversations.application import stream_lifecycle as stream_lifecycle_module
 from nexus.conversations.application.events import (
     GenerationCompleted,
     GenerationError,
@@ -16,14 +17,14 @@ from nexus.conversations.application.events import (
     GenerationUsage,
     MessageDelta,
 )
+from nexus.conversations.application.stream_events import ConversationEventAssembler
 from nexus.conversations.application.stream_message import (
-    PreparedConversationStream,
     StreamConversationMessage,
     StreamConversationMessageRequest,
 )
 from nexus.conversations.domain import Conversation, Generation, Message
 from nexus.errors import ErrorCode, NexusError
-from nexus.llm.application import ModelPolicy, Stream
+from nexus.llm.application import ModelPolicy
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMEvent,
@@ -244,7 +245,7 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=gateway),
+        llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -302,7 +303,7 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
 
     service = StreamConversationMessage(
         persistence=OrderedPersistence(),
-        llm_stream=Stream(gateway=OrderedGateway()),
+        llm_gateway=OrderedGateway(),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -323,7 +324,7 @@ def test_early_close_cancels_generation_and_closes_provider_once() -> None:
     iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -351,7 +352,7 @@ def test_provider_eof_without_completion_fails_generation() -> None:
     iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -394,7 +395,7 @@ def test_stream_does_not_emit_completion_when_database_transition_loses() -> Non
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -427,27 +428,26 @@ def test_unexpected_processing_error_is_logged_and_persisted_safely(
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
     )
-    original = PreparedConversationStream._process_event
+    original = ConversationEventAssembler.process
     logged: list[tuple[str, BaseException | None]] = []
 
     def fail_processing(
-        prepared: PreparedConversationStream,
+        assembler: ConversationEventAssembler,
         event: LLMEvent,
-        state: object,
     ) -> object:
         if isinstance(event, LLMTextDeltaEvent):
             raise TypeError("event mapper exploded")
-        return original(prepared, event, state)  # type: ignore[arg-type]
+        return original(assembler, event)
 
-    monkeypatch.setattr(PreparedConversationStream, "_process_event", fail_processing)
+    monkeypatch.setattr(ConversationEventAssembler, "process", fail_processing)
     monkeypatch.setattr(
-        stream_message_module.logger,
+        stream_lifecycle_module.logger,
         "exception",
         lambda event, **_context: logged.append((event, sys.exception())),
     )
@@ -475,7 +475,7 @@ def test_cleanup_failure_does_not_prevent_cancellation_or_repeat_close() -> None
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -511,7 +511,7 @@ def test_provider_failure_before_first_event_becomes_http_error_and_fails_genera
     persistence = FakePersistence()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=FailingGateway()),
+        llm_gateway=FailingGateway(),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -535,7 +535,7 @@ def test_preflight_cancellation_closes_provider_and_persists_cancelled_generatio
     gateway = CancellationGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=gateway),
+        llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -559,7 +559,7 @@ def test_request_task_cancellation_during_preflight_is_not_processing_failure() 
     iterator = BlockingIterator()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -588,7 +588,7 @@ def test_request_task_cancellation_during_active_stream_is_not_processing_failur
     iterator = BlockingIterator(first_event=LLMStartedEvent())
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=TrackingGateway(iterator)),
+        llm_gateway=TrackingGateway(iterator),
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -621,7 +621,7 @@ def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> N
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=gateway),
+        llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -642,6 +642,73 @@ def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> N
         asyncio.run(run())
 
     assert exc_info.value.code is ErrorCode.VALIDATION_ERROR
+    assert persistence.prepared == []
+    assert gateway.requests == []
+
+
+@pytest.mark.parametrize("content", ["   ", "x" * 101])
+def test_rejects_invalid_content_before_loading_conversation(content: str) -> None:
+    persistence = FakePersistence()
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_gateway=gateway,
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+    request = replace(make_request(), content=content)
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(service.prepare(request))
+
+    assert exc_info.value.code is ErrorCode.VALIDATION_ERROR
+    assert persistence.prepared == []
+    assert gateway.requests == []
+
+
+def test_hides_user_owned_conversation_from_another_user() -> None:
+    persistence = FakePersistence()
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_gateway=gateway,
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+    request = replace(make_request(), user_public_id=uuid4())
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(service.prepare(request))
+
+    assert exc_info.value.code is ErrorCode.NOT_FOUND
+    assert persistence.prepared == []
+    assert gateway.requests == []
+
+
+def test_rejects_workspace_conversation_until_workspace_authorization_exists() -> None:
+    persistence = FakePersistence()
+    persistence.conversation = replace(
+        persistence.conversation,
+        workspace_public_id=uuid4(),
+    )
+    gateway = FakeGateway()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        llm_gateway=gateway,
+        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(service.prepare(make_request()))
+
+    assert exc_info.value.code is ErrorCode.FORBIDDEN
     assert persistence.prepared == []
     assert gateway.requests == []
 
@@ -678,7 +745,7 @@ def test_history_is_bounded_before_provider_invocation() -> None:
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_stream=Stream(gateway=gateway),
+        llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=9,

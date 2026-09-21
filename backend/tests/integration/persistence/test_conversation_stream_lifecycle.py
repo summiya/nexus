@@ -19,8 +19,8 @@ from nexus.conversations.application.events import (
     GenerationStarted,
     MessageDelta,
 )
+from nexus.conversations.application.stream_events import ConversationEventAssembler
 from nexus.conversations.application.stream_message import (
-    PreparedConversationStream,
     StreamConversationMessage,
     StreamConversationMessageRequest,
 )
@@ -39,7 +39,7 @@ from nexus.infrastructure.persistence.models.generation import (
 from nexus.infrastructure.persistence.models.message import Message as MessageModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
-from nexus.llm.application import ModelPolicy, Stream
+from nexus.llm.application import ModelPolicy
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMEvent,
@@ -173,7 +173,7 @@ def _service(
         persistence=SqlAlchemyConversationPersistence(
             session_factory or (lambda: Session(engine))
         ),
-        llm_stream=Stream(gateway=gateway),
+        llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
         history_max_chars=1_000,
@@ -413,18 +413,17 @@ def test_unexpected_processing_error_persists_stable_failure_without_assistant(
         ]
     )
     service = _service(migrated_lifecycle_engine, TestGateway(iterator))
-    original = PreparedConversationStream._process_event
+    original = ConversationEventAssembler.process
 
     def fail_processing(
-        prepared: PreparedConversationStream,
+        assembler: ConversationEventAssembler,
         event: LLMEvent,
-        state: Any,
     ) -> object:
         if isinstance(event, LLMTextDeltaEvent):
             raise TypeError("internal mapping detail")
-        return original(prepared, event, state)
+        return original(assembler, event)
 
-    monkeypatch.setattr(PreparedConversationStream, "_process_event", fail_processing)
+    monkeypatch.setattr(ConversationEventAssembler, "process", fail_processing)
 
     async def run() -> tuple[UUID, list[object]]:
         prepared = await service.prepare(

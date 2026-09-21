@@ -39,13 +39,11 @@ def build_settings(**overrides: object) -> Settings:
     )
 
 
-def test_composition_builds_litellm_gateway_and_use_cases() -> None:
+def test_composition_builds_litellm_gateway_and_model_policy() -> None:
     composition = build_llm_composition(build_settings())
 
     assert isinstance(composition.gateway, LiteLLMAdapter)
     assert composition.model_policy.allowed_models == frozenset({"gpt-4o-mini"})
-    assert composition.generate.gateway is composition.gateway
-    assert composition.stream.gateway is composition.gateway
 
 
 def test_composition_uses_one_injected_gateway_without_provider_access() -> None:
@@ -54,11 +52,9 @@ def test_composition_uses_one_injected_gateway_without_provider_access() -> None
     composition = build_llm_composition(build_settings(), gateway=gateway)
 
     assert composition.gateway is gateway
-    assert composition.generate.gateway is gateway
-    assert composition.stream.gateway is gateway
 
 
 def test_composition_does_not_store_tenant_credentials() -> None:
     composition = build_llm_composition(build_settings(), gateway=FakeGateway())
 
-    assert set(vars(composition)) == {"gateway", "model_policy", "generate", "stream"}
+    assert set(vars(composition)) == {"gateway", "model_policy"}

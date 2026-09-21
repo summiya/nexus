@@ -9,6 +9,13 @@ DOMAIN_ROOT = (
 PORTS_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "conversations" / "ports"
 )
+APPLICATION_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "nexus"
+    / "conversations"
+    / "application"
+)
 
 FORBIDDEN_IMPORTS = (
     "alembic",
@@ -37,6 +44,10 @@ def _python_files() -> list[Path]:
 
 def _port_files() -> list[Path]:
     return sorted(PORTS_ROOT.rglob("*.py"))
+
+
+def _application_files() -> list[Path]:
+    return sorted(APPLICATION_ROOT.rglob("*.py"))
 
 
 def _imports(path: Path) -> set[str]:
@@ -81,4 +92,16 @@ def test_conversation_ports_depend_only_on_conversation_contracts() -> None:
             module == forbidden or module.startswith(f"{forbidden}.")
             for module in imports
             for forbidden in FORBIDDEN_IMPORTS
+        ), path
+
+
+def test_conversation_application_has_no_transport_or_infrastructure_imports() -> None:
+    forbidden = ("fastapi", "litellm", "nexus.infrastructure", "sqlalchemy")
+
+    for path in _application_files():
+        imports = _imports(path)
+        assert not any(
+            module == blocked or module.startswith(f"{blocked}.")
+            for module in imports
+            for blocked in forbidden
         ), path
