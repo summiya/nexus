@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +47,13 @@ from nexus.services.otp import OtpVerificationService
 
 def _noop() -> None:
     return None
+
+
+def _resolve_close_callback(resource: object) -> Callable[[], None]:
+    close = getattr(resource, "close", None)
+    if not callable(close):
+        return _noop
+    return cast(Callable[[], None], close)
 
 
 @dataclass(frozen=True)
@@ -114,7 +122,7 @@ class AuthenticationComposition:
 
 def build_email_provider(app_settings: Settings) -> EmailProvider:
     if app_settings.email_provider == "resend":
-        if app_settings.resend_api_key is None:
+        if not app_settings.resend_api_key:
             raise EmailDeliveryError("Resend API key is not configured")
         return ResendEmailProvider(
             api_key=app_settings.resend_api_key,
@@ -133,23 +141,21 @@ def build_authentication_composition(
 ) -> AuthenticationComposition:
     """Build shared authentication resources from one settings instance."""
 
-    resolved_rate_limiter = (
-        rate_limiter
-        if rate_limiter is not None
-        else RedisRateLimiter.from_url(app_settings.redis_url)
-    )
     resolved_email_provider = (
         email_provider
         if email_provider is not None
         else build_email_provider(app_settings)
+    )
+    resolved_rate_limiter = (
+        rate_limiter
+        if rate_limiter is not None
+        else RedisRateLimiter.from_url(app_settings.redis_url)
     )
     access_token_service = AccessTokenService(
         secret=app_settings.auth_token_secret,
         expires_seconds=app_settings.access_token_expires_seconds,
         issuer=app_settings.auth_token_issuer,
     )
-    close = getattr(resolved_rate_limiter, "close", None)
-    close_callback = close if callable(close) else _noop
     return AuthenticationComposition(
         settings=app_settings,
         rate_limiter=resolved_rate_limiter,
@@ -163,5 +169,5 @@ def build_authentication_composition(
         access_authentication_service=AccessAuthenticationService(
             access_token_service=access_token_service
         ),
-        close_callback=close_callback,
+        close_callback=_resolve_close_callback(resolved_rate_limiter),
     )
