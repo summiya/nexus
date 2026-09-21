@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from nexus.api.dependencies import get_event_publisher
+from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
@@ -15,7 +16,6 @@ from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
 from nexus.main import create_app
-from nexus.security.authentication_tokens import AuthTokenContext
 
 
 class FakeLLMGateway:

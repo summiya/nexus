@@ -15,19 +15,20 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.gateways import (
+from nexus.authentication.gateways import (
     AccessTokenClaims,
     AccessTokenGateway,
     AccessTokenGatewayError,
     AuthenticationEmailError,
 )
-from nexus.application.authentication.service import (
-    SessionPolicy,
-    SessionService,
+from nexus.authentication.session_service import SessionPolicy, SessionService
+from nexus.authentication.signup_service import (
     SignupPolicy,
     SignupService,
     SignupVerificationRequest,
+    digest_otp,
 )
+from nexus.authentication.tokens import AccessTokenService
 from nexus.authorization.bootstrap import ADMINISTRATOR_ROLE_NAME
 from nexus.config.settings import Settings, load_settings
 from nexus.errors import ErrorCode, NexusError
@@ -42,8 +43,6 @@ from nexus.infrastructure.persistence.repositories.authentication import (
     SqlAlchemyAuthenticationRepository,
 )
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
-from nexus.security.authentication_tokens import AccessTokenService
-from nexus.security.otp import digest_otp
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 SIGNUP_OTP = "123456"

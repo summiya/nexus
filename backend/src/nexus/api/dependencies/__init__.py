@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from nexus.api.composition.root import AppContainer
+from nexus.composition.root import AppContainer
 from nexus.events import EventPublisher
 
 

@@ -3,12 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-APPLICATION_ROOT = (
-    Path(__file__).resolve().parents[3]
-    / "src"
-    / "nexus"
-    / "application"
-    / "authentication"
+AUTHENTICATION_ROOT = (
+    Path(__file__).resolve().parents[3] / "src" / "nexus" / "authentication"
 )
 
 FORBIDDEN_IMPORTS = (
@@ -32,10 +28,8 @@ def _imports(path: Path) -> set[str]:
     return imports
 
 
-def test_authentication_application_has_no_transport_or_infrastructure_imports() -> (
-    None
-):
-    for path in sorted(APPLICATION_ROOT.rglob("*.py")):
+def test_authentication_core_has_no_transport_or_infrastructure_imports() -> None:
+    for path in sorted(AUTHENTICATION_ROOT.glob("*.py")):
         imports = _imports(path)
         assert not any(
             module == forbidden or module.startswith(f"{forbidden}.")
@@ -45,7 +39,9 @@ def test_authentication_application_has_no_transport_or_infrastructure_imports()
 
 
 def test_authentication_records_expose_only_public_identity_fields() -> None:
-    tree = ast.parse((APPLICATION_ROOT / "repository.py").read_text(encoding="utf-8"))
+    tree = ast.parse(
+        (AUTHENTICATION_ROOT / "repository.py").read_text(encoding="utf-8")
+    )
     identity_fields = {
         node.target.id
         for node in ast.walk(tree)

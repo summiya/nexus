@@ -10,6 +10,10 @@ from uuid import UUID
 
 import jwt
 
+from nexus.errors import ErrorCode, NexusError
+
+_BEARER_HEADERS = {"WWW-Authenticate": "Bearer"}
+
 
 class AccessTokenError(Exception):
     """Raised when an access token cannot be issued or verified."""
@@ -78,3 +82,26 @@ class AccessTokenService:
             raise AccessTokenError("Access token is invalid") from exc
         except (KeyError, TypeError, ValueError) as exc:
             raise AccessTokenError("Access token claims are invalid") from exc
+
+
+@dataclass(frozen=True)
+class AccessAuthenticationService:
+    """Authenticate a bearer access token into trusted request context."""
+
+    access_token_service: AccessTokenService
+
+    def authenticate(self, access_token: str) -> AuthTokenContext:
+        try:
+            return self.access_token_service.verify_access_token(access_token)
+        except AccessTokenExpiredError as exc:
+            raise NexusError(
+                ErrorCode.ACCESS_TOKEN_EXPIRED,
+                "Access token has expired.",
+                headers=_BEARER_HEADERS,
+            ) from exc
+        except AccessTokenError as exc:
+            raise NexusError(
+                ErrorCode.ACCESS_TOKEN_INVALID,
+                "Access token is invalid.",
+                headers=_BEARER_HEADERS,
+            ) from exc

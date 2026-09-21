@@ -7,9 +7,9 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from nexus.api.dependencies.authentication import AccessAuthenticationServiceDep
+from nexus.authentication.api.dependencies import AccessAuthenticationServiceDep
+from nexus.authentication.tokens import AuthTokenContext
 from nexus.errors import ErrorCode, NexusError
-from nexus.security.authentication_tokens import AuthTokenContext
 
 bearer_scheme = HTTPBearer(auto_error=False)
 BearerCredentials = Annotated[

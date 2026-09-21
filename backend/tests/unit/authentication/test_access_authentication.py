@@ -5,9 +5,12 @@ from uuid import uuid4
 
 import pytest
 
+from nexus.authentication.tokens import (
+    AccessAuthenticationService,
+    AccessTokenService,
+    AuthTokenContext,
+)
 from nexus.errors import ErrorCode, NexusError
-from nexus.security.authentication_tokens import AccessTokenService, AuthTokenContext
-from nexus.services.access_authentication import AccessAuthenticationService
 
 
 def _token_service(*, expired: bool = False) -> AccessTokenService:

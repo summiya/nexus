@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nexus.application.authentication.gateways import AuthenticationEmailError
+from nexus.authentication.gateways import AuthenticationEmailError
 from nexus.infrastructure.authentication import ProviderAuthenticationEmailGateway
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 

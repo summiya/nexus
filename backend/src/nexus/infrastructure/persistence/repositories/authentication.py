@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from nexus.application.authentication.repository import (
+from nexus.authentication.repository import (
     AuthenticationIdentity,
     AuthenticationSession,
     OtpChallenge,

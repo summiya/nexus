@@ -16,9 +16,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.service import (
-    SessionPolicy,
-    SessionService,
+from nexus.authentication.session_service import SessionPolicy, SessionService
+from nexus.authentication.signup_service import (
     SignupOtpRequest,
     SignupPolicy,
     SignupService,

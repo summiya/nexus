@@ -1,4 +1,4 @@
-"""Conversation application dependencies."""
+"""FastAPI dependencies for Conversation application services."""
 
 from __future__ import annotations
 

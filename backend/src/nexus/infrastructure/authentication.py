@@ -5,20 +5,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from nexus.application.authentication.gateways import (
+from nexus.authentication.gateways import (
     AccessTokenClaims,
     AccessTokenGatewayError,
     AuthenticationEmailError,
+)
+from nexus.authentication.tokens import (
+    AccessTokenError,
+    AccessTokenService,
+    AuthTokenContext,
 )
 from nexus.infrastructure.mailer import (
     EmailDeliveryError,
     EmailMessage,
     EmailProvider,
-)
-from nexus.security.authentication_tokens import (
-    AccessTokenError,
-    AccessTokenService,
-    AuthTokenContext,
 )
 
 

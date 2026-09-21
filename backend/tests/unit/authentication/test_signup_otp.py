@@ -6,16 +6,17 @@ from typing import Any
 
 import pytest
 
-from nexus.application.authentication.gateways import AuthenticationEmailError
-from nexus.application.authentication.repository import OtpChallenge
-from nexus.application.authentication.service import (
+from nexus.authentication.gateways import AuthenticationEmailError
+from nexus.authentication.repository import OtpChallenge
+from nexus.authentication.signup_service import (
     SignupOtpRequest,
     SignupPolicy,
     SignupService,
+    digest_otp,
+    generate_numeric_otp,
 )
 from nexus.errors import ErrorCode, NexusError
 from nexus.infrastructure.rate_limit import RedisRateLimiter
-from nexus.security.otp import digest_otp, generate_numeric_otp
 
 
 def policy() -> SignupPolicy:

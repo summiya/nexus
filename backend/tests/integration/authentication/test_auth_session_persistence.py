@@ -14,10 +14,15 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from nexus.application.authentication.repository import AuthenticationIdentity
-from nexus.application.authentication.service import (
+from nexus.authentication.repository import AuthenticationIdentity
+from nexus.authentication.session_service import (
     SessionPolicy,
     SessionService,
+)
+from nexus.authentication.tokens import (
+    AccessTokenError,
+    AccessTokenService,
+    AuthTokenContext,
 )
 from nexus.config.settings import load_settings
 from nexus.errors import ErrorCode, NexusError
@@ -29,11 +34,6 @@ from nexus.infrastructure.persistence.repositories.authentication import (
     SqlAlchemyAuthenticationRepository,
 )
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
-from nexus.security.authentication_tokens import (
-    AccessTokenError,
-    AccessTokenService,
-    AuthTokenContext,
-)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 
