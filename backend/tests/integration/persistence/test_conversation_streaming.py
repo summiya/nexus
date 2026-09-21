@@ -19,9 +19,12 @@ from nexus.conversations.domain import (
     GenerationStatus,
     Message,
 )
-from nexus.conversations.ports.repositories import ConversationReferenceError
-from nexus.infrastructure.persistence.conversation_operations import (
+from nexus.conversations.ports.persistence import ConversationReferenceError
+from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
+)
+from nexus.infrastructure.persistence.models.conversation import (
+    Conversation as ConversationModel,
 )
 from nexus.infrastructure.persistence.models.generation import (
     Generation as GenerationModel,
@@ -29,24 +32,13 @@ from nexus.infrastructure.persistence.models.generation import (
 from nexus.infrastructure.persistence.models.message import Message as MessageModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
-from nexus.infrastructure.persistence.repositories.conversation import (
-    SqlAlchemyConversationRepository,
-)
 
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def _seed_conversation(engine: Engine) -> tuple[UUID, Conversation]:
+def _seed_identity(engine: Engine) -> tuple[UUID, UUID]:
     organization_public_id = uuid4()
     user_public_id = uuid4()
-    conversation = Conversation(
-        public_id=uuid4(),
-        organization_public_id=organization_public_id,
-        created_by_user_public_id=user_public_id,
-        title="Streaming conversation",
-        created_at=TIMESTAMP,
-        updated_at=TIMESTAMP,
-    )
     with Session(engine) as session:
         organization = Organization(
             public_id=organization_public_id,
@@ -62,8 +54,21 @@ def _seed_conversation(engine: Engine) -> tuple[UUID, Conversation]:
                 status="active",
             )
         )
-        SqlAlchemyConversationRepository(session).add(conversation)
         session.commit()
+    return organization_public_id, user_public_id
+
+
+def _seed_conversation(engine: Engine) -> tuple[UUID, Conversation]:
+    organization_public_id, user_public_id = _seed_identity(engine)
+    conversation = Conversation(
+        public_id=uuid4(),
+        organization_public_id=organization_public_id,
+        created_by_user_public_id=user_public_id,
+        title="Streaming conversation",
+        created_at=TIMESTAMP,
+        updated_at=TIMESTAMP,
+    )
+    asyncio.run(_persistence(engine).create_conversation(conversation))
     return organization_public_id, conversation
 
 
@@ -99,6 +104,67 @@ def migrated_streaming_engine(
     return engine
 
 
+def test_create_and_get_conversation_preserve_tenant_scope(
+    migrated_streaming_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_streaming_engine)
+    conversation = Conversation(
+        public_id=uuid4(),
+        organization_public_id=organization_public_id,
+        created_by_user_public_id=user_public_id,
+        title="Public persistence boundary",
+        created_at=TIMESTAMP,
+        updated_at=TIMESTAMP,
+    )
+    persistence = _persistence(migrated_streaming_engine)
+
+    asyncio.run(persistence.create_conversation(conversation))
+
+    stored = asyncio.run(
+        persistence.get_conversation(
+            organization_public_id=organization_public_id,
+            conversation_public_id=conversation.public_id,
+        )
+    )
+    outside_tenant = asyncio.run(
+        persistence.get_conversation(
+            organization_public_id=uuid4(),
+            conversation_public_id=conversation.public_id,
+        )
+    )
+
+    assert stored == conversation
+    assert outside_tenant is None
+
+
+def test_create_conversation_rolls_back_an_invalid_creator(
+    migrated_streaming_engine: Engine,
+) -> None:
+    organization_public_id, _user_public_id = _seed_identity(migrated_streaming_engine)
+    conversation = Conversation(
+        public_id=uuid4(),
+        organization_public_id=organization_public_id,
+        created_by_user_public_id=uuid4(),
+        created_at=TIMESTAMP,
+        updated_at=TIMESTAMP,
+    )
+
+    with pytest.raises(ConversationReferenceError):
+        asyncio.run(
+            _persistence(migrated_streaming_engine).create_conversation(conversation)
+        )
+
+    with Session(migrated_streaming_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(ConversationModel.id)).where(
+                    ConversationModel.public_id == conversation.public_id
+                )
+            )
+            == 0
+        )
+
+
 def test_prepare_generation_commits_running_user_message_and_generation(
     migrated_streaming_engine: Engine,
 ) -> None:
@@ -115,7 +181,7 @@ def test_prepare_generation_commits_running_user_message_and_generation(
         )
     )
 
-    assert prepared.conversation == conversation
+    assert prepared == (message,)
     with Session(migrated_streaming_engine) as session:
         assert (
             session.scalar(
@@ -132,6 +198,90 @@ def test_prepare_generation_commits_running_user_message_and_generation(
         )
         assert stored is not None
         assert stored.status == GenerationStatus.RUNNING.value
+
+
+def test_prepare_generation_returns_limited_history_in_chronological_order(
+    migrated_streaming_engine: Engine,
+) -> None:
+    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    persistence = _persistence(migrated_streaming_engine)
+    messages: list[Message] = []
+
+    timestamps = (
+        TIMESTAMP,
+        TIMESTAMP + timedelta(seconds=1),
+        TIMESTAMP + timedelta(seconds=1),
+        TIMESTAMP + timedelta(seconds=1),
+    )
+    for created_at, content in zip(
+        timestamps,
+        ("first", "second", "third", "fourth"),
+        strict=True,
+    ):
+        message = Message(
+            public_id=uuid4(),
+            conversation_public_id=conversation.public_id,
+            role=ConversationMessageRole.USER,
+            content=content,
+            created_at=created_at,
+        )
+        generation = Generation(
+            public_id=uuid4(),
+            conversation_public_id=conversation.public_id,
+            user_message_public_id=message.public_id,
+            model="gpt-test",
+            status=GenerationStatus.RUNNING,
+            started_at=message.created_at,
+        )
+        prepared = asyncio.run(
+            persistence.prepare_generation(
+                organization_public_id=organization_public_id,
+                conversation=conversation,
+                message=message,
+                generation=generation,
+                history_limit=3,
+            )
+        )
+        messages.append(message)
+
+    assert prepared == tuple(messages[-3:])
+
+
+def test_prepare_generation_rolls_back_message_when_generation_is_invalid(
+    migrated_streaming_engine: Engine,
+) -> None:
+    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    message, generation = _generation(conversation)
+    invalid_generation = replace(generation, user_message_public_id=uuid4())
+
+    with pytest.raises(ConversationReferenceError):
+        asyncio.run(
+            _persistence(migrated_streaming_engine).prepare_generation(
+                organization_public_id=organization_public_id,
+                conversation=conversation,
+                message=message,
+                generation=invalid_generation,
+                history_limit=10,
+            )
+        )
+
+    with Session(migrated_streaming_engine) as session:
+        assert (
+            session.scalar(
+                select(func.count(MessageModel.id)).where(
+                    MessageModel.public_id == message.public_id
+                )
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count(GenerationModel.id)).where(
+                    GenerationModel.public_id == generation.public_id
+                )
+            )
+            == 0
+        )
 
 
 def test_complete_generation_commits_assistant_and_completion_state(
@@ -259,11 +409,14 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
     migrated_streaming_engine: Engine,
 ) -> None:
     organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
-    _organization_public_id, other_conversation = _seed_conversation(
-        migrated_streaming_engine
-    )
-    message, generation = _generation(conversation)
     persistence = _persistence(migrated_streaming_engine)
+    other_conversation = replace(
+        conversation,
+        public_id=uuid4(),
+        title="Other conversation in the same tenant",
+    )
+    asyncio.run(persistence.create_conversation(other_conversation))
+    message, generation = _generation(conversation)
     asyncio.run(
         persistence.prepare_generation(
             organization_public_id=organization_public_id,
@@ -288,7 +441,10 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
         completed_at=TIMESTAMP + timedelta(seconds=1),
     )
 
-    with pytest.raises(ConversationReferenceError):
+    with pytest.raises(
+        ConversationReferenceError,
+        match="assistant Message reference was not found",
+    ):
         asyncio.run(
             persistence.complete_generation(
                 organization_public_id=organization_public_id,

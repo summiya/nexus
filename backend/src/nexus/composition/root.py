@@ -19,7 +19,7 @@ from nexus.conversations.application import (
 )
 from nexus.events import EventPublisher, InProcessEventPublisher
 from nexus.infrastructure.mailer import EmailProvider
-from nexus.infrastructure.persistence.conversation_operations import (
+from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
 from nexus.infrastructure.persistence.session import Database, build_database
