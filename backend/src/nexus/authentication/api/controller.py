@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from nexus.authentication.api.dependencies import LoginServiceDep, SignupServiceDep
+from nexus.authentication.api.dependencies import (
+    LoginServiceDep,
+    SessionServiceDep,
+    SignupServiceDep,
+)
 from nexus.authentication.api.schemas import (
     LoginRequestBody,
     LoginResponseBody,
     LoginVerificationRequestBody,
     LoginVerificationResponseBody,
+    RefreshSessionRequestBody,
+    RefreshSessionResponseBody,
     SignupRequestBody,
     SignupResponseBody,
     SignupVerificationRequestBody,
@@ -46,6 +52,20 @@ def verify_login(
     )
     return LoginVerificationResponseBody(
         status="completed",
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+        token_type=result.token_type,
+        expires_in=result.expires_in,
+    )
+
+
+@router.post("/refresh", response_model=RefreshSessionResponseBody)
+def refresh_session(
+    body: RefreshSessionRequestBody,
+    service: SessionServiceDep,
+) -> RefreshSessionResponseBody:
+    result = service.refresh_session(refresh_token=body.refresh_token)
+    return RefreshSessionResponseBody(
         access_token=result.access_token,
         refresh_token=result.refresh_token,
         token_type=result.token_type,

@@ -98,7 +98,7 @@ class AuthenticationRepository(Protocol):
         self,
         refresh_token_hash: str,
     ) -> AuthenticationSession | None:
-        """Return the matching session and identity, locked for update."""
+        """Return an eligible matching session and identity, locked for update."""
 
     def update_session(self, session: AuthenticationSession) -> None:
         """Stage and flush changes to a durable session."""

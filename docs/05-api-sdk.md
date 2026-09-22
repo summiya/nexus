@@ -2432,6 +2432,35 @@ generic `401 Unauthorized` response. Login verification accepts only active,
 non-deleted users in active, non-deleted organizations. Signup OTP challenges
 cannot be used for login.
 
+Rotate a valid refresh token and issue a new access token with:
+
+```http
+POST /api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "..."
+}
+```
+
+A successful refresh returns a new refresh token:
+
+```json
+{
+  "access_token": "...",
+  "refresh_token": "...",
+  "token_type": "bearer",
+  "expires_in": 900
+}
+```
+
+The previous refresh token becomes invalid as soon as rotation commits. Invalid,
+expired, revoked, or previously rotated tokens return the same generic
+`401 Unauthorized` response. Refresh also fails generically when the associated
+user or organization is inactive or deleted. This endpoint uses the refresh
+token as its credential and does not require an access-token `Authorization`
+header.
+
 Every protected endpoint requires authentication.
 
 Canonical request header:

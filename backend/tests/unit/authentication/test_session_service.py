@@ -34,8 +34,14 @@ class FakeTransaction:
 
 
 class FakeAuthenticationRepository:
-    def __init__(self, session: AuthenticationSession | None = None) -> None:
+    def __init__(
+        self,
+        session: AuthenticationSession | None = None,
+        *,
+        fail_update: bool = False,
+    ) -> None:
         self.session = session
+        self.fail_update = fail_update
         self.added: list[AuthenticationSession] = []
 
     def add_session(self, session: AuthenticationSession) -> None:
@@ -54,6 +60,8 @@ class FakeAuthenticationRepository:
         return self.session
 
     def update_session(self, session: AuthenticationSession) -> None:
+        if self.fail_update:
+            raise RuntimeError("session update failed")
         self.session = session
 
 
@@ -188,6 +196,28 @@ def test_refresh_rejects_old_rotated_token_and_rolls_back() -> None:
     assert transaction.rolled_back is True
 
 
+def test_refresh_persistence_failure_rolls_back_and_keeps_old_token_usable() -> None:
+    old_refresh_token = "old-refresh-token"
+    initial_service = service()
+    persisted = active_session(initial_service, refresh_token=old_refresh_token)
+    repository = FakeAuthenticationRepository(persisted, fail_update=True)
+    transaction = FakeTransaction()
+    auth_service = service(repository=repository, transaction=transaction)
+
+    with pytest.raises(RuntimeError, match="session update failed"):
+        auth_service.refresh_session(refresh_token=old_refresh_token)
+
+    assert repository.session == persisted
+    assert transaction.committed is False
+    assert transaction.rolled_back is True
+
+    repository.fail_update = False
+    result = service(repository=repository).refresh_session(
+        refresh_token=old_refresh_token
+    )
+    assert result.refresh_token != old_refresh_token
+
+
 @pytest.mark.parametrize("state", ["expired", "revoked"])
 def test_inactive_refresh_token_is_rejected(state: str) -> None:
     token = "refresh-token"
@@ -247,7 +277,8 @@ def test_access_token_failure_rolls_back_session() -> None:
 
 def test_refresh_token_data_is_not_logged(caplog: pytest.LogCaptureFixture) -> None:
     refresh_token = "refresh-token-value"
-    service()._hash_refresh_token(refresh_token)
+    with pytest.raises(NexusError):
+        service().refresh_session(refresh_token=refresh_token)
 
     assert refresh_token not in caplog.text
     assert "test-refresh-token-secret-with-enough-length" not in caplog.text
