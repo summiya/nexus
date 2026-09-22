@@ -47,6 +47,25 @@ class ProviderAuthenticationEmailGateway:
             )
         )
 
+    def send_login_otp(
+        self,
+        *,
+        email: str,
+        otp: str,
+        expires_at: datetime,
+    ) -> None:
+        self._send(
+            EmailMessage(
+                to=email,
+                subject="Your NEXUS login code",
+                text_body=(
+                    "Use this code to sign in to NEXUS: "
+                    f"{otp}\n\n"
+                    f"This code expires at {expires_at.isoformat()}."
+                ),
+            )
+        )
+
     def send_welcome_email(self, *, email: str, display_name: str) -> None:
         self._send(
             EmailMessage(

@@ -4,19 +4,31 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from nexus.authentication.api.dependencies import SignupServiceDep
+from nexus.authentication.api.dependencies import LoginServiceDep, SignupServiceDep
 from nexus.authentication.api.schemas import (
+    LoginRequestBody,
+    LoginResponseBody,
     SignupRequestBody,
     SignupResponseBody,
     SignupVerificationRequestBody,
     SignupVerificationResponseBody,
 )
+from nexus.authentication.login_service import LoginOtpRequest
 from nexus.authentication.signup_service import (
     SignupOtpRequest,
     SignupVerificationRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
+
+
+@router.post("/login", response_model=LoginResponseBody, status_code=202)
+def request_login_otp(
+    body: LoginRequestBody,
+    service: LoginServiceDep,
+) -> LoginResponseBody:
+    service.request_login_otp(request=LoginOtpRequest(email=body.email))
+    return LoginResponseBody(status="accepted")
 
 
 @router.post("/signup", response_model=SignupResponseBody, status_code=202)

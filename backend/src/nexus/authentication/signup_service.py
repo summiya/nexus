@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import hmac
 import re
-import secrets
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from uuid import uuid4
 
 from nexus.authentication.gateways import (
@@ -18,6 +16,12 @@ from nexus.authentication.gateways import (
     RateLimiter,
     RateLimitError,
 )
+from nexus.authentication.otp import (
+    digest_otp,
+    generate_numeric_otp,
+    keyed_digest,
+    normalize_auth_email,
+)
 from nexus.authentication.repository import (
     AuthenticationRepository,
     OtpChallenge,
@@ -25,14 +29,12 @@ from nexus.authentication.repository import (
 )
 from nexus.authentication.session_service import SessionService
 from nexus.domain.organizations import normalize_slug
-from nexus.domain.users import normalize_email
 from nexus.errors import ErrorCode, NexusError
 from nexus.logging import get_logger
 from nexus.ports.transaction import TransactionManager
 
 logger = get_logger(__name__)
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _OTP_RE = re.compile(r"^\d+$")
 _SIGNUP_PURPOSE = "signup"
 
@@ -101,7 +103,7 @@ class SignupService:
         )
         _normalize_display_text(request.first_name, "first_name", max_length=100)
         _normalize_display_text(request.last_name, "last_name", max_length=100)
-        email = _normalize_auth_email(request.email)
+        email = normalize_auth_email(request.email)
 
         self._enforce_rate_limit(email)
         if self.repository.user_exists_by_email(email):
@@ -226,7 +228,7 @@ class SignupService:
         )
 
     def _verify_signup_otp(self, *, email: str, otp: str) -> OtpChallenge:
-        normalized_email = _normalize_auth_email(email)
+        normalized_email = normalize_auth_email(email)
         if len(otp) != self.policy.signup_otp_length or _OTP_RE.fullmatch(otp) is None:
             raise _OtpVerificationFailed()
 
@@ -306,13 +308,6 @@ def _normalize_display_text(value: str, field_name: str, *, max_length: int) -> 
     return normalized
 
 
-def _normalize_auth_email(value: str) -> str:
-    email = normalize_email(value)
-    if len(email) > 320 or _EMAIL_RE.fullmatch(email) is None:
-        raise _validation_error("email")
-    return email
-
-
 def _normalize_organization_slug(organization_name: str) -> str:
     try:
         slug = normalize_slug(organization_name)
@@ -351,22 +346,3 @@ def _service_unavailable() -> NexusError:
         "The service is temporarily unavailable.",
         retryable=True,
     )
-
-
-def generate_numeric_otp(length: int) -> str:
-    """Return a cryptographically random numeric OTP."""
-
-    upper_bound = 10**length
-    return f"{secrets.randbelow(upper_bound):0{length}d}"
-
-
-def keyed_digest(*, secret: str, message: str) -> str:
-    """Return a server-secret-bound digest for a non-reversible lookup key."""
-
-    return hmac.new(secret.encode(), message.encode(), sha256).hexdigest()
-
-
-def digest_otp(*, secret: str, email: str, purpose: str, otp: str) -> str:
-    """Return a server-secret-bound digest for one OTP challenge."""
-
-    return keyed_digest(secret=secret, message=f"{purpose}:{email}:{otp}")

@@ -13,6 +13,7 @@ from nexus.authentication.gateways import (
     AuthenticationEmailGateway,
     RateLimiter,
 )
+from nexus.authentication.login_service import LoginPolicy, LoginService
 from nexus.authentication.session_service import SessionPolicy, SessionService
 from nexus.authentication.signup_service import SignupPolicy, SignupService
 from nexus.authentication.tokens import (
@@ -64,6 +65,26 @@ class AuthenticationComposition:
     access_token_service: AccessTokenService
     access_authentication_service: AccessAuthenticationService
     close_callback: Callable[[], None] = _noop
+
+    def build_login_service(self, session: Session) -> LoginService:
+        return LoginService(
+            policy=LoginPolicy(
+                otp_hmac_secret=self.settings.otp_hmac_secret,
+                otp_length=self.settings.signup_otp_length,
+                otp_ttl_seconds=self.settings.signup_otp_ttl_seconds,
+                otp_max_attempts=self.settings.signup_otp_max_attempts,
+                otp_rate_limit_max_requests=(
+                    self.settings.signup_otp_rate_limit_max_requests
+                ),
+                otp_rate_limit_window_seconds=(
+                    self.settings.signup_otp_rate_limit_window_seconds
+                ),
+            ),
+            transaction=SqlAlchemyTransactionManager(session),
+            repository=SqlAlchemyAuthenticationRepository(session),
+            email_gateway=self.email_gateway,
+            rate_limiter=self.rate_limiter,
+        )
 
     def build_signup_service(self, session: Session) -> SignupService:
         transaction = SqlAlchemyTransactionManager(session)
