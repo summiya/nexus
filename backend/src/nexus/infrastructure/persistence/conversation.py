@@ -62,6 +62,19 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
             )
         )
 
+    async def list_messages(
+        self,
+        *,
+        organization_public_id: UUID,
+        conversation_public_id: UUID,
+    ) -> tuple[Message, ...]:
+        return await self._run_worker(
+            lambda: self._list_messages(
+                organization_public_id,
+                conversation_public_id,
+            )
+        )
+
     async def prepare_generation(
         self,
         *,
@@ -166,6 +179,25 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
                         session,
                         organization_public_id=organization_public_id,
                         created_by_user_public_id=created_by_user_public_id,
+                    )
+                )
+        except SQLAlchemyError as exc:
+            raise ConversationPersistenceError(
+                "Conversation persistence failed"
+            ) from exc
+
+    def _list_messages(
+        self,
+        organization_public_id: UUID,
+        conversation_public_id: UUID,
+    ) -> tuple[Message, ...]:
+        try:
+            with self._session_factory() as session:
+                return tuple(
+                    queries.list_messages(
+                        session,
+                        organization_public_id=organization_public_id,
+                        conversation_public_id=conversation_public_id,
                     )
                 )
         except SQLAlchemyError as exc:
