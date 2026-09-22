@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager
 
 from nexus.authentication.repository import (
     AuthenticationIdentity,
@@ -167,8 +167,16 @@ class SqlAlchemyAuthenticationRepository:
     ) -> AuthenticationSession | None:
         model = self._session.scalar(
             select(AuthSession)
-            .options(joinedload(AuthSession.user).joinedload(User.organization))
-            .where(AuthSession.refresh_token_hash == refresh_token_hash)
+            .join(AuthSession.user)
+            .join(User.organization)
+            .options(contains_eager(AuthSession.user).contains_eager(User.organization))
+            .where(
+                AuthSession.refresh_token_hash == refresh_token_hash,
+                User.status == "active",
+                User.deleted_at.is_(None),
+                Organization.status == "active",
+                Organization.deleted_at.is_(None),
+            )
             .with_for_update(of=AuthSession)
         )
         return None if model is None else _authentication_session_record(model)

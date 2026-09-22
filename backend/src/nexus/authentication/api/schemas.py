@@ -30,6 +30,19 @@ class LoginVerificationResponseBody(BaseModel):
     expires_in: int
 
 
+class RefreshSessionRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: str
+
+
+class RefreshSessionResponseBody(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    expires_in: int
+
+
 class SignupRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
