@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -28,6 +29,17 @@ class ConversationResponseBody(BaseModel):
     workspace_public_id: UUID | None
     project_public_id: UUID | None
     title: str | None
+
+
+class ConversationListItemResponseBody(BaseModel):
+    public_id: UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ListConversationsResponseBody(BaseModel):
+    items: list[ConversationListItemResponseBody]
 
 
 class CreateMessageRequestBody(BaseModel):

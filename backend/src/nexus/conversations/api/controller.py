@@ -14,12 +14,15 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
 from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.conversations.api.dependencies import (
     CreateConversationDep,
+    ListConversationsDep,
     StreamConversationMessageDep,
 )
 from nexus.conversations.api.schemas import (
+    ConversationListItemResponseBody,
     ConversationResponseBody,
     CreateConversationRequestBody,
     CreateMessageRequestBody,
+    ListConversationsResponseBody,
 )
 from nexus.conversations.application.events import (
     ConversationEvent,
@@ -34,6 +37,28 @@ from nexus.conversations.application.stream_message import (
 )
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+@router.get("", response_model=ListConversationsResponseBody)
+async def list_conversations(
+    auth_context: CurrentAuthContextDep,
+    service: ListConversationsDep,
+) -> ListConversationsResponseBody:
+    conversations = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+    )
+    return ListConversationsResponseBody(
+        items=[
+            ConversationListItemResponseBody(
+                public_id=conversation.public_id,
+                title=conversation.title,
+                created_at=conversation.created_at,
+                updated_at=conversation.updated_at,
+            )
+            for conversation in conversations
+        ]
+    )
 
 
 @router.post("", response_model=ConversationResponseBody, status_code=201)

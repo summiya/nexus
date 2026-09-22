@@ -2365,10 +2365,11 @@ The current Conversation API surface is:
 
 | Method | Endpoint | Purpose |
 |---|---|---|
+| GET | `/api/v1/conversations` | List Conversations created by the authenticated user |
 | POST | `/api/v1/conversations` | Create a standalone Conversation |
 | POST | `/api/v1/conversations/{conversation_public_id}/messages` | Persist a user Message and stream the generated response as SSE |
 
-There is no implemented Conversation list, Conversation detail, separate `/stream`, model-list, file, or project endpoint. Those remain future targets.
+There is no implemented Conversation detail, separate `/stream`, model-list, file, or project endpoint. Those remain future targets.
 
 ---
 
@@ -2438,9 +2439,10 @@ Content-Type: multipart/form-data
 
 Resource IDs are opaque strings. Clients must not rely on their internal representation.
 
-### 84.3 Future timestamp convention
+### 84.3 Timestamp convention
 
-Timestamps must be serialized as RFC 3339 / ISO 8601 UTC timestamps.
+Conversation listing timestamps are serialized as RFC 3339 / ISO 8601 UTC
+timestamps. Future timestamp-bearing endpoints must follow the same convention.
 
 Example:
 
@@ -2485,7 +2487,7 @@ Supporting idempotency for other future durable operations remains a target.
 
 ## 85. Future Target: Pagination
 
-Conversation list endpoints are not implemented. When list APIs are added, cursor-based pagination is the target contract.
+The implemented Conversation list endpoint is intentionally unpaginated. Cursor-based pagination remains the target contract for a future phase.
 
 Request:
 
@@ -2550,6 +2552,41 @@ Response:
 ```
 
 The API never accepts a caller-supplied organization or user ID as authority for tenancy or ownership.
+
+---
+
+## 86.2 List Conversations
+
+```http
+GET /api/v1/conversations
+```
+
+The authenticated organization and user determine the complete listing scope.
+The endpoint accepts no organization or user identifiers from the client and
+returns Conversations newest first.
+
+Response:
+
+```http
+200 OK
+```
+
+```json
+{
+  "items": [
+    {
+      "public_id": "4a1af83b-7b67-4bc0-8d40-e312629474b9",
+      "title": "Customer support",
+      "created_at": "2026-09-09T10:30:00Z",
+      "updated_at": "2026-09-09T10:30:00Z"
+    }
+  ]
+}
+```
+
+When no Conversations exist, `items` is an empty array. Pagination, search,
+message history, and Conversation detail retrieval are not implemented by this
+endpoint.
 
 ---
 
