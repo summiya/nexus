@@ -18,6 +18,7 @@ from nexus.authentication.login_service import (
 )
 from nexus.authentication.otp import digest_otp, keyed_digest
 from nexus.authentication.repository import OtpChallenge
+from nexus.authentication.session_service import SessionService
 from nexus.errors import ErrorCode, NexusError
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
@@ -126,6 +127,7 @@ def build_service(
         policy=policy(),
         transaction=transaction or FakeTransaction(),
         repository=repository or FakeRepository(),  # type: ignore[arg-type]
+        session_service=Mock(spec=SessionService),
         email_gateway=email_gateway or FakeEmailGateway(),
         rate_limiter=rate_limiter or FakeRateLimiter(),
         clock=lambda: NOW,

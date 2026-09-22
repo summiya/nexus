@@ -67,6 +67,19 @@ class AuthenticationComposition:
     close_callback: Callable[[], None] = _noop
 
     def build_login_service(self, session: Session) -> LoginService:
+        transaction = SqlAlchemyTransactionManager(session)
+        repository = SqlAlchemyAuthenticationRepository(session)
+        session_service = SessionService(
+            policy=SessionPolicy(
+                refresh_token_secret=self.settings.refresh_token_secret,
+                refresh_token_expires_seconds=(
+                    self.settings.refresh_token_expires_seconds
+                ),
+            ),
+            transaction=transaction,
+            repository=repository,
+            access_token_gateway=self.access_token_gateway,
+        )
         return LoginService(
             policy=LoginPolicy(
                 otp_hmac_secret=self.settings.otp_hmac_secret,
@@ -80,8 +93,9 @@ class AuthenticationComposition:
                     self.settings.signup_otp_rate_limit_window_seconds
                 ),
             ),
-            transaction=SqlAlchemyTransactionManager(session),
-            repository=SqlAlchemyAuthenticationRepository(session),
+            transaction=transaction,
+            repository=repository,
+            session_service=session_service,
             email_gateway=self.email_gateway,
             rate_limiter=self.rate_limiter,
         )

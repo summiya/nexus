@@ -62,6 +62,12 @@ class AuthenticationRepository(Protocol):
     def user_exists_by_email(self, email: str) -> bool:
         """Return whether the normalized email is already registered."""
 
+    def get_identity_by_email(
+        self,
+        email: str,
+    ) -> AuthenticationIdentity | None:
+        """Return an active, non-deleted identity for the normalized email."""
+
     def organization_exists_by_slug(self, slug: str) -> bool:
         """Return whether the normalized organization slug already exists."""
 

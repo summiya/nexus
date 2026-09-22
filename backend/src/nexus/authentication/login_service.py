@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hmac
+import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -20,12 +22,14 @@ from nexus.authentication.otp import (
     normalize_auth_email,
 )
 from nexus.authentication.repository import AuthenticationRepository, OtpChallenge
+from nexus.authentication.session_service import SessionService, SessionTokenResult
 from nexus.errors import ErrorCode, NexusError
 from nexus.logging import get_logger
 from nexus.ports.transaction import TransactionManager
 
 logger = get_logger(__name__)
 
+_OTP_RE = re.compile(r"^\d+$")
 _LOGIN_PURPOSE = "login"
 
 
@@ -47,12 +51,25 @@ class LoginOtpRequest:
 
 
 @dataclass(frozen=True)
+class LoginVerificationRequest:
+    email: str
+    otp: str
+
+
+class _LoginOtpVerificationFailed(Exception):
+    def __init__(self, *, persist_attempt_state: bool = False) -> None:
+        super().__init__("Login OTP verification failed")
+        self.persist_attempt_state = persist_attempt_state
+
+
+@dataclass(frozen=True)
 class LoginService:
-    """Request login OTPs without revealing whether an account exists."""
+    """Own login OTP requests, verification, and login transactions."""
 
     policy: LoginPolicy
     transaction: TransactionManager
     repository: AuthenticationRepository
+    session_service: SessionService
     email_gateway: AuthenticationEmailGateway
     rate_limiter: RateLimiter
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
@@ -101,6 +118,81 @@ class LoginService:
 
         logger.info("login_otp_request_accepted")
 
+    def verify_login_otp(
+        self,
+        *,
+        request: LoginVerificationRequest,
+    ) -> SessionTokenResult:
+        try:
+            challenge = self._verify_login_otp(
+                email=request.email,
+                otp=request.otp,
+            )
+            identity = self.repository.get_identity_by_email(challenge.email)
+            if identity is None:
+                raise _LoginOtpVerificationFailed()
+
+            self.repository.update_otp_challenge(
+                replace(challenge, consumed_at=self.clock())
+            )
+            token_result = self.session_service.stage_session(identity=identity)
+            self.transaction.commit()
+            return token_result
+        except _LoginOtpVerificationFailed as exc:
+            try:
+                if exc.persist_attempt_state:
+                    self.transaction.commit()
+                else:
+                    self.transaction.rollback()
+            except Exception:
+                self.transaction.rollback()
+                raise
+            raise _invalid_credentials() from exc
+        except Exception:
+            self.transaction.rollback()
+            raise
+
+    def _verify_login_otp(self, *, email: str, otp: str) -> OtpChallenge:
+        normalized_email = normalize_auth_email(email)
+        if len(otp) != self.policy.otp_length or _OTP_RE.fullmatch(otp) is None:
+            raise _LoginOtpVerificationFailed()
+
+        challenge = self.repository.get_latest_otp_challenge_for_update(
+            email=normalized_email,
+            purpose=_LOGIN_PURPOSE,
+        )
+        if (
+            challenge is None
+            or challenge.purpose != _LOGIN_PURPOSE
+            or challenge.consumed_at is not None
+            or challenge.locked_at is not None
+            or challenge.expires_at <= self.clock()
+        ):
+            raise _LoginOtpVerificationFailed()
+
+        expected_digest = digest_otp(
+            secret=self.policy.otp_hmac_secret,
+            email=normalized_email,
+            purpose=_LOGIN_PURPOSE,
+            otp=otp,
+        )
+        if hmac.compare_digest(challenge.code_digest, expected_digest):
+            return challenge
+
+        attempt_count = challenge.attempt_count + 1
+        self.repository.update_otp_challenge(
+            replace(
+                challenge,
+                attempt_count=attempt_count,
+                locked_at=(
+                    self.clock()
+                    if attempt_count >= challenge.max_attempts
+                    else challenge.locked_at
+                ),
+            )
+        )
+        raise _LoginOtpVerificationFailed(persist_attempt_state=True)
+
     def _enforce_rate_limit(self, email: str) -> None:
         key_digest = keyed_digest(
             secret=self.policy.otp_hmac_secret,
@@ -129,4 +221,11 @@ def _service_unavailable() -> NexusError:
         ErrorCode.SERVICE_UNAVAILABLE,
         "The service is temporarily unavailable.",
         retryable=True,
+    )
+
+
+def _invalid_credentials() -> NexusError:
+    return NexusError(
+        ErrorCode.UNAUTHORIZED,
+        "Authentication credentials are invalid.",
     )

@@ -2401,8 +2401,36 @@ valid email:
 ```
 
 Only registered users receive a login OTP. The persisted challenge uses the
-separate `login` purpose. Login OTP verification and session creation are not
-implemented by this endpoint.
+separate `login` purpose.
+
+Verify a login OTP and create a durable authentication session with:
+
+```http
+POST /api/v1/auth/login/verify
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "otp": "123456"
+}
+```
+
+Successful verification returns:
+
+```json
+{
+  "status": "completed",
+  "access_token": "...",
+  "refresh_token": "...",
+  "token_type": "bearer",
+  "expires_in": 900
+}
+```
+
+Missing, invalid, expired, consumed, or locked login credentials use the same
+generic `401 Unauthorized` response. Login verification accepts only active,
+non-deleted users in active, non-deleted organizations. Signup OTP challenges
+cannot be used for login.
 
 Every protected endpoint requires authentication.
 

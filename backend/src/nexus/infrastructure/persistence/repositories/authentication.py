@@ -32,6 +32,28 @@ class SqlAlchemyAuthenticationRepository:
             self._session.scalar(select(User.id).where(User.email == email)) is not None
         )
 
+    def get_identity_by_email(
+        self,
+        email: str,
+    ) -> AuthenticationIdentity | None:
+        row = self._session.execute(
+            select(User.public_id, Organization.public_id)
+            .join(Organization, User.organization_id == Organization.id)
+            .where(
+                User.email == email,
+                User.status == "active",
+                User.deleted_at.is_(None),
+                Organization.status == "active",
+                Organization.deleted_at.is_(None),
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return AuthenticationIdentity(
+            user_public_id=row[0],
+            organization_public_id=row[1],
+        )
+
     def organization_exists_by_slug(self, slug: str) -> bool:
         return (
             self._session.scalar(
