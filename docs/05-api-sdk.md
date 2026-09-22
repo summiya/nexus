@@ -2376,6 +2376,34 @@ There is no implemented Conversation detail, separate `/stream`, model-list, fil
 
 ## 82. Implemented Authentication Boundary
 
+The public request-login-OTP endpoint is:
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+A successful request returns the same response for a registered or unknown
+valid email:
+
+```http
+202 Accepted
+```
+
+```json
+{
+  "status": "accepted"
+}
+```
+
+Only registered users receive a login OTP. The persisted challenge uses the
+separate `login` purpose. Login OTP verification and session creation are not
+implemented by this endpoint.
+
 Every protected endpoint requires authentication.
 
 Canonical request header:

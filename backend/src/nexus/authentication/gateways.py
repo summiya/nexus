@@ -24,6 +24,15 @@ class AuthenticationEmailGateway(Protocol):
     ) -> None:
         """Send a signup OTP."""
 
+    def send_login_otp(
+        self,
+        *,
+        email: str,
+        otp: str,
+        expires_at: datetime,
+    ) -> None:
+        """Send a login OTP."""
+
     def send_welcome_email(self, *, email: str, display_name: str) -> None:
         """Send a post-signup welcome email."""
 
