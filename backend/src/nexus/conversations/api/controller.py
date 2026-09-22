@@ -14,14 +14,17 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent, format_sse_event
 from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.conversations.api.dependencies import (
     CreateConversationDep,
+    GetConversationMessagesDep,
     ListConversationsDep,
     StreamConversationMessageDep,
 )
 from nexus.conversations.api.schemas import (
     ConversationListItemResponseBody,
+    ConversationMessageResponseBody,
     ConversationResponseBody,
     CreateConversationRequestBody,
     CreateMessageRequestBody,
+    GetConversationMessagesResponseBody,
     ListConversationsResponseBody,
 )
 from nexus.conversations.application.events import (
@@ -79,6 +82,33 @@ async def create_conversation(
         workspace_public_id=conversation.workspace_public_id,
         project_public_id=conversation.project_public_id,
         title=conversation.title,
+    )
+
+
+@router.get(
+    "/{conversation_public_id}/messages",
+    response_model=GetConversationMessagesResponseBody,
+)
+async def get_conversation_messages(
+    conversation_public_id: UUID,
+    auth_context: CurrentAuthContextDep,
+    service: GetConversationMessagesDep,
+) -> GetConversationMessagesResponseBody:
+    messages = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        conversation_public_id=conversation_public_id,
+    )
+    return GetConversationMessagesResponseBody(
+        items=[
+            ConversationMessageResponseBody(
+                public_id=message.public_id,
+                role=message.role,
+                content=message.content,
+                created_at=message.created_at,
+            )
+            for message in messages
+        ]
     )
 
 
