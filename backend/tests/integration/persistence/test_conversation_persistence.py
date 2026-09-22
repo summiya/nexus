@@ -74,10 +74,32 @@ def _seed_identity(engine: Engine) -> tuple[UUID, UUID]:
     return organization_public_id, user_public_id
 
 
+def _seed_user(engine: Engine, organization_public_id: UUID) -> UUID:
+    user_public_id = uuid4()
+    with Session(engine) as session:
+        organization_id = session.scalar(
+            select(Organization.id).where(
+                Organization.public_id == organization_public_id
+            )
+        )
+        assert organization_id is not None
+        session.add(
+            User(
+                public_id=user_public_id,
+                organization_id=organization_id,
+                email=f"{uuid4().hex}@example.com",
+                status="active",
+            )
+        )
+        session.commit()
+    return user_public_id
+
+
 def _conversation(
     organization_public_id: UUID,
     user_public_id: UUID,
     *,
+    created_at: datetime = TIMESTAMP,
     workspace_public_id: UUID | None = None,
     project_public_id: UUID | None = None,
 ) -> Conversation:
@@ -88,8 +110,8 @@ def _conversation(
         workspace_public_id=workspace_public_id,
         project_public_id=project_public_id,
         title="Conversation",
-        created_at=TIMESTAMP,
-        updated_at=TIMESTAMP,
+        created_at=created_at,
+        updated_at=created_at,
     )
 
 
@@ -127,6 +149,19 @@ def _create_conversation(
     conversation: Conversation,
 ) -> None:
     asyncio.run(persistence.create_conversation(conversation))
+
+
+def _list_conversations(
+    persistence: SqlAlchemyConversationPersistence,
+    organization_public_id: UUID,
+    user_public_id: UUID,
+) -> tuple[Conversation, ...]:
+    return asyncio.run(
+        persistence.list_conversations(
+            organization_public_id=organization_public_id,
+            created_by_user_public_id=user_public_id,
+        )
+    )
 
 
 def _prepare_generation(
@@ -191,6 +226,145 @@ def test_persistence_preserves_conversation_scopes_and_tenant_identity(
     assert stored == conversations
     assert all(not hasattr(value, "id") for value in stored)
     assert wrong_tenant is None
+
+
+def test_list_conversations_returns_the_requested_users_conversations(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == (conversation,)
+    assert not hasattr(listed[0], "id")
+
+
+def test_list_conversations_excludes_another_user_in_the_same_organization(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    other_user_public_id = _seed_user(migrated_engine, organization_public_id)
+    persistence = _persistence(migrated_engine)
+    requested_user_conversation = _conversation(
+        organization_public_id,
+        user_public_id,
+    )
+    other_user_conversation = _conversation(
+        organization_public_id,
+        other_user_public_id,
+    )
+    _create_conversation(persistence, requested_user_conversation)
+    _create_conversation(persistence, other_user_conversation)
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == (requested_user_conversation,)
+
+
+def test_list_conversations_excludes_another_organization(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    other_organization_public_id, other_user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    requested_organization_conversation = _conversation(
+        organization_public_id,
+        user_public_id,
+    )
+    other_organization_conversation = _conversation(
+        other_organization_public_id,
+        other_user_public_id,
+    )
+    _create_conversation(persistence, requested_organization_conversation)
+    _create_conversation(persistence, other_organization_conversation)
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == (requested_organization_conversation,)
+    assert (
+        _list_conversations(
+            persistence,
+            organization_public_id,
+            other_user_public_id,
+        )
+        == ()
+    )
+
+
+def test_list_conversations_orders_newest_first(migrated_engine: Engine) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    oldest = _conversation(
+        organization_public_id,
+        user_public_id,
+        created_at=TIMESTAMP,
+    )
+    newest = _conversation(
+        organization_public_id,
+        user_public_id,
+        created_at=TIMESTAMP + timedelta(minutes=2),
+    )
+    middle = _conversation(
+        organization_public_id,
+        user_public_id,
+        created_at=TIMESTAMP + timedelta(minutes=1),
+    )
+    for conversation in (oldest, newest, middle):
+        _create_conversation(persistence, conversation)
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == (newest, middle, oldest)
+
+
+def test_list_conversations_orders_equal_timestamps_deterministically(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    first = _conversation(organization_public_id, user_public_id)
+    second = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, first)
+    _create_conversation(persistence, second)
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == (second, first)
+
+
+def test_list_conversations_returns_empty_tuple(migrated_engine: Engine) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+
+    listed = _list_conversations(
+        _persistence(migrated_engine),
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed == ()
 
 
 def test_persistence_rejects_creator_from_another_tenant(

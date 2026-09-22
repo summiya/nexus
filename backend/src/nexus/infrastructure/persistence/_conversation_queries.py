@@ -82,10 +82,53 @@ def get_conversation(
         return None
 
     model, stored_organization_public_id, creator_public_id = row
-    return Conversation(
-        public_id=model.public_id,
+    return _to_conversation(
+        model,
         organization_public_id=stored_organization_public_id,
         created_by_user_public_id=creator_public_id,
+    )
+
+
+def list_conversations(
+    session: Session,
+    *,
+    organization_public_id: UUID,
+    created_by_user_public_id: UUID,
+) -> list[Conversation]:
+    rows = session.execute(
+        select(ConversationModel, Organization.public_id, User.public_id)
+        .join(Organization, ConversationModel.organization_id == Organization.id)
+        .join(
+            User,
+            (User.id == ConversationModel.created_by_user_id)
+            & (User.organization_id == ConversationModel.organization_id),
+        )
+        .where(
+            Organization.public_id == organization_public_id,
+            User.public_id == created_by_user_public_id,
+        )
+        .order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc())
+    ).all()
+    return [
+        _to_conversation(
+            model,
+            organization_public_id=stored_organization_public_id,
+            created_by_user_public_id=creator_public_id,
+        )
+        for model, stored_organization_public_id, creator_public_id in rows
+    ]
+
+
+def _to_conversation(
+    model: ConversationModel,
+    *,
+    organization_public_id: UUID,
+    created_by_user_public_id: UUID,
+) -> Conversation:
+    return Conversation(
+        public_id=model.public_id,
+        organization_public_id=organization_public_id,
+        created_by_user_public_id=created_by_user_public_id,
         workspace_public_id=model.workspace_public_id,
         project_public_id=model.project_public_id,
         title=model.title,

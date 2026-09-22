@@ -45,6 +45,13 @@ class ConversationPersistence(Protocol):
         conversation_public_id: UUID,
     ) -> Conversation | None: ...
 
+    async def list_conversations(
+        self,
+        *,
+        organization_public_id: UUID,
+        created_by_user_public_id: UUID,
+    ) -> tuple[Conversation, ...]: ...
+
     async def prepare_generation(
         self,
         *,
