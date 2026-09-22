@@ -7,4 +7,6 @@ vi.stubEnv("VITE_API_BASE_URL", "http://localhost:8000/api/v1");
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
 });
