@@ -2,14 +2,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nexus.authentication.api.dependencies import get_login_service
-from nexus.authentication.login_service import LoginOtpRequest
+from nexus.authentication.gateways import (
+    AuthenticationEmailError,
+    AuthenticationEmailGateway,
+    RateLimiter,
+)
+from nexus.authentication.login_service import (
+    LoginOtpRequest,
+    LoginPolicy,
+    LoginService,
+)
+from nexus.authentication.repository import AuthenticationRepository
 from nexus.errors import ErrorCode, NexusError
+from nexus.ports.transaction import TransactionManager
 
 
 class FakeLoginService:
@@ -26,7 +39,7 @@ class FakeLoginService:
 @contextmanager
 def override_login_service(
     app: FastAPI,
-    service: FakeLoginService,
+    service: FakeLoginService | LoginService,
 ) -> Iterator[None]:
     app.dependency_overrides[get_login_service] = lambda: service
     try:
@@ -69,6 +82,46 @@ def test_login_endpoint_rejects_client_supplied_purpose(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == ErrorCode.VALIDATION_ERROR
     assert service.requests == []
+
+
+def test_login_endpoint_returns_accepted_when_email_delivery_fails(
+    app: FastAPI,
+    client: TestClient,
+) -> None:
+    repository = Mock(spec=AuthenticationRepository)
+    repository.user_exists_by_email.return_value = True
+    transaction = Mock(spec=TransactionManager)
+    email_gateway = Mock(spec=AuthenticationEmailGateway)
+    email_gateway.send_login_otp.side_effect = AuthenticationEmailError("failed")
+    rate_limiter = Mock(spec=RateLimiter)
+    rate_limiter.allow.return_value = True
+    service = LoginService(
+        policy=LoginPolicy(
+            otp_hmac_secret="test-secret-value-with-enough-length",
+            otp_length=6,
+            otp_ttl_seconds=600,
+            otp_max_attempts=5,
+            otp_rate_limit_max_requests=5,
+            otp_rate_limit_window_seconds=900,
+        ),
+        transaction=transaction,
+        repository=repository,
+        email_gateway=email_gateway,
+        rate_limiter=rate_limiter,
+        clock=lambda: datetime(2026, 9, 22, tzinfo=UTC),
+    )
+
+    with override_login_service(app, service):
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"email": "registered@example.com"},
+        )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "accepted"}
+    repository.add_otp_challenge.assert_called_once()
+    transaction.commit.assert_called_once_with()
+    transaction.rollback.assert_not_called()
 
 
 @pytest.mark.parametrize(

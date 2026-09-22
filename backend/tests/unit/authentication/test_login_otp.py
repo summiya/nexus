@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -266,18 +267,32 @@ def test_persistence_failure_rolls_back_without_sending_email() -> None:
     assert email_gateway.sent == []
 
 
-def test_email_failure_keeps_committed_challenge_and_reports_unavailable() -> None:
+def test_email_failure_keeps_committed_challenge_and_returns_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repository = FakeRepository()
     transaction = FakeTransaction()
+    test_logger = Mock()
+    monkeypatch.setattr(
+        "nexus.authentication.login_service.generate_numeric_otp",
+        lambda _length: "123456",
+    )
+    monkeypatch.setattr(
+        "nexus.authentication.login_service.logger",
+        test_logger,
+    )
 
-    with pytest.raises(NexusError) as exc_info:
-        build_service(
-            repository=repository,
-            transaction=transaction,
-            email_gateway=FakeEmailGateway(fail=True),
-        ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+    result = build_service(
+        repository=repository,
+        transaction=transaction,
+        email_gateway=FakeEmailGateway(fail=True),
+    ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
 
-    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+    assert result is None
     assert len(repository.added) == 1
     assert transaction.commit_count == 1
     assert transaction.rollback_count == 0
+    test_logger.warning.assert_called_once_with("login_otp_email_delivery_failed")
+    logged_calls = repr(test_logger.mock_calls)
+    assert "user@example.com" not in logged_calls
+    assert "123456" not in logged_calls

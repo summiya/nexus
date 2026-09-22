@@ -96,9 +96,8 @@ class LoginService:
                 otp=otp,
                 expires_at=expires_at,
             )
-        except AuthenticationEmailError as exc:
+        except AuthenticationEmailError:
             logger.warning("login_otp_email_delivery_failed")
-            raise _service_unavailable() from exc
 
         logger.info("login_otp_request_accepted")
 
