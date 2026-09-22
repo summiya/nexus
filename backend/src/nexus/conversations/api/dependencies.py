@@ -9,12 +9,17 @@ from fastapi import Depends
 from nexus.api.dependencies import AppContainerDep
 from nexus.conversations.application import (
     CreateConversation,
+    ListConversations,
     StreamConversationMessage,
 )
 
 
 def get_create_conversation(container: AppContainerDep) -> CreateConversation:
     return container.conversations.create
+
+
+def get_list_conversations(container: AppContainerDep) -> ListConversations:
+    return container.conversations.list_conversations
 
 
 def get_stream_conversation_message(
@@ -26,6 +31,10 @@ def get_stream_conversation_message(
 CreateConversationDep = Annotated[
     CreateConversation,
     Depends(get_create_conversation),
+]
+ListConversationsDep = Annotated[
+    ListConversations,
+    Depends(get_list_conversations),
 ]
 StreamConversationMessageDep = Annotated[
     StreamConversationMessage,
