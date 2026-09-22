@@ -2366,6 +2366,7 @@ The current Conversation API surface is:
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/v1/conversations` | List Conversations created by the authenticated user |
+| GET | `/api/v1/conversations/{conversation_public_id}/messages` | List persisted Messages for an authorized Conversation |
 | POST | `/api/v1/conversations` | Create a standalone Conversation |
 | POST | `/api/v1/conversations/{conversation_public_id}/messages` | Persist a user Message and stream the generated response as SSE |
 
@@ -2441,8 +2442,9 @@ Resource IDs are opaque strings. Clients must not rely on their internal represe
 
 ### 84.3 Timestamp convention
 
-Conversation listing timestamps are serialized as RFC 3339 / ISO 8601 UTC
-timestamps. Future timestamp-bearing endpoints must follow the same convention.
+Conversation listing and persisted message-history timestamps are serialized as
+RFC 3339 / ISO 8601 UTC timestamps. Future timestamp-bearing endpoints must
+follow the same convention.
 
 Example:
 
@@ -2584,15 +2586,54 @@ Response:
 }
 ```
 
-When no Conversations exist, `items` is an empty array. Pagination, search,
-message history, and Conversation detail retrieval are not implemented by this
-endpoint.
+When no Conversations exist, `items` is an empty array. Pagination, search, and
+Conversation detail retrieval are not implemented by this endpoint.
 
 ---
 
 # 87. Implemented Message API
 
-## 87.1 Add Message and Stream Generation
+## 87.1 Get Conversation Message History
+
+```http
+GET /api/v1/conversations/{conversation_public_id}/messages
+```
+
+The endpoint returns persisted Messages for an authorized standalone
+Conversation in chronological order. Organization and user identity come only
+from the trusted authentication context; clients cannot provide or override
+them.
+
+An unknown Conversation, a Conversation outside the authenticated organization,
+and another user's standalone Conversation all return the same safe `404 Not
+Found` response. Workspace- and project-scoped Conversations return `403
+Forbidden` until their authorization model is implemented.
+
+Response:
+
+```http
+200 OK
+```
+
+```json
+{
+  "items": [
+    {
+      "public_id": "c64542f2-d0ec-4d9d-9df0-a16259f340c6",
+      "role": "user",
+      "content": "Summarize this conversation.",
+      "created_at": "2026-09-09T10:31:00Z"
+    }
+  ]
+}
+```
+
+Only `public_id`, `role`, `content`, and `created_at` are exposed. When the
+Conversation has no persisted Messages, `items` is an empty array.
+
+---
+
+## 87.2 Add Message and Stream Generation
 
 ```http
 POST /api/v1/conversations/{conversation_public_id}/messages

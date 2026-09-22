@@ -11,6 +11,7 @@ from nexus.authentication.api.security import get_current_auth_context
 from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
 from nexus.conversations.api.dependencies import (
+    get_conversation_messages,
     get_list_conversations,
     get_stream_conversation_message,
 )
@@ -23,7 +24,12 @@ from nexus.conversations.application.events import (
 from nexus.conversations.application.stream_message import (
     StreamConversationMessageRequest,
 )
-from nexus.conversations.domain import Conversation, GenerationFinishReason
+from nexus.conversations.domain import (
+    Conversation,
+    ConversationMessageRole,
+    GenerationFinishReason,
+    Message,
+)
 from nexus.errors import ErrorCode, NexusError
 from nexus.main import create_app
 
@@ -48,6 +54,31 @@ class FakeListConversationsService:
         return self.conversations
 
 
+class FakeGetConversationMessagesService:
+    def __init__(self, messages: tuple[Message, ...] = ()) -> None:
+        self.messages = messages
+        self.calls: list[tuple[UUID, UUID, UUID]] = []
+        self.error: NexusError | None = None
+
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        user_public_id: UUID,
+        conversation_public_id: UUID,
+    ) -> tuple[Message, ...]:
+        self.calls.append(
+            (
+                organization_public_id,
+                user_public_id,
+                conversation_public_id,
+            )
+        )
+        if self.error is not None:
+            raise self.error
+        return self.messages
+
+
 def _conversation(*, created_at: datetime, title: str | None) -> Conversation:
     return Conversation(
         public_id=uuid4(),
@@ -56,6 +87,22 @@ def _conversation(*, created_at: datetime, title: str | None) -> Conversation:
         title=title,
         created_at=created_at,
         updated_at=created_at + timedelta(seconds=1),
+    )
+
+
+def _message(
+    *,
+    conversation_public_id: UUID,
+    role: ConversationMessageRole,
+    content: str,
+    created_at: datetime,
+) -> Message:
+    return Message(
+        public_id=uuid4(),
+        conversation_public_id=conversation_public_id,
+        role=role,
+        content=content,
+        created_at=created_at,
     )
 
 
@@ -84,6 +131,22 @@ def _list_test_app(
         session_public_id=uuid4(),
     )
     app.dependency_overrides[get_list_conversations] = lambda: service
+    return app
+
+
+def _messages_test_app(
+    service: FakeGetConversationMessagesService,
+    *,
+    organization_public_id: UUID,
+    user_public_id: UUID,
+) -> FastAPI:
+    app = create_app(_settings())
+    app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
+        user_public_id=user_public_id,
+        organization_public_id=organization_public_id,
+        session_public_id=uuid4(),
+    )
+    app.dependency_overrides[get_conversation_messages] = lambda: service
     return app
 
 
@@ -198,6 +261,240 @@ def test_list_conversations_returns_safe_application_failure() -> None:
     assert response.json()["error"] == {
         "code": "SERVICE_UNAVAILABLE",
         "message": "The conversations could not be retrieved.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+
+
+def test_get_conversation_messages_returns_persisted_history() -> None:
+    conversation_public_id = uuid4()
+    message = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.USER,
+        content="Hello",
+        created_at=TIMESTAMP,
+    )
+    service = FakeGetConversationMessagesService((message,))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0] == {
+        "public_id": str(message.public_id),
+        "role": "user",
+        "content": "Hello",
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+
+def test_get_conversation_messages_exposes_only_the_intended_fields() -> None:
+    conversation_public_id = uuid4()
+    message = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.ASSISTANT,
+        content="Welcome",
+        created_at=TIMESTAMP,
+    )
+    service = FakeGetConversationMessagesService((message,))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert set(response.json()["items"][0]) == {
+        "public_id",
+        "role",
+        "content",
+        "created_at",
+    }
+
+
+def test_get_conversation_messages_returns_empty_items() -> None:
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+
+
+def test_get_conversation_messages_preserves_application_ordering() -> None:
+    conversation_public_id = uuid4()
+    oldest = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.USER,
+        content="First",
+        created_at=TIMESTAMP,
+    )
+    newest = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.ASSISTANT,
+        content="Second",
+        created_at=TIMESTAMP + timedelta(minutes=1),
+    )
+    service = FakeGetConversationMessagesService((oldest, newest))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert [item["public_id"] for item in response.json()["items"]] == [
+        str(oldest.public_id),
+        str(newest.public_id),
+    ]
+
+
+def test_get_conversation_messages_passes_trusted_authentication_scope() -> None:
+    organization_public_id = uuid4()
+    user_public_id = uuid4()
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    app = _messages_test_app(
+        service,
+        organization_public_id=organization_public_id,
+        user_public_id=user_public_id,
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 200
+    assert service.calls == [
+        (organization_public_id, user_public_id, conversation_public_id)
+    ]
+
+
+def test_get_conversation_messages_returns_safe_unknown_conversation_error() -> None:
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    service.error = NexusError(
+        ErrorCode.NOT_FOUND,
+        "The requested resource was not found.",
+    )
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+
+
+def test_get_conversation_messages_hides_inaccessible_standalone_conversation() -> None:
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    service.error = NexusError(
+        ErrorCode.NOT_FOUND,
+        "The requested resource was not found.",
+    )
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "NOT_FOUND",
+        "message": "The requested resource was not found.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+
+
+def test_get_conversation_messages_returns_safe_workspace_authorization_error() -> None:
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    service.error = NexusError(
+        ErrorCode.FORBIDDEN,
+        "You are not allowed to perform this action.",
+    )
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 403
+    assert response.json()["error"] == {
+        "code": "FORBIDDEN",
+        "message": "You are not allowed to perform this action.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+
+
+def test_get_conversation_messages_returns_safe_application_failure() -> None:
+    conversation_public_id = uuid4()
+    service = FakeGetConversationMessagesService()
+    service.error = NexusError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        "The conversation messages could not be retrieved.",
+        retryable=True,
+    )
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "SERVICE_UNAVAILABLE",
+        "message": "The conversation messages could not be retrieved.",
         "request_id": response.headers["X-Request-ID"],
     }
 

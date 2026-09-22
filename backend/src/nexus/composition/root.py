@@ -15,6 +15,7 @@ from nexus.composition.authentication import (
 from nexus.config.settings import Settings
 from nexus.conversations.application import (
     CreateConversation,
+    GetConversationMessages,
     ListConversations,
     StreamConversationMessage,
 )
@@ -40,6 +41,7 @@ class LLMComposition:
 @dataclass(frozen=True)
 class ConversationComposition:
     create: CreateConversation
+    get_messages: GetConversationMessages
     list_conversations: ListConversations
     stream_message: StreamConversationMessage
 
@@ -70,6 +72,7 @@ def build_conversation_composition(
     persistence = SqlAlchemyConversationPersistence(session_factory)
     return ConversationComposition(
         create=CreateConversation(persistence=persistence),
+        get_messages=GetConversationMessages(persistence=persistence),
         list_conversations=ListConversations(persistence=persistence),
         stream_message=StreamConversationMessage(
             persistence=persistence,

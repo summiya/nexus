@@ -7,6 +7,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nexus.conversations.domain import ConversationMessageRole
+
 
 class CreateConversationRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -40,6 +42,17 @@ class ConversationListItemResponseBody(BaseModel):
 
 class ListConversationsResponseBody(BaseModel):
     items: list[ConversationListItemResponseBody]
+
+
+class ConversationMessageResponseBody(BaseModel):
+    public_id: UUID
+    role: ConversationMessageRole
+    content: str
+    created_at: datetime
+
+
+class GetConversationMessagesResponseBody(BaseModel):
+    items: list[ConversationMessageResponseBody]
 
 
 class CreateMessageRequestBody(BaseModel):
