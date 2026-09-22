@@ -8,6 +8,8 @@ import pytest
 
 from nexus.conversations.domain import (
     Conversation,
+    ConversationGenerationMetadata,
+    ConversationMessageHistoryItem,
     ConversationMessageRole,
     Generation,
     GenerationFinishReason,
@@ -224,3 +226,39 @@ def test_generation_is_frozen() -> None:
 
     with pytest.raises(FrozenInstanceError):
         value.status = GenerationStatus.RUNNING  # type: ignore[misc]
+
+
+def test_message_history_item_uses_focused_generation_metadata() -> None:
+    history_message = message(role=ConversationMessageRole.ASSISTANT)
+    metadata = ConversationGenerationMetadata(
+        public_id=uuid4(),
+        model="gpt-test",
+        status=GenerationStatus.COMPLETED,
+        finish_reason=GenerationFinishReason.STOP,
+        input_tokens=3,
+        output_tokens=2,
+        total_tokens=5,
+        started_at=TIMESTAMP,
+        completed_at=TIMESTAMP,
+        error_kind=None,
+    )
+
+    item = ConversationMessageHistoryItem(
+        message=history_message,
+        generation=metadata,
+    )
+
+    assert item.message is history_message
+    assert item.generation is metadata
+    assert not hasattr(metadata, "user_message_public_id")
+    assert not hasattr(metadata, "assistant_message_public_id")
+    assert not hasattr(metadata, "conversation_public_id")
+    assert not hasattr(metadata, "idempotency_key")
+    with pytest.raises(FrozenInstanceError):
+        item.generation = None  # type: ignore[misc]
+
+
+def test_message_history_item_supports_missing_generation_metadata() -> None:
+    item = ConversationMessageHistoryItem(message=message(), generation=None)
+
+    assert item.generation is None

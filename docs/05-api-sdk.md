@@ -2622,14 +2622,38 @@ Response:
       "public_id": "c64542f2-d0ec-4d9d-9df0-a16259f340c6",
       "role": "user",
       "content": "Summarize this conversation.",
-      "created_at": "2026-09-09T10:31:00Z"
+      "created_at": "2026-09-09T10:31:00Z",
+      "generation": null
+    },
+    {
+      "public_id": "14e7a664-3777-44ca-880c-8a37abbc5516",
+      "role": "assistant",
+      "content": "Here is the summary.",
+      "created_at": "2026-09-09T10:31:02Z",
+      "generation": {
+        "public_id": "0757d078-7fe9-4444-adbb-c4928cb4f84d",
+        "model": "gpt-4o-mini",
+        "status": "completed",
+        "finish_reason": "stop",
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "total_tokens": 150,
+        "started_at": "2026-09-09T10:31:00Z",
+        "completed_at": "2026-09-09T10:31:02Z",
+        "error_kind": null
+      }
     }
   ]
 }
 ```
 
-Only `public_id`, `role`, `content`, and `created_at` are exposed. When the
-Conversation has no persisted Messages, `items` is an empty array.
+Every Message includes `generation`. It is `null` for user and system Messages
+and for historical assistant Messages without an associated Generation. An
+associated assistant Generation exposes only its public ID, model, lifecycle
+status and finish reason, token counts, lifecycle timestamps, and safe error
+kind. Internal Message relationships, idempotency data, database IDs, and raw
+provider-specific data are not exposed. When the Conversation has no persisted
+Messages, `items` is an empty array.
 
 ---
 

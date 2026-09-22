@@ -7,7 +7,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from nexus.conversations.domain import ConversationMessageRole
+from nexus.conversations.domain import (
+    ConversationMessageRole,
+    GenerationFinishReason,
+    GenerationStatus,
+)
 
 
 class CreateConversationRequestBody(BaseModel):
@@ -44,11 +48,25 @@ class ListConversationsResponseBody(BaseModel):
     items: list[ConversationListItemResponseBody]
 
 
+class ConversationGenerationResponseBody(BaseModel):
+    public_id: UUID
+    model: str
+    status: GenerationStatus
+    finish_reason: GenerationFinishReason | None
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_kind: str | None
+
+
 class ConversationMessageResponseBody(BaseModel):
     public_id: UUID
     role: ConversationMessageRole
     content: str
     created_at: datetime
+    generation: ConversationGenerationResponseBody | None
 
 
 class GetConversationMessagesResponseBody(BaseModel):

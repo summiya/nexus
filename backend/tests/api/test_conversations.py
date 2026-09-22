@@ -26,8 +26,11 @@ from nexus.conversations.application.stream_message import (
 )
 from nexus.conversations.domain import (
     Conversation,
+    ConversationGenerationMetadata,
+    ConversationMessageHistoryItem,
     ConversationMessageRole,
     GenerationFinishReason,
+    GenerationStatus,
     Message,
 )
 from nexus.errors import ErrorCode, NexusError
@@ -55,8 +58,11 @@ class FakeListConversationsService:
 
 
 class FakeGetConversationMessagesService:
-    def __init__(self, messages: tuple[Message, ...] = ()) -> None:
-        self.messages = messages
+    def __init__(
+        self,
+        history: tuple[ConversationMessageHistoryItem, ...] = (),
+    ) -> None:
+        self.history = history
         self.calls: list[tuple[UUID, UUID, UUID]] = []
         self.error: NexusError | None = None
 
@@ -66,7 +72,7 @@ class FakeGetConversationMessagesService:
         organization_public_id: UUID,
         user_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]:
+    ) -> tuple[ConversationMessageHistoryItem, ...]:
         self.calls.append(
             (
                 organization_public_id,
@@ -76,7 +82,7 @@ class FakeGetConversationMessagesService:
         )
         if self.error is not None:
             raise self.error
-        return self.messages
+        return self.history
 
 
 def _conversation(*, created_at: datetime, title: str | None) -> Conversation:
@@ -103,6 +109,39 @@ def _message(
         role=role,
         content=content,
         created_at=created_at,
+    )
+
+
+def _history_item(
+    message: Message,
+    generation: ConversationGenerationMetadata | None = None,
+) -> ConversationMessageHistoryItem:
+    return ConversationMessageHistoryItem(
+        message=message,
+        generation=generation,
+    )
+
+
+def _generation_metadata(
+    *,
+    status: GenerationStatus = GenerationStatus.COMPLETED,
+    error_kind: str | None = None,
+) -> ConversationGenerationMetadata:
+    return ConversationGenerationMetadata(
+        public_id=uuid4(),
+        model="gpt-test",
+        status=status,
+        finish_reason=(
+            GenerationFinishReason.STOP
+            if status is GenerationStatus.COMPLETED
+            else None
+        ),
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        started_at=TIMESTAMP,
+        completed_at=TIMESTAMP + timedelta(seconds=1),
+        error_kind=error_kind,
     )
 
 
@@ -273,7 +312,7 @@ def test_get_conversation_messages_returns_persisted_history() -> None:
         content="Hello",
         created_at=TIMESTAMP,
     )
-    service = FakeGetConversationMessagesService((message,))
+    service = FakeGetConversationMessagesService((_history_item(message),))
     app = _messages_test_app(
         service,
         organization_public_id=uuid4(),
@@ -291,6 +330,7 @@ def test_get_conversation_messages_returns_persisted_history() -> None:
         "role": "user",
         "content": "Hello",
         "created_at": "2026-01-01T00:00:00Z",
+        "generation": None,
     }
 
 
@@ -302,7 +342,7 @@ def test_get_conversation_messages_exposes_only_the_intended_fields() -> None:
         content="Welcome",
         created_at=TIMESTAMP,
     )
-    service = FakeGetConversationMessagesService((message,))
+    service = FakeGetConversationMessagesService((_history_item(message),))
     app = _messages_test_app(
         service,
         organization_public_id=uuid4(),
@@ -319,7 +359,112 @@ def test_get_conversation_messages_exposes_only_the_intended_fields() -> None:
         "role",
         "content",
         "created_at",
+        "generation",
     }
+    assert response.json()["items"][0]["generation"] is None
+
+
+def test_get_conversation_messages_returns_typed_generation_metadata() -> None:
+    conversation_public_id = uuid4()
+    message = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.ASSISTANT,
+        content="Welcome",
+        created_at=TIMESTAMP + timedelta(seconds=1),
+    )
+    generation = _generation_metadata()
+    service = FakeGetConversationMessagesService((_history_item(message, generation),))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 200
+    generation_body = response.json()["items"][0]["generation"]
+    assert set(generation_body) == {
+        "public_id",
+        "model",
+        "status",
+        "finish_reason",
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "started_at",
+        "completed_at",
+        "error_kind",
+    }
+    assert generation_body == {
+        "public_id": str(generation.public_id),
+        "model": "gpt-test",
+        "status": "completed",
+        "finish_reason": "stop",
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "total_tokens": 150,
+        "started_at": "2026-01-01T00:00:00Z",
+        "completed_at": "2026-01-01T00:00:01Z",
+        "error_kind": None,
+    }
+
+
+def test_get_conversation_messages_serializes_safe_generation_error_kind() -> None:
+    conversation_public_id = uuid4()
+    message = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.ASSISTANT,
+        content="Partial response",
+        created_at=TIMESTAMP,
+    )
+    generation = _generation_metadata(
+        status=GenerationStatus.FAILED,
+        error_kind="stream_processing_failure",
+    )
+    service = FakeGetConversationMessagesService((_history_item(message, generation),))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    generation_body = response.json()["items"][0]["generation"]
+    assert generation_body["status"] == "failed"
+    assert generation_body["finish_reason"] is None
+    assert generation_body["error_kind"] == "stream_processing_failure"
+
+
+def test_get_conversation_messages_returns_null_generation_for_system_message() -> None:
+    conversation_public_id = uuid4()
+    message = _message(
+        conversation_public_id=conversation_public_id,
+        role=ConversationMessageRole.SYSTEM,
+        content="System instruction",
+        created_at=TIMESTAMP,
+    )
+    service = FakeGetConversationMessagesService((_history_item(message),))
+    app = _messages_test_app(
+        service,
+        organization_public_id=uuid4(),
+        user_public_id=uuid4(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/conversations/{conversation_public_id}/messages"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["generation"] is None
 
 
 def test_get_conversation_messages_returns_empty_items() -> None:
@@ -354,7 +499,9 @@ def test_get_conversation_messages_preserves_application_ordering() -> None:
         content="Second",
         created_at=TIMESTAMP + timedelta(minutes=1),
     )
-    service = FakeGetConversationMessagesService((oldest, newest))
+    service = FakeGetConversationMessagesService(
+        (_history_item(oldest), _history_item(newest))
+    )
     app = _messages_test_app(
         service,
         organization_public_id=uuid4(),

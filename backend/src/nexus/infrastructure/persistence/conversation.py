@@ -10,7 +10,12 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from nexus.conversations.domain import Conversation, Generation, Message
+from nexus.conversations.domain import (
+    Conversation,
+    ConversationMessageHistoryItem,
+    Generation,
+    Message,
+)
 from nexus.conversations.ports.persistence import (
     ConversationGenerationInProgressError,
     ConversationPersistence,
@@ -67,7 +72,7 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         *,
         organization_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]:
+    ) -> tuple[ConversationMessageHistoryItem, ...]:
         return await self._run_worker(
             lambda: self._list_messages(
                 organization_public_id,
@@ -190,7 +195,7 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         self,
         organization_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]:
+    ) -> tuple[ConversationMessageHistoryItem, ...]:
         try:
             with self._session_factory() as session:
                 return tuple(

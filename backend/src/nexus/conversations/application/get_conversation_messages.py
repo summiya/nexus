@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from nexus.conversations.domain import Message
+from nexus.conversations.domain import ConversationMessageHistoryItem
 from nexus.conversations.ports.persistence import (
     ConversationPersistence,
     ConversationPersistenceError,
@@ -23,7 +23,7 @@ class GetConversationMessages:
         organization_public_id: UUID,
         user_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]:
+    ) -> tuple[ConversationMessageHistoryItem, ...]:
         try:
             conversation = await self.persistence.get_conversation(
                 organization_public_id=organization_public_id,
