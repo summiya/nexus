@@ -84,7 +84,27 @@ describe("apiRequest", () => {
     expect(headers.get("Authorization")).toBe("Bearer access-token");
   });
 
-  it("does not add authorization to public requests", async () => {
+  it("does not automatically add authorization to public requests", async () => {
+    configureApiAuthentication({
+      getAccessToken: () => "access-token",
+      refreshAccessToken: vi.fn(),
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await apiRequest("/public", {
+      authentication: "none",
+    });
+
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+    expect(headers.has("Authorization")).toBe(false);
+  });
+
+  it("preserves explicitly supplied authorization on public requests", async () => {
     configureApiAuthentication({
       getAccessToken: () => "access-token",
       refreshAccessToken: vi.fn(),
@@ -102,7 +122,31 @@ describe("apiRequest", () => {
     });
 
     const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
-    expect(headers.has("Authorization")).toBe(false);
+    expect(headers.get("Authorization")).toBe("Bearer caller-token");
+  });
+
+  it("does not replace or refresh explicitly supplied authorization", async () => {
+    const refreshAccessToken = vi.fn();
+    configureApiAuthentication({
+      getAccessToken: () => "access-token",
+      refreshAccessToken,
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        errorResponse("ACCESS_TOKEN_EXPIRED", "Access token has expired."),
+      );
+
+    await expect(
+      apiRequest("/protected", {
+        headers: { Authorization: "Bearer caller-token" },
+      }),
+    ).rejects.toMatchObject({ code: "ACCESS_TOKEN_EXPIRED" });
+
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer caller-token");
+    expect(refreshAccessToken).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refreshes an expired access token and retries once", async () => {

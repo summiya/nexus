@@ -9,7 +9,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const [queryClient] = useState(createQueryClient);
 
   useEffect(() => {
-    void initializeSession();
+    void initializeSession().catch(() => undefined);
   }, []);
 
   return (

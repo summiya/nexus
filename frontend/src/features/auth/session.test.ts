@@ -117,7 +117,7 @@ describe("authentication session", () => {
     expect(useAuthStore.getState().status).toBe("authenticated");
   });
 
-  it("clears the session when startup refresh fails", async () => {
+  it("clears the session when startup refresh returns unauthorized", async () => {
     const originalSession = await import("./session");
     originalSession.establishSession(initialTokens);
     vi.resetModules();
@@ -140,6 +140,85 @@ describe("authentication session", () => {
 
     expect(window.sessionStorage.length).toBe(0);
     expect(useAuthStore.getState().status).toBe("unauthenticated");
+  });
+
+  it("preserves the refresh token and permits another bootstrap after a transient failure", async () => {
+    const originalSession = await import("./session");
+    originalSession.establishSession(initialTokens);
+    vi.resetModules();
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Authentication is temporarily unavailable.",
+            },
+          },
+          503,
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse(rotatedTokens));
+    const session = await import("./session");
+    const { useAuthStore } = await import("./store");
+
+    await expect(session.initializeSession()).rejects.toMatchObject({
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+    });
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
+    expect(useAuthStore.getState().status).toBe("unauthenticated");
+
+    await expect(session.initializeSession()).resolves.toBe("authenticated");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-y"]);
+    expect(useAuthStore.getState().status).toBe("authenticated");
+  });
+
+  it("allows bootstrap to retry after an authenticated request has a transient refresh failure", async () => {
+    const originalSession = await import("./session");
+    originalSession.establishSession(initialTokens);
+    vi.resetModules();
+
+    let refreshCall = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      if (!String(input).endsWith("/auth/refresh")) {
+        return Promise.resolve(expiredAccessTokenResponse());
+      }
+
+      refreshCall += 1;
+      if (refreshCall === 2) {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              error: {
+                code: "SERVICE_UNAVAILABLE",
+                message: "Authentication is temporarily unavailable.",
+              },
+            },
+            503,
+          ),
+        );
+      }
+
+      return Promise.resolve(jsonResponse(rotatedTokens));
+    });
+    const session = await import("./session");
+    const { apiRequest } = await import("../../services/api/client");
+    const { useAuthStore } = await import("./store");
+
+    await expect(session.initializeSession()).resolves.toBe("authenticated");
+    await expect(apiRequest("/protected")).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-y"]);
+    expect(useAuthStore.getState().status).toBe("unauthenticated");
+
+    await expect(session.initializeSession()).resolves.toBe("authenticated");
+    expect(refreshCall).toBe(3);
+    expect(useAuthStore.getState().status).toBe("authenticated");
   });
 
   it("does not replace a newer login completed during startup refresh", async () => {
@@ -216,6 +295,55 @@ describe("authentication session", () => {
     });
 
     expect(window.sessionStorage.length).toBe(0);
+    expect(useAuthStore.getState().status).toBe("unauthenticated");
+  });
+
+  it("preserves the refresh token when refresh is temporarily unavailable", async () => {
+    const session = await import("./session");
+    const { apiRequest } = await import("../../services/api/client");
+    const { useAuthStore } = await import("./store");
+    session.establishSession(initialTokens);
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/auth/refresh")
+          ? jsonResponse(
+              {
+                error: {
+                  code: "SERVICE_UNAVAILABLE",
+                  message: "Authentication is temporarily unavailable.",
+                },
+              },
+              503,
+            )
+          : expiredAccessTokenResponse(),
+      ),
+    );
+
+    await expect(apiRequest("/protected")).rejects.toMatchObject({
+      status: 503,
+      code: "SERVICE_UNAVAILABLE",
+    });
+
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
+    expect(useAuthStore.getState().status).toBe("unauthenticated");
+  });
+
+  it("preserves the refresh token when refresh fails at the network boundary", async () => {
+    const session = await import("./session");
+    const { apiRequest } = await import("../../services/api/client");
+    const { useAuthStore } = await import("./store");
+    session.establishSession(initialTokens);
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      String(input).endsWith("/auth/refresh")
+        ? Promise.reject(new TypeError("Network unavailable"))
+        : Promise.resolve(expiredAccessTokenResponse()),
+    );
+
+    await expect(apiRequest("/protected")).rejects.toThrow(
+      "Network unavailable",
+    );
+
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
     expect(useAuthStore.getState().status).toBe("unauthenticated");
   });
 

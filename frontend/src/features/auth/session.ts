@@ -1,4 +1,5 @@
 import { configureApiAuthentication } from "../../services/api/client";
+import { NexusApiError } from "../../services/api/error";
 import { refreshSession } from "./api";
 import { setAuthStatus } from "./store";
 import type { AuthStatus, SessionTokens } from "./types";
@@ -44,6 +45,17 @@ function getAccessToken(): string | null {
   return accessToken;
 }
 
+function suspendSession(): void {
+  accessToken = null;
+  sessionRevision += 1;
+  initializationInFlight = undefined;
+  setAuthStatus("unauthenticated");
+}
+
+function refreshFailureInvalidatesSession(error: unknown): boolean {
+  return error instanceof NexusApiError && error.status === 401;
+}
+
 export function establishSession(tokens: SessionTokens): void {
   try {
     writeRefreshToken(tokens.refreshToken);
@@ -62,6 +74,7 @@ export function establishSession(tokens: SessionTokens): void {
 export function clearSession(): void {
   accessToken = null;
   sessionRevision += 1;
+  initializationInFlight = undefined;
   removeRefreshToken();
   setAuthStatus("unauthenticated");
 }
@@ -75,7 +88,7 @@ async function refreshStoredSession(): Promise<string> {
   try {
     refreshToken = readRefreshToken();
   } catch (error) {
-    clearSession();
+    suspendSession();
     throw error;
   }
 
@@ -96,7 +109,11 @@ async function refreshStoredSession(): Promise<string> {
     })
     .catch((error: unknown) => {
       if (sessionRevision === refreshRevision) {
-        clearSession();
+        if (refreshFailureInvalidatesSession(error)) {
+          clearSession();
+        } else {
+          suspendSession();
+        }
       }
       throw error;
     })
@@ -126,7 +143,7 @@ export function initializeSession(): Promise<AuthStatus> {
   }
 
   setAuthStatus("initializing");
-  initializationInFlight = (async () => {
+  const initialization = (async () => {
     const initializationRevision = sessionRevision;
     try {
       if (!readRefreshToken()) {
@@ -136,15 +153,40 @@ export function initializeSession(): Promise<AuthStatus> {
 
       await refreshStoredSession();
       return "authenticated";
-    } catch {
-      if (sessionRevision === initializationRevision) {
-        clearSession();
+    } catch (error: unknown) {
+      if (accessToken) {
+        return "authenticated";
       }
-      return accessToken ? "authenticated" : "unauthenticated";
+
+      if (refreshFailureInvalidatesSession(error)) {
+        return "unauthenticated";
+      }
+
+      try {
+        if (!readRefreshToken()) {
+          return "unauthenticated";
+        }
+      } catch {
+        // Storage failures are retryable and must not destroy stored credentials.
+      }
+
+      if (sessionRevision === initializationRevision) {
+        suspendSession();
+      }
+
+      throw error;
     }
   })();
 
-  return initializationInFlight;
+  const trackedInitialization = initialization.catch((error: unknown) => {
+    if (initializationInFlight === trackedInitialization) {
+      initializationInFlight = undefined;
+    }
+    throw error;
+  });
+
+  initializationInFlight = trackedInitialization;
+  return trackedInitialization;
 }
 
 configureApiAuthentication({

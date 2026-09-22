@@ -53,9 +53,9 @@ async function sendRequest(
     requestHeaders.set("Content-Type", "application/json");
   }
 
-  requestHeaders.delete("Authorization");
+  const hasExplicitAuthorization = requestHeaders.has("Authorization");
   const accessToken =
-    authentication === "required"
+    authentication === "required" && !hasExplicitAuthorization
       ? (authenticationBridge?.getAccessToken() ?? null)
       : null;
   if (accessToken) {
