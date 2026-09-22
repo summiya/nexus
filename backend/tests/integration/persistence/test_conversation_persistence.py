@@ -15,6 +15,7 @@ from nexus.conversations.domain import (
     Conversation,
     ConversationMessageRole,
     Generation,
+    GenerationFinishReason,
     GenerationStatus,
     Message,
 )
@@ -120,13 +121,14 @@ def _message(
     content: str,
     *,
     role: ConversationMessageRole = ConversationMessageRole.USER,
+    created_at: datetime = TIMESTAMP,
 ) -> Message:
     return Message(
         public_id=uuid4(),
         conversation_public_id=conversation_public_id,
         role=role,
         content=content,
-        created_at=TIMESTAMP,
+        created_at=created_at,
     )
 
 
@@ -164,6 +166,19 @@ def _list_conversations(
     )
 
 
+def _list_messages(
+    persistence: SqlAlchemyConversationPersistence,
+    organization_public_id: UUID,
+    conversation_public_id: UUID,
+) -> tuple[Message, ...]:
+    return asyncio.run(
+        persistence.list_messages(
+            organization_public_id=organization_public_id,
+            conversation_public_id=conversation_public_id,
+        )
+    )
+
+
 def _prepare_generation(
     persistence: SqlAlchemyConversationPersistence,
     organization_public_id: UUID,
@@ -182,6 +197,56 @@ def _prepare_generation(
             history_limit=history_limit,
         )
     )
+
+
+def _persist_turn(
+    persistence: SqlAlchemyConversationPersistence,
+    organization_public_id: UUID,
+    conversation: Conversation,
+    *,
+    user_content: str,
+    assistant_content: str,
+    user_created_at: datetime = TIMESTAMP,
+    assistant_created_at: datetime = TIMESTAMP,
+) -> tuple[Message, Message]:
+    user_message = _message(
+        conversation.public_id,
+        user_content,
+        created_at=user_created_at,
+    )
+    generation = replace(
+        _generation(conversation.public_id, user_message.public_id),
+        started_at=user_created_at,
+    )
+    _prepare_generation(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_message,
+        generation,
+    )
+    assistant_message = _message(
+        conversation.public_id,
+        assistant_content,
+        role=ConversationMessageRole.ASSISTANT,
+        created_at=assistant_created_at,
+    )
+    completed = replace(
+        generation,
+        assistant_message_public_id=assistant_message.public_id,
+        status=GenerationStatus.COMPLETED,
+        finish_reason=GenerationFinishReason.STOP,
+        completed_at=assistant_created_at,
+    )
+    transitioned = asyncio.run(
+        persistence.complete_generation(
+            organization_public_id=organization_public_id,
+            assistant_message=assistant_message,
+            generation=completed,
+        )
+    )
+    assert transitioned is True
+    return user_message, assistant_message
 
 
 def test_persistence_preserves_conversation_scopes_and_tenant_identity(
@@ -365,6 +430,214 @@ def test_list_conversations_returns_empty_tuple(migrated_engine: Engine) -> None
     )
 
     assert listed == ()
+
+
+def test_list_messages_returns_user_and_assistant_messages(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    expected = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Question",
+        assistant_content="Answer",
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert listed == expected
+    assert [message.role for message in listed] == [
+        ConversationMessageRole.USER,
+        ConversationMessageRole.ASSISTANT,
+    ]
+
+
+def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    first_user, first_assistant = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="First question",
+        assistant_content="First answer",
+        user_created_at=TIMESTAMP,
+        assistant_created_at=TIMESTAMP + timedelta(seconds=1),
+    )
+    second_user, second_assistant = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Second question",
+        assistant_content="Second answer",
+        user_created_at=TIMESTAMP + timedelta(seconds=2),
+        assistant_created_at=TIMESTAMP + timedelta(seconds=3),
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert listed == (first_user, first_assistant, second_user, second_assistant)
+
+
+def test_list_messages_orders_equal_timestamps_by_internal_id(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    first_turn = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="First question",
+        assistant_content="First answer",
+    )
+    second_turn = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Second question",
+        assistant_content="Second answer",
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert listed == (*first_turn, *second_turn)
+
+
+def test_list_messages_returns_empty_tuple_for_existing_empty_conversation(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert listed == ()
+
+
+def test_list_messages_excludes_messages_from_another_conversation(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    requested = _conversation(organization_public_id, user_public_id)
+    other = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, requested)
+    _create_conversation(persistence, other)
+    requested_messages = _persist_turn(
+        persistence,
+        organization_public_id,
+        requested,
+        user_content="Requested question",
+        assistant_content="Requested answer",
+    )
+    _persist_turn(
+        persistence,
+        organization_public_id,
+        other,
+        user_content="Other question",
+        assistant_content="Other answer",
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        requested.public_id,
+    )
+
+    assert listed == requested_messages
+
+
+def test_list_messages_does_not_expose_another_organization(
+    migrated_engine: Engine,
+) -> None:
+    organization_a, _user_a = _seed_identity(migrated_engine)
+    organization_b, user_b = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_b, user_b)
+    _create_conversation(persistence, conversation)
+    _persist_turn(
+        persistence,
+        organization_b,
+        conversation,
+        user_content="Private question",
+        assistant_content="Private answer",
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_a,
+        conversation.public_id,
+    )
+
+    assert listed == ()
+
+
+def test_list_messages_returns_empty_tuple_for_unknown_conversation(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, _user_public_id = _seed_identity(migrated_engine)
+
+    listed = _list_messages(
+        _persistence(migrated_engine),
+        organization_public_id,
+        uuid4(),
+    )
+
+    assert listed == ()
+
+
+def test_list_messages_returns_domain_records_without_internal_ids(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Question",
+        assistant_content="Answer",
+    )
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert all(isinstance(message, Message) for message in listed)
+    assert all(not hasattr(message, "id") for message in listed)
+    assert all(not hasattr(message, "organization_id") for message in listed)
+    assert all(not hasattr(message, "conversation_id") for message in listed)
 
 
 def test_persistence_rejects_creator_from_another_tenant(

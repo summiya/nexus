@@ -165,6 +165,32 @@ def insert_message(
     session.flush()
 
 
+def list_messages(
+    session: Session,
+    *,
+    organization_public_id: UUID,
+    conversation_public_id: UUID,
+) -> list[Message]:
+    reference = _conversation_reference(
+        session,
+        organization_public_id=organization_public_id,
+        conversation_public_id=conversation_public_id,
+    )
+    if reference is None:
+        return []
+
+    organization_id, conversation_id = reference
+    models = session.scalars(
+        select(MessageModel)
+        .where(
+            MessageModel.organization_id == organization_id,
+            MessageModel.conversation_id == conversation_id,
+        )
+        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+    ).all()
+    return [_to_message(model, conversation_public_id) for model in models]
+
+
 def list_recent_messages(
     session: Session,
     *,
