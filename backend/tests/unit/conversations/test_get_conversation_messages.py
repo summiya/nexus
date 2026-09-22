@@ -11,6 +11,7 @@ from nexus.conversations.application.get_conversation_messages import (
 )
 from nexus.conversations.domain import (
     Conversation,
+    ConversationMessageHistoryItem,
     ConversationMessageRole,
     Message,
 )
@@ -27,10 +28,10 @@ class StubPersistence:
     def __init__(
         self,
         conversation: Conversation | None,
-        messages: tuple[Message, ...] = (),
+        history: tuple[ConversationMessageHistoryItem, ...] = (),
     ) -> None:
         self.conversation = conversation
-        self.messages = messages
+        self.history = history
         self.calls: list[tuple[str, UUID, UUID]] = []
         self.get_error: Exception | None = None
         self.list_error: Exception | None = None
@@ -55,13 +56,13 @@ class StubPersistence:
         *,
         organization_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]:
+    ) -> tuple[ConversationMessageHistoryItem, ...]:
         self.calls.append(
             ("list_messages", organization_public_id, conversation_public_id)
         )
         if self.list_error is not None:
             raise self.list_error
-        return self.messages
+        return self.history
 
 
 def _conversation(
@@ -92,12 +93,16 @@ def _message(*, content: str, created_at: datetime = TIMESTAMP) -> Message:
     )
 
 
+def _history_item(message: Message) -> ConversationMessageHistoryItem:
+    return ConversationMessageHistoryItem(message=message, generation=None)
+
+
 def _execute(
     persistence: StubPersistence,
     *,
     organization_public_id: UUID = ORGANIZATION_ID,
     user_public_id: UUID = USER_ID,
-) -> tuple[Message, ...]:
+) -> tuple[ConversationMessageHistoryItem, ...]:
     return asyncio.run(
         GetConversationMessages(  # type: ignore[arg-type]
             persistence=persistence
@@ -111,11 +116,12 @@ def _execute(
 
 def test_execute_returns_messages_for_owned_standalone_conversation() -> None:
     message = _message(content="Hello")
-    persistence = StubPersistence(_conversation(), (message,))
+    item = _history_item(message)
+    persistence = StubPersistence(_conversation(), (item,))
 
     result = _execute(persistence)
 
-    assert result == (message,)
+    assert result == (item,)
 
 
 def test_execute_preserves_persistence_ordering() -> None:
@@ -124,11 +130,13 @@ def test_execute_preserves_persistence_ordering() -> None:
         content="Second",
         created_at=TIMESTAMP + timedelta(minutes=1),
     )
-    persistence = StubPersistence(_conversation(), (oldest, newest))
+    oldest_item = _history_item(oldest)
+    newest_item = _history_item(newest)
+    persistence = StubPersistence(_conversation(), (oldest_item, newest_item))
 
     result = _execute(persistence)
 
-    assert result == (oldest, newest)
+    assert result == (oldest_item, newest_item)
 
 
 def test_execute_returns_safe_not_found_for_unknown_conversation() -> None:
@@ -187,7 +195,7 @@ def test_execute_forbids_workspace_and_project_conversations(
 def test_execute_never_lists_messages_after_authorization_failure() -> None:
     persistence = StubPersistence(
         _conversation(created_by_user_public_id=uuid4()),
-        (_message(content="Private"),),
+        (_history_item(_message(content="Private")),),
     )
 
     with pytest.raises(NexusError):

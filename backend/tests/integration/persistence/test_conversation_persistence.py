@@ -8,11 +8,13 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, event, func, select
 from sqlalchemy.orm import Session
 
 from nexus.conversations.domain import (
     Conversation,
+    ConversationGenerationMetadata,
+    ConversationMessageHistoryItem,
     ConversationMessageRole,
     Generation,
     GenerationFinishReason,
@@ -24,6 +26,7 @@ from nexus.conversations.ports.persistence import (
     ConversationPersistenceError,
     ConversationReferenceError,
 )
+from nexus.infrastructure.persistence import _conversation_queries as queries
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
@@ -170,7 +173,7 @@ def _list_messages(
     persistence: SqlAlchemyConversationPersistence,
     organization_public_id: UUID,
     conversation_public_id: UUID,
-) -> tuple[Message, ...]:
+) -> tuple[ConversationMessageHistoryItem, ...]:
     return asyncio.run(
         persistence.list_messages(
             organization_public_id=organization_public_id,
@@ -208,7 +211,12 @@ def _persist_turn(
     assistant_content: str,
     user_created_at: datetime = TIMESTAMP,
     assistant_created_at: datetime = TIMESTAMP,
-) -> tuple[Message, Message]:
+    model: str = "gpt-test",
+    finish_reason: GenerationFinishReason = GenerationFinishReason.STOP,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    total_tokens: int = 0,
+) -> tuple[Message, Message, Generation]:
     user_message = _message(
         conversation.public_id,
         user_content,
@@ -216,6 +224,7 @@ def _persist_turn(
     )
     generation = replace(
         _generation(conversation.public_id, user_message.public_id),
+        model=model,
         started_at=user_created_at,
     )
     _prepare_generation(
@@ -235,7 +244,10 @@ def _persist_turn(
         generation,
         assistant_message_public_id=assistant_message.public_id,
         status=GenerationStatus.COMPLETED,
-        finish_reason=GenerationFinishReason.STOP,
+        finish_reason=finish_reason,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
         completed_at=assistant_created_at,
     )
     transitioned = asyncio.run(
@@ -246,7 +258,7 @@ def _persist_turn(
         )
     )
     assert transitioned is True
-    return user_message, assistant_message
+    return user_message, assistant_message, completed
 
 
 def test_persistence_preserves_conversation_scopes_and_tenant_identity(
@@ -432,19 +444,26 @@ def test_list_conversations_returns_empty_tuple(migrated_engine: Engine) -> None
     assert listed == ()
 
 
-def test_list_messages_returns_user_and_assistant_messages(
+def test_list_messages_returns_completed_assistant_generation_metadata(
     migrated_engine: Engine,
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
     persistence = _persistence(migrated_engine)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
-    expected = _persist_turn(
+    user_message, assistant_message, generation = _persist_turn(
         persistence,
         organization_public_id,
         conversation,
         user_content="Question",
         assistant_content="Answer",
+        user_created_at=TIMESTAMP,
+        assistant_created_at=TIMESTAMP + timedelta(seconds=1),
+        model="gpt-metadata",
+        finish_reason=GenerationFinishReason.LENGTH,
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
     )
 
     listed = _list_messages(
@@ -453,11 +472,67 @@ def test_list_messages_returns_user_and_assistant_messages(
         conversation.public_id,
     )
 
-    assert listed == expected
-    assert [message.role for message in listed] == [
-        ConversationMessageRole.USER,
-        ConversationMessageRole.ASSISTANT,
-    ]
+    assert tuple(item.message for item in listed) == (
+        user_message,
+        assistant_message,
+    )
+    assert listed[0].generation is None
+    assert listed[1].generation == ConversationGenerationMetadata(
+        public_id=generation.public_id,
+        model="gpt-metadata",
+        status=GenerationStatus.COMPLETED,
+        finish_reason=GenerationFinishReason.LENGTH,
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        started_at=TIMESTAMP,
+        completed_at=TIMESTAMP + timedelta(seconds=1),
+        error_kind=None,
+    )
+
+
+def test_list_messages_returns_none_for_unassociated_system_and_assistant_messages(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    system_message = _message(
+        conversation.public_id,
+        "System instruction",
+        role=ConversationMessageRole.SYSTEM,
+    )
+    assistant_message = _message(
+        conversation.public_id,
+        "Historical answer",
+        role=ConversationMessageRole.ASSISTANT,
+        created_at=TIMESTAMP + timedelta(seconds=1),
+    )
+    with Session(migrated_engine) as session:
+        queries.insert_message(
+            session,
+            organization_public_id=organization_public_id,
+            message=system_message,
+        )
+        queries.insert_message(
+            session,
+            organization_public_id=organization_public_id,
+            message=assistant_message,
+        )
+        session.commit()
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert tuple(item.message for item in listed) == (
+        system_message,
+        assistant_message,
+    )
+    assert all(item.generation is None for item in listed)
 
 
 def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
@@ -465,7 +540,7 @@ def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
     persistence = _persistence(migrated_engine)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
-    first_user, first_assistant = _persist_turn(
+    first_user, first_assistant, _first_generation = _persist_turn(
         persistence,
         organization_public_id,
         conversation,
@@ -474,7 +549,7 @@ def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
         user_created_at=TIMESTAMP,
         assistant_created_at=TIMESTAMP + timedelta(seconds=1),
     )
-    second_user, second_assistant = _persist_turn(
+    second_user, second_assistant, _second_generation = _persist_turn(
         persistence,
         organization_public_id,
         conversation,
@@ -490,7 +565,12 @@ def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
         conversation.public_id,
     )
 
-    assert listed == (first_user, first_assistant, second_user, second_assistant)
+    assert tuple(item.message for item in listed) == (
+        first_user,
+        first_assistant,
+        second_user,
+        second_assistant,
+    )
 
 
 def test_list_messages_orders_equal_timestamps_by_internal_id(
@@ -521,7 +601,12 @@ def test_list_messages_orders_equal_timestamps_by_internal_id(
         conversation.public_id,
     )
 
-    assert listed == (*first_turn, *second_turn)
+    assert tuple(item.message for item in listed) == (
+        first_turn[0],
+        first_turn[1],
+        second_turn[0],
+        second_turn[1],
+    )
 
 
 def test_list_messages_returns_empty_tuple_for_existing_empty_conversation(
@@ -550,14 +635,14 @@ def test_list_messages_excludes_messages_from_another_conversation(
     other = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, requested)
     _create_conversation(persistence, other)
-    requested_messages = _persist_turn(
+    requested_turn = _persist_turn(
         persistence,
         organization_public_id,
         requested,
         user_content="Requested question",
         assistant_content="Requested answer",
     )
-    _persist_turn(
+    other_turn = _persist_turn(
         persistence,
         organization_public_id,
         other,
@@ -571,7 +656,10 @@ def test_list_messages_excludes_messages_from_another_conversation(
         requested.public_id,
     )
 
-    assert listed == requested_messages
+    assert tuple(item.message for item in listed) == requested_turn[:2]
+    assert listed[1].generation is not None
+    assert listed[1].generation.public_id == requested_turn[2].public_id
+    assert listed[1].generation.public_id != other_turn[2].public_id
 
 
 def test_list_messages_does_not_expose_another_organization(
@@ -634,10 +722,55 @@ def test_list_messages_returns_domain_records_without_internal_ids(
         conversation.public_id,
     )
 
-    assert all(isinstance(message, Message) for message in listed)
-    assert all(not hasattr(message, "id") for message in listed)
-    assert all(not hasattr(message, "organization_id") for message in listed)
-    assert all(not hasattr(message, "conversation_id") for message in listed)
+    assert all(isinstance(item, ConversationMessageHistoryItem) for item in listed)
+    assert all(isinstance(item.message, Message) for item in listed)
+    assert all(not hasattr(item.message, "id") for item in listed)
+    assert all(not hasattr(item.message, "organization_id") for item in listed)
+    assert all(not hasattr(item.message, "conversation_id") for item in listed)
+    assert all(
+        item.generation is None or not hasattr(item.generation, "id") for item in listed
+    )
+
+
+def test_list_messages_uses_fixed_query_count_for_multiple_turns(
+    migrated_engine: Engine,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(migrated_engine)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="First question",
+        assistant_content="First answer",
+    )
+    _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Second question",
+        assistant_content="Second answer",
+    )
+    query_count = 0
+
+    def count_query(*_args: object) -> None:
+        nonlocal query_count
+        query_count += 1
+
+    event.listen(migrated_engine, "before_cursor_execute", count_query)
+    try:
+        listed = _list_messages(
+            persistence,
+            organization_public_id,
+            conversation.public_id,
+        )
+    finally:
+        event.remove(migrated_engine, "before_cursor_execute", count_query)
+
+    assert len(listed) == 4
+    assert query_count == 2
 
 
 def test_persistence_rejects_creator_from_another_tenant(

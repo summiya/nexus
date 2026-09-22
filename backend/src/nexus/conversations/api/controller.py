@@ -19,6 +19,7 @@ from nexus.conversations.api.dependencies import (
     StreamConversationMessageDep,
 )
 from nexus.conversations.api.schemas import (
+    ConversationGenerationResponseBody,
     ConversationListItemResponseBody,
     ConversationMessageResponseBody,
     ConversationResponseBody,
@@ -38,6 +39,7 @@ from nexus.conversations.application.events import (
 from nexus.conversations.application.stream_message import (
     StreamConversationMessageRequest,
 )
+from nexus.conversations.domain import ConversationMessageHistoryItem
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -100,15 +102,35 @@ async def get_conversation_messages(
         conversation_public_id=conversation_public_id,
     )
     return GetConversationMessagesResponseBody(
-        items=[
-            ConversationMessageResponseBody(
-                public_id=message.public_id,
-                role=message.role,
-                content=message.content,
-                created_at=message.created_at,
+        items=[_to_message_response(item) for item in messages]
+    )
+
+
+def _to_message_response(
+    item: ConversationMessageHistoryItem,
+) -> ConversationMessageResponseBody:
+    generation = item.generation
+    return ConversationMessageResponseBody(
+        public_id=item.message.public_id,
+        role=item.message.role,
+        content=item.message.content,
+        created_at=item.message.created_at,
+        generation=(
+            ConversationGenerationResponseBody(
+                public_id=generation.public_id,
+                model=generation.model,
+                status=generation.status,
+                finish_reason=generation.finish_reason,
+                input_tokens=generation.input_tokens,
+                output_tokens=generation.output_tokens,
+                total_tokens=generation.total_tokens,
+                started_at=generation.started_at,
+                completed_at=generation.completed_at,
+                error_kind=generation.error_kind,
             )
-            for message in messages
-        ]
+            if generation is not None
+            else None
+        ),
     )
 
 

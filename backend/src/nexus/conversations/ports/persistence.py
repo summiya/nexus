@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from nexus.conversations.domain import Conversation, Generation, Message
+from nexus.conversations.domain import (
+    Conversation,
+    ConversationMessageHistoryItem,
+    Generation,
+    Message,
+)
 
 
 class ConversationPersistenceError(Exception):
@@ -57,7 +62,7 @@ class ConversationPersistence(Protocol):
         *,
         organization_public_id: UUID,
         conversation_public_id: UUID,
-    ) -> tuple[Message, ...]: ...
+    ) -> tuple[ConversationMessageHistoryItem, ...]: ...
 
     async def prepare_generation(
         self,

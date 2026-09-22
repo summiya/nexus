@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 
 from nexus.conversations.domain import (
     Conversation,
+    ConversationGenerationMetadata,
+    ConversationMessageHistoryItem,
     ConversationMessageRole,
     Generation,
+    GenerationFinishReason,
     GenerationStatus,
     Message,
 )
@@ -170,7 +173,7 @@ def list_messages(
     *,
     organization_public_id: UUID,
     conversation_public_id: UUID,
-) -> list[Message]:
+) -> list[ConversationMessageHistoryItem]:
     reference = _conversation_reference(
         session,
         organization_public_id=organization_public_id,
@@ -180,15 +183,32 @@ def list_messages(
         return []
 
     organization_id, conversation_id = reference
-    models = session.scalars(
-        select(MessageModel)
+    rows = session.execute(
+        select(MessageModel, GenerationModel)
+        .outerjoin(
+            GenerationModel,
+            (GenerationModel.organization_id == MessageModel.organization_id)
+            & (GenerationModel.conversation_id == MessageModel.conversation_id)
+            & (GenerationModel.assistant_message_id == MessageModel.id),
+        )
         .where(
             MessageModel.organization_id == organization_id,
             MessageModel.conversation_id == conversation_id,
         )
         .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
     ).all()
-    return [_to_message(model, conversation_public_id) for model in models]
+    return [
+        ConversationMessageHistoryItem(
+            message=_to_message(message_model, conversation_public_id),
+            generation=(
+                _to_generation_metadata(generation_model)
+                if message_model.role == ConversationMessageRole.ASSISTANT.value
+                and generation_model is not None
+                else None
+            ),
+        )
+        for message_model, generation_model in rows
+    ]
 
 
 def list_recent_messages(
@@ -437,4 +457,25 @@ def _to_message(model: MessageModel, conversation_public_id: UUID) -> Message:
         role=ConversationMessageRole(model.role),
         content=model.content,
         created_at=model.created_at,
+    )
+
+
+def _to_generation_metadata(
+    model: GenerationModel,
+) -> ConversationGenerationMetadata:
+    return ConversationGenerationMetadata(
+        public_id=model.public_id,
+        model=model.model,
+        status=GenerationStatus(model.status),
+        finish_reason=(
+            GenerationFinishReason(model.finish_reason)
+            if model.finish_reason is not None
+            else None
+        ),
+        input_tokens=model.input_tokens,
+        output_tokens=model.output_tokens,
+        total_tokens=model.total_tokens,
+        started_at=model.started_at,
+        completed_at=model.completed_at,
+        error_kind=model.error_kind,
     )

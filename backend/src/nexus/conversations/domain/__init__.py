@@ -6,10 +6,16 @@ from nexus.conversations.domain.generation import (
     GenerationFinishReason,
     GenerationStatus,
 )
+from nexus.conversations.domain.history import (
+    ConversationGenerationMetadata,
+    ConversationMessageHistoryItem,
+)
 from nexus.conversations.domain.message import ConversationMessageRole, Message
 
 __all__ = [
     "Conversation",
+    "ConversationGenerationMetadata",
+    "ConversationMessageHistoryItem",
     "ConversationMessageRole",
     "Generation",
     "GenerationFinishReason",
