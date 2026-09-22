@@ -8,12 +8,14 @@ from nexus.authentication.api.dependencies import LoginServiceDep, SignupService
 from nexus.authentication.api.schemas import (
     LoginRequestBody,
     LoginResponseBody,
+    LoginVerificationRequestBody,
+    LoginVerificationResponseBody,
     SignupRequestBody,
     SignupResponseBody,
     SignupVerificationRequestBody,
     SignupVerificationResponseBody,
 )
-from nexus.authentication.login_service import LoginOtpRequest
+from nexus.authentication.login_service import LoginOtpRequest, LoginVerificationRequest
 from nexus.authentication.signup_service import (
     SignupOtpRequest,
     SignupVerificationRequest,
@@ -29,6 +31,26 @@ def request_login_otp(
 ) -> LoginResponseBody:
     service.request_login_otp(request=LoginOtpRequest(email=body.email))
     return LoginResponseBody(status="accepted")
+
+
+@router.post("/login/verify", response_model=LoginVerificationResponseBody)
+def verify_login(
+    body: LoginVerificationRequestBody,
+    service: LoginServiceDep,
+) -> LoginVerificationResponseBody:
+    result = service.verify_login_otp(
+        request=LoginVerificationRequest(
+            email=body.email,
+            otp=body.otp,
+        )
+    )
+    return LoginVerificationResponseBody(
+        status="completed",
+        access_token=result.access_token,
+        refresh_token=result.refresh_token,
+        token_type=result.token_type,
+        expires_in=result.expires_in,
+    )
 
 
 @router.post("/signup", response_model=SignupResponseBody, status_code=202)

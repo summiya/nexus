@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from alembic import command
@@ -22,6 +23,7 @@ from nexus.authentication.login_service import (
     LoginService,
 )
 from nexus.authentication.otp import digest_otp
+from nexus.authentication.session_service import SessionService
 from nexus.config.settings import load_settings
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
@@ -128,6 +130,7 @@ def build_service(
         ),
         transaction=SqlAlchemyTransactionManager(session),
         repository=SqlAlchemyAuthenticationRepository(session),
+        session_service=Mock(spec=SessionService),
         email_gateway=email_gateway,
         rate_limiter=AllowingRateLimiter(),
         clock=lambda: datetime(2026, 9, 22, 12, 0, tzinfo=UTC),

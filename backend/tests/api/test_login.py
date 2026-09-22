@@ -19,8 +19,10 @@ from nexus.authentication.login_service import (
     LoginOtpRequest,
     LoginPolicy,
     LoginService,
+    LoginVerificationRequest,
 )
 from nexus.authentication.repository import AuthenticationRepository
+from nexus.authentication.session_service import SessionService, SessionTokenResult
 from nexus.errors import ErrorCode, NexusError
 from nexus.ports.transaction import TransactionManager
 
@@ -29,11 +31,27 @@ class FakeLoginService:
     def __init__(self, *, error: NexusError | None = None) -> None:
         self.error = error
         self.requests: list[LoginOtpRequest] = []
+        self.verification_requests: list[LoginVerificationRequest] = []
 
     def request_login_otp(self, *, request: LoginOtpRequest) -> None:
         self.requests.append(request)
         if self.error is not None:
             raise self.error
+
+    def verify_login_otp(
+        self,
+        *,
+        request: LoginVerificationRequest,
+    ) -> SessionTokenResult:
+        self.verification_requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return SessionTokenResult(
+            access_token="access-token",
+            refresh_token="refresh-token",
+            token_type="bearer",
+            expires_in=900,
+        )
 
 
 @contextmanager
@@ -84,6 +102,59 @@ def test_login_endpoint_rejects_client_supplied_purpose(
     assert service.requests == []
 
 
+def test_login_verify_endpoint_returns_only_session_token_fields(
+    app: FastAPI,
+    client: TestClient,
+) -> None:
+    service = FakeLoginService()
+
+    with override_login_service(app, service):
+        response = client.post(
+            "/api/v1/auth/login/verify",
+            json={"email": "user@example.com", "otp": "123456"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "completed",
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+        "token_type": "bearer",
+        "expires_in": 900,
+    }
+    assert service.verification_requests == [
+        LoginVerificationRequest(email="user@example.com", otp="123456")
+    ]
+
+
+def test_login_verify_endpoint_returns_generic_unauthorized_error(
+    app: FastAPI,
+    client: TestClient,
+) -> None:
+    service = FakeLoginService(
+        error=NexusError(
+            ErrorCode.UNAUTHORIZED,
+            "Authentication credentials are invalid.",
+        )
+    )
+
+    with override_login_service(app, service):
+        response = client.post(
+            "/api/v1/auth/login/verify",
+            json={"email": "unknown@example.com", "otp": "not-otp"},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == {
+        "code": ErrorCode.UNAUTHORIZED,
+        "message": "Authentication credentials are invalid.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+    assert service.verification_requests == [
+        LoginVerificationRequest(email="unknown@example.com", otp="not-otp")
+    ]
+
+
 def test_login_endpoint_returns_accepted_when_email_delivery_fails(
     app: FastAPI,
     client: TestClient,
@@ -106,6 +177,7 @@ def test_login_endpoint_returns_accepted_when_email_delivery_fails(
         ),
         transaction=transaction,
         repository=repository,
+        session_service=Mock(spec=SessionService),
         email_gateway=email_gateway,
         rate_limiter=rate_limiter,
         clock=lambda: datetime(2026, 9, 22, tzinfo=UTC),

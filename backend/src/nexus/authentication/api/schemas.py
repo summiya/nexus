@@ -15,6 +15,21 @@ class LoginResponseBody(BaseModel):
     status: str
 
 
+class LoginVerificationRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320)
+    otp: str
+
+
+class LoginVerificationResponseBody(BaseModel):
+    status: str
+    access_token: str
+    refresh_token: str
+    token_type: str
+    expires_in: int
+
+
 class SignupRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
