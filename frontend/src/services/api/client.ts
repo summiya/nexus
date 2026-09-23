@@ -11,7 +11,7 @@ interface ApiAuthenticationBridge {
   refreshAccessToken(expiredAccessToken: string): Promise<void>;
 }
 
-interface ApiResponse {
+interface RequestResult {
   response: Response;
   accessToken: string | null;
 }
@@ -38,7 +38,7 @@ function requestBody(body: ApiRequestOptions["body"]): BodyInit | null {
 async function sendRequest(
   path: string,
   options: ApiRequestOptions,
-): Promise<ApiResponse> {
+): Promise<RequestResult> {
   const {
     authentication = "required",
     body,
@@ -79,13 +79,13 @@ async function readSuccessfulResponse<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function apiRequest<T>(
+export async function apiResponse(
   path: string,
   options: ApiRequestOptions = {},
-): Promise<T> {
+): Promise<Response> {
   const initial = await sendRequest(path, options);
   if (initial.response.ok) {
-    return readSuccessfulResponse<T>(initial.response);
+    return initial.response;
   }
 
   const initialError = await toNexusApiError(initial.response);
@@ -102,10 +102,18 @@ export async function apiRequest<T>(
       throw await toNexusApiError(retry.response);
     }
 
-    return readSuccessfulResponse<T>(retry.response);
+    return retry.response;
   }
 
   throw initialError;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const response = await apiResponse(path, options);
+  return readSuccessfulResponse<T>(response);
 }
 
 export function getHealth() {
