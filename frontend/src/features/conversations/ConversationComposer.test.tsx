@@ -2,20 +2,20 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ConversationComposer } from "./ConversationComposer";
-import type {
-  SubmissionFeedback,
-  SubmissionPhase,
-  SubmissionResult,
-} from "./useConversationSubmission";
+import {
+  ConversationComposer,
+  type ConversationComposerFeedback,
+  type ConversationComposerPhase,
+} from "./ConversationComposer";
+import type { SubmissionResult } from "./useConversationSubmission";
 
 function renderComposer({
   feedback = null,
   phase = "idle",
   result = "accepted",
 }: {
-  feedback?: SubmissionFeedback | null;
-  phase?: SubmissionPhase;
+  feedback?: ConversationComposerFeedback | null;
+  phase?: ConversationComposerPhase;
   result?: SubmissionResult;
 } = {}) {
   const onSubmit = vi.fn().mockResolvedValue(result);
@@ -93,7 +93,11 @@ describe("ConversationComposer", () => {
     expect(textarea).toHaveValue(" composing ");
   });
 
-  it.each(["submitting", "generating"] satisfies SubmissionPhase[])(
+  it.each([
+    "creating",
+    "submitting",
+    "generating",
+  ] satisfies ConversationComposerPhase[])(
     "disables duplicate submission while %s",
     (phase) => {
       const { onSubmit } = renderComposer({ phase });
@@ -121,6 +125,10 @@ describe("ConversationComposer", () => {
 
   it.each([
     [
+      "conversation_creation_failed",
+      "We couldn't confirm the conversation was created. Check your conversations before trying again.",
+    ],
+    [
       "delivery_uncertain",
       "We couldn't confirm whether the message was sent. Check the conversation before trying again.",
     ],
@@ -133,7 +141,7 @@ describe("ConversationComposer", () => {
       "submission_rejected",
       "The message was not sent. Please review it and try again.",
     ],
-  ] satisfies Array<[SubmissionFeedback["kind"], string]>)(
+  ] satisfies Array<[ConversationComposerFeedback["kind"], string]>)(
     "maps %s to fixed safe feedback",
     (kind, message) => {
       renderComposer({ feedback: { kind } });

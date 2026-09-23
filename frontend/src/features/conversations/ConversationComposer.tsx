@@ -6,13 +6,20 @@ import type {
   SubmissionResult,
 } from "./useConversationSubmission";
 
+export type ConversationComposerPhase = SubmissionPhase | "creating";
+
+export type ConversationComposerFeedback =
+  SubmissionFeedback | { kind: "conversation_creation_failed" };
+
 interface ConversationComposerProps {
-  feedback: SubmissionFeedback | null;
-  phase: SubmissionPhase;
+  feedback: ConversationComposerFeedback | null;
+  phase: ConversationComposerPhase;
   onSubmit: (content: string) => Promise<SubmissionResult>;
 }
 
-const feedbackMessages: Record<SubmissionFeedback["kind"], string> = {
+const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
+  conversation_creation_failed:
+    "We couldn't confirm the conversation was created. Check your conversations before trying again.",
   delivery_uncertain:
     "We couldn't confirm whether the message was sent. Check the conversation before trying again.",
   generation_failure: "The response could not be completed.",
@@ -75,16 +82,22 @@ export function ConversationComposer({
           disabled={active || normalizedDraft.length === 0}
           type="submit"
         >
-          {phase === "submitting"
-            ? "Sending…"
-            : phase === "generating"
-              ? "Generating…"
-              : "Send"}
+          {phase === "creating"
+            ? "Creating…"
+            : phase === "submitting"
+              ? "Sending…"
+              : phase === "generating"
+                ? "Generating…"
+                : "Send"}
         </button>
       </div>
       {active ? (
         <p className="conversation-submission-status" role="status">
-          {phase === "submitting" ? "Sending message…" : "Generating…"}
+          {phase === "creating"
+            ? "Creating conversation…"
+            : phase === "submitting"
+              ? "Sending message…"
+              : "Generating…"}
         </p>
       ) : null}
       {feedback ? (
