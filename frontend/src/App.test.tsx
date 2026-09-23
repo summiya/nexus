@@ -37,6 +37,21 @@ function conversationListResponse(): Response {
   });
 }
 
+function unavailableConversationResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: "NOT_FOUND",
+        message: "private resource detail",
+      },
+    }),
+    {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
 describe("App", () => {
   beforeEach(() => {
     authMocks.initializeSession.mockReset();
@@ -100,15 +115,25 @@ describe("App", () => {
     ).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps a stale Conversation route selected without fetching messages", async () => {
+  it("lets the history API determine whether a stale Conversation is available", async () => {
     window.history.replaceState({}, "", `/conversations/${conversationId}`);
-    vi.mocked(globalThis.fetch).mockResolvedValue(conversationListResponse());
+    vi.mocked(globalThis.fetch).mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return Promise.resolve(
+        url.endsWith(`/conversations/${conversationId}/messages`)
+          ? unavailableConversationResponse()
+          : conversationListResponse(),
+      );
+    });
 
     render(<App />);
 
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Conversation unavailable.",
+    );
     expect(
-      await screen.findByRole("heading", { name: "Conversation selected" }),
-    ).toBeInTheDocument();
+      screen.queryByText("private resource detail"),
+    ).not.toBeInTheDocument();
     expect(
       await screen.findByText("No conversations yet."),
     ).toBeInTheDocument();
@@ -118,7 +143,7 @@ describe("App", () => {
         screen.getByRole("navigation", { name: "Main navigation" }),
       ).getByRole("link", { name: "Conversations" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("keeps Conversation routes behind the existing authentication gate", async () => {

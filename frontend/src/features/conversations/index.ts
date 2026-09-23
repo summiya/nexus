@@ -3,6 +3,7 @@ export {
   getConversationMessages,
   listConversations,
 } from "./api";
+export { ConversationMessageHistory } from "./ConversationMessageHistory";
 export { ConversationSidebar } from "./ConversationSidebar";
 export {
   conversationKeys,
