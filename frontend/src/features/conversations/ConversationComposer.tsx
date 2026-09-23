@@ -18,7 +18,8 @@ const feedbackMessages: Record<SubmissionFeedback["kind"], string> = {
   generation_failure: "The response could not be completed.",
   stream_interrupted:
     "The response was interrupted. Check the conversation before trying again.",
-  submission_rejected: "The message was not sent. Please review it and try again.",
+  submission_rejected:
+    "The message was not sent. Please review it and try again.",
 };
 
 export function ConversationComposer({
