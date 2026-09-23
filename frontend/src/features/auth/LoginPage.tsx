@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { NexusApiError } from "../../services/api/error";
 import { requestLoginOtp, verifyLoginOtp } from "./api";
-import { SessionRestoreState } from "./AuthGate";
+import { AuthStatusView } from "./AuthStatusView";
 import { establishSession } from "./session";
 import { useAuthStore } from "./store";
 
@@ -108,7 +108,7 @@ export function LoginPage() {
   });
 
   if (status === "initializing" || status === "unavailable") {
-    return <SessionRestoreState status={status} />;
+    return <AuthStatusView status={status} />;
   }
 
   if (status === "authenticated") {
