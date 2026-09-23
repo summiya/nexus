@@ -142,6 +142,31 @@ describe("authentication session", () => {
     expect(useAuthStore.getState().status).toBe("unauthenticated");
   });
 
+  it("treats startup refresh rate limiting as retryable", async () => {
+    const originalSession = await import("./session");
+    originalSession.establishSession(initialTokens);
+    vi.resetModules();
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "RATE_LIMITED",
+            message: "Too many refresh attempts.",
+          },
+        },
+        429,
+      ),
+    );
+    const session = await import("./session");
+    const { useAuthStore } = await import("./store");
+
+    await expect(session.initializeSession()).resolves.toBe("unavailable");
+
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
+    expect(useAuthStore.getState().status).toBe("unavailable");
+  });
+
   it("preserves the refresh token and permits another bootstrap after a transient failure", async () => {
     const originalSession = await import("./session");
     originalSession.establishSession(initialTokens);
@@ -164,12 +189,9 @@ describe("authentication session", () => {
     const session = await import("./session");
     const { useAuthStore } = await import("./store");
 
-    await expect(session.initializeSession()).rejects.toMatchObject({
-      status: 503,
-      code: "SERVICE_UNAVAILABLE",
-    });
+    await expect(session.initializeSession()).resolves.toBe("unavailable");
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
 
     await expect(session.initializeSession()).resolves.toBe("authenticated");
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -214,7 +236,7 @@ describe("authentication session", () => {
       status: 503,
     });
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-y"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
 
     await expect(session.initializeSession()).resolves.toBe("authenticated");
     expect(refreshCall).toBe(3);
@@ -325,7 +347,37 @@ describe("authentication session", () => {
     });
 
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
+  });
+
+  it("preserves the refresh token when an active refresh is rate limited", async () => {
+    const session = await import("./session");
+    const { apiRequest } = await import("../../services/api/client");
+    const { useAuthStore } = await import("./store");
+    session.establishSession(initialTokens);
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/auth/refresh")
+          ? jsonResponse(
+              {
+                error: {
+                  code: "RATE_LIMITED",
+                  message: "Too many refresh attempts.",
+                },
+              },
+              429,
+            )
+          : expiredAccessTokenResponse(),
+      ),
+    );
+
+    await expect(apiRequest("/protected")).rejects.toMatchObject({
+      status: 429,
+      code: "RATE_LIMITED",
+    });
+
+    expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
+    expect(useAuthStore.getState().status).toBe("unavailable");
   });
 
   it("preserves the refresh token when refresh fails at the network boundary", async () => {
@@ -344,7 +396,7 @@ describe("authentication session", () => {
     );
 
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
   });
 
   it("uses one refresh for simultaneous expired requests and retries both with the new token", async () => {

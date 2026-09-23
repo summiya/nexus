@@ -2,6 +2,16 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const authMocks = vi.hoisted(() => ({
+  initializeSession: vi.fn(),
+}));
+
+vi.mock("./features/auth", async () => {
+  const actual =
+    await vi.importActual<typeof import("./features/auth")>("./features/auth");
+  return { ...actual, initializeSession: authMocks.initializeSession };
+});
+
 vi.mock("./lib/query-client", () => ({
   createQueryClient: () =>
     new QueryClient({
@@ -16,9 +26,13 @@ vi.mock("./lib/query-client", () => ({
 }));
 
 import App from "./App";
+import { setAuthStatus } from "./features/auth/store";
 
 describe("App", () => {
   beforeEach(() => {
+    authMocks.initializeSession.mockReset();
+    authMocks.initializeSession.mockResolvedValue("authenticated");
+    setAuthStatus("authenticated");
     window.history.replaceState({}, "", "/");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "ok" }), {

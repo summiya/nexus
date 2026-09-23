@@ -49,11 +49,19 @@ function suspendSession(): void {
   accessToken = null;
   sessionRevision += 1;
   initializationInFlight = undefined;
-  setAuthStatus("unauthenticated");
+  setAuthStatus("unavailable");
 }
 
 function refreshFailureInvalidatesSession(error: unknown): boolean {
   return error instanceof NexusApiError && error.status === 401;
+}
+
+function refreshFailureIsRetryable(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof NexusApiError &&
+      (error.status === 429 || error.status >= 500))
+  );
 }
 
 export function establishSession(tokens: SessionTokens): void {
@@ -160,6 +168,10 @@ export function initializeSession(): Promise<AuthStatus> {
 
       if (refreshFailureInvalidatesSession(error)) {
         return "unauthenticated";
+      }
+
+      if (refreshFailureIsRetryable(error)) {
+        return "unavailable";
       }
 
       try {
