@@ -27,7 +27,7 @@ function ConversationWorkspace({
     mutateAsync: createConversation,
     reset: resetCreation,
   } = useCreateConversationMutation();
-  const { feedback, phase, resetForConversationChange, submit } =
+  const { feedback, liveTurn, phase, resetForConversationChange, submit } =
     useConversationSubmission();
   const [creationFeedback, setCreationFeedback] = useState<{
     kind: "conversation_creation_failed";
@@ -151,7 +151,10 @@ function ConversationWorkspace({
 
   return (
     <>
-      <ConversationMessageHistory conversationPublicId={conversationPublicId} />
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+        liveTurn={liveTurn}
+      />
       {composer}
     </>
   );

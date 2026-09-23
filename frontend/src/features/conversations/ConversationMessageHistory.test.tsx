@@ -17,6 +17,7 @@ const queryMocks = vi.hoisted(() => ({
 vi.mock("./queries", () => queryMocks);
 
 import { ConversationMessageHistory } from "./ConversationMessageHistory";
+import type { LiveConversationTurn } from "./useConversationSubmission";
 
 const conversationPublicId = "11111111-1111-4111-8111-111111111111";
 
@@ -62,12 +63,32 @@ function queryResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderHistory(overrides: Record<string, unknown> = {}) {
+function liveTurn(
+  overrides: Partial<LiveConversationTurn> = {},
+): LiveConversationTurn {
+  return {
+    projectionId: 1,
+    conversationPublicId,
+    userContent: "Current question",
+    assistantContent: "",
+    generationId: null,
+    persistedMessagePublicIds: [],
+    ...overrides,
+  };
+}
+
+function renderHistory(
+  overrides: Record<string, unknown> = {},
+  projection: LiveConversationTurn | null = null,
+) {
   queryMocks.useConversationMessagesQuery.mockReturnValue(
     queryResult(overrides),
   );
   return render(
-    <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+    <ConversationMessageHistory
+      conversationPublicId={conversationPublicId}
+      liveTurn={projection}
+    />,
   );
 }
 
@@ -140,6 +161,101 @@ describe("ConversationMessageHistory", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Generation stopped.")).not.toBeInTheDocument();
     expect(screen.queryByText("Generating…")).not.toBeInTheDocument();
+  });
+
+  it("renders a temporary user turn and ordered assistant content", () => {
+    renderHistory(
+      { data: [] },
+      liveTurn({
+        assistantContent: "First second third",
+        generationId: generation("running").publicId,
+      }),
+    );
+
+    const items = screen.getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "YouCurrent question",
+      "NexusFirst second thirdGenerating…",
+    ]);
+    expect(
+      document.querySelectorAll(".conversation-message-live"),
+    ).toHaveLength(2);
+  });
+
+  it("does not render an empty temporary assistant bubble", () => {
+    renderHistory(
+      { data: [] },
+      liveTurn({ generationId: generation("running").publicId }),
+    );
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText("Current question")).toBeInTheDocument();
+    expect(screen.queryByText("Nexus")).not.toBeInTheDocument();
+  });
+
+  it("does not let an older identical message suppress the current projection", () => {
+    const oldMessage = message("old-user-message", "user", "Hello");
+    const projection = liveTurn({
+      userContent: "Hello",
+      persistedMessagePublicIds: [oldMessage.publicId],
+    });
+    const rendered = renderHistory({ data: [oldMessage] }, projection);
+
+    expect(screen.getAllByText("Hello")).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".conversation-message-live"),
+    ).toHaveLength(1);
+
+    const newMessage = message("new-user-message", "user", "Hello");
+    queryMocks.useConversationMessagesQuery.mockReturnValue(
+      queryResult({ data: [oldMessage, newMessage] }),
+    );
+    rendered.rerender(
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+        liveTurn={projection}
+      />,
+    );
+
+    expect(screen.getAllByText("Hello")).toHaveLength(2);
+    expect(document.querySelector(".conversation-message-live")).toBeNull();
+  });
+
+  it("lets a persisted assistant from the current generation replace its projection", () => {
+    const metadata = generation("completed");
+    const projection = liveTurn({
+      assistantContent: "Persisted answer",
+      generationId: metadata.publicId,
+    });
+    renderHistory(
+      {
+        data: [
+          message(
+            "persisted-assistant",
+            "assistant",
+            "Persisted answer",
+            metadata,
+          ),
+        ],
+      },
+      projection,
+    );
+
+    expect(screen.getAllByText("Persisted answer")).toHaveLength(1);
+    expect(
+      document.querySelectorAll(".conversation-message-live"),
+    ).toHaveLength(1);
+    expect(screen.getByText("Current question")).toBeInTheDocument();
+  });
+
+  it("shows the live projection while persisted history is loading", () => {
+    renderHistory(
+      { data: undefined, isPending: true },
+      liveTurn({ userContent: "Visible immediately" }),
+    );
+
+    expect(screen.getByText("Visible immediately")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading messages…");
   });
 
   it.each([

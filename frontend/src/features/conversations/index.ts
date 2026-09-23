@@ -15,6 +15,7 @@ export {
 export { streamConversationMessage } from "./stream";
 export { useConversationSubmission } from "./useConversationSubmission";
 export type {
+  LiveConversationTurn,
   SubmissionFeedback,
   SubmissionPhase,
   SubmissionResult,

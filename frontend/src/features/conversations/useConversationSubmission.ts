@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NexusApiError } from "../../services/api/error";
 import { conversationKeys } from "./queries";
 import { streamConversationMessage } from "./stream";
+import type { ConversationMessage, ConversationStreamEvent } from "./types";
 
 export type SubmissionPhase = "idle" | "submitting" | "generating";
 
@@ -15,6 +16,15 @@ export type SubmissionFeedback =
 
 export type SubmissionResult =
   "accepted" | "uncertain" | "cancelled" | "ignored" | "not_submitted";
+
+export interface LiveConversationTurn {
+  projectionId: number;
+  conversationPublicId: string;
+  userContent: string;
+  assistantContent: string;
+  generationId: string | null;
+  persistedMessagePublicIds: readonly string[];
+}
 
 interface SubmitConversationMessageInput {
   conversationPublicId: string;
@@ -31,11 +41,13 @@ interface ActiveSubmission {
 interface SubmissionState {
   phase: SubmissionPhase;
   feedback: SubmissionFeedback | null;
+  liveTurn: LiveConversationTurn | null;
 }
 
 const idleState: SubmissionState = {
   phase: "idle",
   feedback: null,
+  liveTurn: null,
 };
 
 const prePersistenceRejectionStatuses = new Set([401, 403, 404, 422]);
@@ -45,6 +57,47 @@ function isKnownPrePersistenceRejection(error: unknown): boolean {
     error instanceof NexusApiError &&
     prePersistenceRejectionStatuses.has(error.status)
   );
+}
+
+function applyStreamEvent(
+  state: SubmissionState,
+  operation: ActiveSubmission,
+  event: ConversationStreamEvent,
+): SubmissionState {
+  const liveTurn = state.liveTurn;
+  if (liveTurn?.projectionId !== operation.operationId) {
+    return state;
+  }
+
+  if (
+    event.type === "generation.started" &&
+    event.conversationId === operation.conversationPublicId
+  ) {
+    return {
+      ...state,
+      phase: "generating",
+      liveTurn: { ...liveTurn, generationId: event.generationId },
+    };
+  }
+
+  if (
+    event.type === "message.delta" &&
+    event.conversationId === operation.conversationPublicId &&
+    (liveTurn.generationId === null ||
+      liveTurn.generationId === event.generationId)
+  ) {
+    return {
+      ...state,
+      phase: "generating",
+      liveTurn: {
+        ...liveTurn,
+        assistantContent: liveTurn.assistantContent + event.delta,
+        generationId: liveTurn.generationId ?? event.generationId,
+      },
+    };
+  }
+
+  return { ...state, phase: "generating" };
 }
 
 export function useConversationSubmission() {
@@ -87,7 +140,7 @@ export function useConversationSubmission() {
       };
       nextOperationIdRef.current = operation.operationId;
       activeSubmissionRef.current = operation;
-      setState({ phase: "submitting", feedback: null });
+      setState({ phase: "submitting", feedback: null, liveTurn: null });
 
       let accepted = false;
       let attempted = false;
@@ -98,6 +151,27 @@ export function useConversationSubmission() {
       try {
         const idempotencyKey = crypto.randomUUID();
         attempted = true;
+        const persistedMessages =
+          queryClient.getQueryData<ConversationMessage[]>(
+            conversationKeys.messages(conversationPublicId),
+          ) ?? [];
+
+        if (operationIsCurrent(operation)) {
+          setState({
+            phase: "submitting",
+            feedback: null,
+            liveTurn: {
+              projectionId: operation.operationId,
+              conversationPublicId,
+              userContent: content,
+              assistantContent: "",
+              generationId: null,
+              persistedMessagePublicIds: persistedMessages.map(
+                (message) => message.publicId,
+              ),
+            },
+          });
+        }
 
         for await (const event of streamConversationMessage({
           conversationPublicId,
@@ -108,7 +182,9 @@ export function useConversationSubmission() {
         })) {
           accepted = true;
           if (operationIsCurrent(operation)) {
-            setState({ phase: "generating", feedback: null });
+            setState((currentState) =>
+              applyStreamEvent(currentState, operation, event),
+            );
           }
 
           if (event.type === "generation.error") {
@@ -147,7 +223,7 @@ export function useConversationSubmission() {
 
         if (operationIsCurrent(operation)) {
           activeSubmissionRef.current = null;
-          setState({ phase: "idle", feedback });
+          setState({ phase: "idle", feedback, liveTurn: null });
         }
       }
 
@@ -169,6 +245,7 @@ export function useConversationSubmission() {
 
   return {
     feedback: state.feedback,
+    liveTurn: state.liveTurn,
     phase: state.phase,
     resetForConversationChange,
     submit,
