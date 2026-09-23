@@ -66,3 +66,55 @@ export interface ConversationMessage {
   createdAt: string;
   generation: ConversationGenerationMetadata | null;
 }
+
+export interface StreamConversationMessageInput {
+  conversationPublicId: string;
+  content: string;
+  model: string;
+  idempotencyKey?: string;
+  signal?: AbortSignal;
+}
+
+export interface GenerationStartedEvent {
+  type: "generation.started";
+  conversationId: string;
+  generationId: string;
+  model: string;
+}
+
+export interface MessageDeltaEvent {
+  type: "message.delta";
+  conversationId: string;
+  generationId: string;
+  delta: string;
+}
+
+export interface GenerationUsageEvent {
+  type: "generation.usage";
+  generationId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface GenerationCompletedEvent {
+  type: "generation.completed";
+  conversationId: string;
+  generationId: string;
+  assistantMessageId: string;
+  finishReason: GenerationFinishReason;
+}
+
+export interface GenerationErrorEvent {
+  type: "generation.error";
+  generationId: string;
+  kind: string;
+  message: string;
+}
+
+export type ConversationStreamEvent =
+  | GenerationStartedEvent
+  | MessageDeltaEvent
+  | GenerationUsageEvent
+  | GenerationCompletedEvent
+  | GenerationErrorEvent;

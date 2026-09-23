@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { apiRequest, configureApiAuthentication } from "./client";
+import { apiRequest, apiResponse, configureApiAuthentication } from "./client";
 
 function errorResponse(code: string, message: string): Response {
   return new Response(
@@ -9,7 +9,7 @@ function errorResponse(code: string, message: string): Response {
   );
 }
 
-describe("apiRequest", () => {
+describe("API client", () => {
   beforeEach(() => {
     configureApiAuthentication(undefined);
   });
@@ -66,22 +66,22 @@ describe("apiRequest", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("adds the current access token to authenticated requests", async () => {
+  it("returns an authenticated successful Response without consuming it", async () => {
     configureApiAuthentication({
       getAccessToken: () => "access-token",
       refreshAccessToken: vi.fn(),
     });
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    const response = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
 
-    await apiRequest("/protected");
+    await expect(apiResponse("/protected")).resolves.toBe(response);
 
     const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
     expect(headers.get("Authorization")).toBe("Bearer access-token");
+    expect(response.bodyUsed).toBe(false);
   });
 
   it("does not automatically add authorization to public requests", async () => {
@@ -96,7 +96,7 @@ describe("apiRequest", () => {
       }),
     );
 
-    await apiRequest("/public", {
+    await apiResponse("/public", {
       authentication: "none",
     });
 
@@ -116,7 +116,7 @@ describe("apiRequest", () => {
       }),
     );
 
-    await apiRequest("/public", {
+    await apiResponse("/public", {
       authentication: "none",
       headers: { Authorization: "Bearer caller-token" },
     });
@@ -138,7 +138,7 @@ describe("apiRequest", () => {
       );
 
     await expect(
-      apiRequest("/protected", {
+      apiResponse("/protected", {
         headers: { Authorization: "Bearer caller-token" },
       }),
     ).rejects.toMatchObject({ code: "ACCESS_TOKEN_EXPIRED" });
@@ -171,10 +171,12 @@ describe("apiRequest", () => {
         }),
       );
 
-    await expect(apiRequest("/protected")).resolves.toEqual({ ok: true });
+    const response = await apiResponse("/protected");
 
     expect(refreshAccessToken).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(response.bodyUsed).toBe(false);
+    await expect(response.json()).resolves.toEqual({ ok: true });
     const initialHeaders = fetchMock.mock.calls[0][1]?.headers as Headers;
     const retryHeaders = fetchMock.mock.calls[1][1]?.headers as Headers;
     expect(initialHeaders.get("Authorization")).toBe(
@@ -195,7 +197,7 @@ describe("apiRequest", () => {
         errorResponse("UNAUTHORIZED", "Authentication is required."),
       );
 
-    await expect(apiRequest("/protected")).rejects.toMatchObject({
+    await expect(apiResponse("/protected")).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
     expect(refreshAccessToken).not.toHaveBeenCalled();
@@ -219,7 +221,7 @@ describe("apiRequest", () => {
         ),
       );
 
-    await expect(apiRequest("/protected")).rejects.toMatchObject({
+    await expect(apiResponse("/protected")).rejects.toMatchObject({
       code: "ACCESS_TOKEN_EXPIRED",
     });
     expect(refreshAccessToken).toHaveBeenCalledTimes(1);
