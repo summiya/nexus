@@ -13,5 +13,9 @@ describe("authentication store", () => {
     setAuthStatus("authenticated");
 
     expect(useAuthStore.getState()).toEqual({ status: "authenticated" });
+
+    setAuthStatus("unavailable");
+
+    expect(useAuthStore.getState()).toEqual({ status: "unavailable" });
   });
 });

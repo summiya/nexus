@@ -164,12 +164,9 @@ describe("authentication session", () => {
     const session = await import("./session");
     const { useAuthStore } = await import("./store");
 
-    await expect(session.initializeSession()).rejects.toMatchObject({
-      status: 503,
-      code: "SERVICE_UNAVAILABLE",
-    });
+    await expect(session.initializeSession()).resolves.toBe("unavailable");
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
 
     await expect(session.initializeSession()).resolves.toBe("authenticated");
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -214,7 +211,7 @@ describe("authentication session", () => {
       status: 503,
     });
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-y"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
 
     await expect(session.initializeSession()).resolves.toBe("authenticated");
     expect(refreshCall).toBe(3);
@@ -325,7 +322,7 @@ describe("authentication session", () => {
     });
 
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
   });
 
   it("preserves the refresh token when refresh fails at the network boundary", async () => {
@@ -344,7 +341,7 @@ describe("authentication session", () => {
     );
 
     expect(storedValues(window.sessionStorage)).toEqual(["refresh-token-x"]);
-    expect(useAuthStore.getState().status).toBe("unauthenticated");
+    expect(useAuthStore.getState().status).toBe("unavailable");
   });
 
   it("uses one refresh for simultaneous expired requests and retries both with the new token", async () => {

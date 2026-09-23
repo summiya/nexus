@@ -1,4 +1,5 @@
-export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
+export type AuthStatus =
+  "initializing" | "authenticated" | "unauthenticated" | "unavailable";
 
 export interface SessionTokens {
   accessToken: string;
