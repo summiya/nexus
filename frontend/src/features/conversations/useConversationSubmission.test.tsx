@@ -1,10 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NexusApiError } from "../../services/api/error";
-import type { ConversationStreamEvent } from "./types";
+import { ConversationComposer } from "./ConversationComposer";
+import { conversationKeys } from "./queries";
+import type { ConversationMessage, ConversationStreamEvent } from "./types";
 
 const streamMocks = vi.hoisted(() => ({
   streamConversationMessage: vi.fn(),
@@ -90,6 +99,23 @@ function renderSubmissionHook(queryClient = createTestQueryClient()) {
   return { ...rendered, queryClient };
 }
 
+function SubmissionComposerHarness() {
+  const submission = useConversationSubmission();
+
+  return (
+    <>
+      <ConversationComposer
+        feedback={submission.feedback}
+        phase={submission.phase}
+        onSubmit={(content) => submission.submit({ ...defaultInput, content })}
+      />
+      <output data-testid="live-user-content">
+        {submission.liveTurn?.userContent ?? ""}
+      </output>
+    </>
+  );
+}
+
 describe("useConversationSubmission", () => {
   beforeEach(() => {
     streamMocks.streamConversationMessage.mockReset();
@@ -172,6 +198,122 @@ describe("useConversationSubmission", () => {
       await submission;
     });
     expect(result.current.phase).toBe("idle");
+  });
+
+  it("projects the user turn, appends deltas in order, and waits for reconciliation", async () => {
+    const releaseReconciliation = deferred();
+    streamMocks.streamConversationMessage.mockReturnValue(
+      eventStream([
+        startedEvent,
+        {
+          type: "message.delta",
+          conversationId: firstConversationId,
+          generationId,
+          delta: "First ",
+        },
+        {
+          type: "generation.usage",
+          generationId,
+          inputTokens: 3,
+          outputTokens: 2,
+          totalTokens: 5,
+        },
+        {
+          type: "message.delta",
+          conversationId: firstConversationId,
+          generationId,
+          delta: "second",
+        },
+        completedEvent,
+      ]),
+    );
+    const queryClient = createTestQueryClient();
+    const persistedMessage = {
+      publicId: "persisted-before-submission",
+      role: "user",
+      content: "Earlier question",
+      createdAt: "2026-09-23T10:00:00Z",
+      generation: null,
+    } satisfies ConversationMessage;
+    queryClient.setQueryData(conversationKeys.messages(firstConversationId), [
+      persistedMessage,
+    ]);
+    vi.spyOn(queryClient, "invalidateQueries").mockReturnValue(
+      releaseReconciliation.promise,
+    );
+    const { result } = renderSubmissionHook(queryClient);
+
+    let submission!: Promise<SubmissionResult>;
+    act(() => {
+      submission = result.current.submit(defaultInput);
+    });
+
+    await waitFor(() =>
+      expect(result.current.liveTurn).toMatchObject({
+        conversationPublicId: firstConversationId,
+        userContent: defaultInput.content,
+        assistantContent: "First second",
+        generationId,
+        persistedMessagePublicIds: [persistedMessage.publicId],
+      }),
+    );
+    expect(result.current.phase).toBe("generating");
+
+    releaseReconciliation.resolve();
+    await act(async () => {
+      expect(await submission).toBe("accepted");
+    });
+
+    expect(result.current.liveTurn).toBeNull();
+    expect(result.current.phase).toBe("idle");
+  });
+
+  it("grows the assistant projection as ordered deltas arrive", async () => {
+    const releaseSecondDelta = deferred();
+    const releaseCompletion = deferred();
+    streamMocks.streamConversationMessage.mockImplementation(() =>
+      (async function* streamDeltas() {
+        yield startedEvent;
+        yield {
+          type: "message.delta",
+          conversationId: firstConversationId,
+          generationId,
+          delta: "First",
+        } satisfies ConversationStreamEvent;
+        await releaseSecondDelta.promise;
+        yield {
+          type: "message.delta",
+          conversationId: firstConversationId,
+          generationId,
+          delta: " second",
+        } satisfies ConversationStreamEvent;
+        await releaseCompletion.promise;
+        yield completedEvent;
+      })(),
+    );
+    const { result } = renderSubmissionHook();
+
+    let submission!: Promise<SubmissionResult>;
+    act(() => {
+      submission = result.current.submit(defaultInput);
+    });
+
+    await waitFor(() =>
+      expect(result.current.liveTurn).toMatchObject({
+        assistantContent: "First",
+        persistedMessagePublicIds: null,
+      }),
+    );
+
+    releaseSecondDelta.resolve();
+    await waitFor(() =>
+      expect(result.current.liveTurn?.assistantContent).toBe("First second"),
+    );
+
+    releaseCompletion.resolve();
+    await act(async () => {
+      await submission;
+    });
   });
 
   it("uses fixed generation failure feedback and ignores event details", async () => {
@@ -271,6 +413,65 @@ describe("useConversationSubmission", () => {
       expect(invalidateQueries).not.toHaveBeenCalled();
     },
   );
+
+  it("removes a rejected temporary projection without changing history or clearing the draft", async () => {
+    const releaseRejection = deferred();
+    streamMocks.streamConversationMessage.mockImplementation(() =>
+      (async function* rejectBeforePersistence() {
+        await releaseRejection.promise;
+        throw new NexusApiError(
+          "private backend rejection detail",
+          422,
+          "PRIVATE_REJECTION",
+        );
+        yield startedEvent;
+      })(),
+    );
+    const queryClient = createTestQueryClient();
+    const persistedMessages = [
+      {
+        publicId: "existing-message",
+        role: "user",
+        content: "Existing history",
+        createdAt: "2026-09-23T10:00:00Z",
+        generation: null,
+      } satisfies ConversationMessage,
+    ];
+    queryClient.setQueryData(
+      conversationKeys.messages(firstConversationId),
+      persistedMessages,
+    );
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <SubmissionComposerHarness />
+      </QueryClientProvider>,
+    );
+
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    await user.type(textarea, "Hello again");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("live-user-content")).toHaveTextContent(
+        "Hello again",
+      ),
+    );
+    expect(textarea).toHaveValue("Hello again");
+
+    releaseRejection.resolve();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The message was not sent. Please review it and try again.",
+    );
+
+    expect(screen.getByTestId("live-user-content")).toBeEmptyDOMElement();
+    expect(textarea).toHaveValue("Hello again");
+    expect(
+      queryClient.getQueryData(conversationKeys.messages(firstConversationId)),
+    ).toEqual(persistedMessages);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
 
   it.each([409, 429, 500, 503])(
     "keeps HTTP %s conservative when persistence timing is not guaranteed",
@@ -392,7 +593,11 @@ describe("useConversationSubmission", () => {
     act(() => result.current.resetForConversationChange());
 
     expect(suppliedSignal?.aborted).toBe(true);
-    expect(result.current).toMatchObject({ phase: "idle", feedback: null });
+    expect(result.current).toMatchObject({
+      phase: "idle",
+      feedback: null,
+      liveTurn: null,
+    });
     await expect(submission).resolves.toBe("cancelled");
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["conversations", "messages", firstConversationId],
@@ -411,7 +616,13 @@ describe("useConversationSubmission", () => {
           };
           if (conversationPublicId === firstConversationId) {
             await releaseFirst.promise;
-            throw new Error("late A failure");
+            yield {
+              type: "message.delta",
+              conversationId: firstConversationId,
+              generationId,
+              delta: "late A content",
+            } satisfies ConversationStreamEvent;
+            return;
           }
           await releaseSecond.promise;
           yield {
@@ -449,6 +660,10 @@ describe("useConversationSubmission", () => {
     expect(result.current).toMatchObject({
       phase: "generating",
       feedback: null,
+      liveTurn: {
+        conversationPublicId: secondConversationId,
+        assistantContent: "",
+      },
     });
 
     releaseSecond.resolve();

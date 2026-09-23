@@ -1,13 +1,11 @@
 import { NexusApiError } from "../../services/api/error";
 import { useConversationMessagesQuery } from "./queries";
-import type {
-  ConversationMessage,
-  ConversationMessageRole,
-  GenerationStatus,
-} from "./types";
+import type { LiveConversationTurn } from "./useConversationSubmission";
+import type { ConversationMessageRole, GenerationStatus } from "./types";
 
 interface ConversationMessageHistoryProps {
   conversationPublicId: string;
+  liveTurn?: LiveConversationTurn | null;
 }
 
 const roleLabels: Record<ConversationMessageRole, string> = {
@@ -39,28 +37,35 @@ function generationStatusMessage(status: GenerationStatus): string | null {
 }
 
 function ConversationMessageItem({
-  message,
+  content,
+  generationStatus,
+  live = false,
+  role,
 }: {
-  message: ConversationMessage;
+  content: string;
+  generationStatus: GenerationStatus | null;
+  live?: boolean;
+  role: ConversationMessageRole;
 }) {
-  const generationStatus = message.generation
-    ? generationStatusMessage(message.generation.status)
+  const statusMessage = generationStatus
+    ? generationStatusMessage(generationStatus)
     : null;
   const generationIsActive =
-    message.generation?.status === "pending" ||
-    message.generation?.status === "running";
+    generationStatus === "pending" || generationStatus === "running";
 
   return (
-    <li className={`conversation-message conversation-message-${message.role}`}>
+    <li
+      className={`conversation-message conversation-message-${role}${live ? " conversation-message-live" : ""}`}
+    >
       <article>
-        <p className="conversation-message-role">{roleLabels[message.role]}</p>
-        <p className="conversation-message-content">{message.content}</p>
-        {generationStatus ? (
+        <p className="conversation-message-role">{roleLabels[role]}</p>
+        <p className="conversation-message-content">{content}</p>
+        {statusMessage ? (
           <p
-            className={`conversation-generation-status conversation-generation-status-${message.generation?.status}`}
+            className={`conversation-generation-status conversation-generation-status-${generationStatus}`}
             role={generationIsActive ? "status" : undefined}
           >
-            {generationStatus}
+            {statusMessage}
           </p>
         ) : null}
       </article>
@@ -70,10 +75,47 @@ function ConversationMessageItem({
 
 export function ConversationMessageHistory({
   conversationPublicId,
+  liveTurn = null,
 }: ConversationMessageHistoryProps) {
   const messages = useConversationMessagesQuery(conversationPublicId);
+  const activeLiveTurn =
+    liveTurn?.conversationPublicId === conversationPublicId ? liveTurn : null;
+  const persistedMessages = messages.data ?? [];
+  const baselineIsKnown =
+    activeLiveTurn !== null &&
+    activeLiveTurn.persistedMessagePublicIds !== null;
+  const baselineMessagePublicIds = new Set(
+    activeLiveTurn?.persistedMessagePublicIds ?? [],
+  );
+  const messagesPersistedSinceSubmission = baselineIsKnown
+    ? persistedMessages.filter(
+        (message) => !baselineMessagePublicIds.has(message.publicId),
+      )
+    : [];
+  const userProjectionPersisted =
+    activeLiveTurn !== null &&
+    messagesPersistedSinceSubmission.some(
+      (message) =>
+        message.role === "user" &&
+        message.content === activeLiveTurn.userContent,
+    );
+  const assistantProjectionPersisted =
+    activeLiveTurn?.generationId !== null &&
+    activeLiveTurn?.generationId !== undefined &&
+    persistedMessages.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.generation?.publicId === activeLiveTurn.generationId,
+    );
+  const showLiveUser = activeLiveTurn !== null && !userProjectionPersisted;
+  const showLiveAssistant =
+    activeLiveTurn !== null &&
+    activeLiveTurn.assistantContent.length > 0 &&
+    !assistantProjectionPersisted;
+  const hasRenderableMessages =
+    persistedMessages.length > 0 || showLiveUser || showLiveAssistant;
 
-  if (messages.isPending) {
+  if (messages.isPending && activeLiveTurn === null) {
     return (
       <section
         className="conversation-message-history conversation-history-state"
@@ -84,7 +126,7 @@ export function ConversationMessageHistory({
     );
   }
 
-  if (messages.isError) {
+  if (messages.isError && activeLiveTurn === null) {
     const unavailable = conversationIsUnavailable(messages.error);
 
     return (
@@ -111,7 +153,7 @@ export function ConversationMessageHistory({
     );
   }
 
-  if (messages.data.length === 0) {
+  if (!hasRenderableMessages) {
     return (
       <section
         className="conversation-message-history conversation-history-state"
@@ -127,10 +169,32 @@ export function ConversationMessageHistory({
       className="conversation-message-history"
       aria-label="Conversation messages"
     >
+      {messages.isPending ? <p role="status">Loading messages…</p> : null}
       <ol className="conversation-message-list">
-        {messages.data.map((message) => (
-          <ConversationMessageItem key={message.publicId} message={message} />
+        {persistedMessages.map((message) => (
+          <ConversationMessageItem
+            key={message.publicId}
+            content={message.content}
+            generationStatus={message.generation?.status ?? null}
+            role={message.role}
+          />
         ))}
+        {showLiveUser ? (
+          <ConversationMessageItem
+            content={activeLiveTurn.userContent}
+            generationStatus={null}
+            live
+            role="user"
+          />
+        ) : null}
+        {showLiveAssistant ? (
+          <ConversationMessageItem
+            content={activeLiveTurn.assistantContent}
+            generationStatus="running"
+            live
+            role="assistant"
+          />
+        ) : null}
       </ol>
     </section>
   );

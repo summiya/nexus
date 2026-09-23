@@ -17,17 +17,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   CreatedConversation,
+  LiveConversationTurn,
   SubmissionResult,
 } from "../features/conversations";
 
 const conversationMocks = vi.hoisted(() => ({
   createConversation: vi.fn(),
   history: vi.fn(),
+  historyLiveTurn: vi.fn(),
   historyState: "loaded",
   hookMounts: 0,
   hookUnmounts: 0,
   resetCreation: vi.fn(),
   resetForConversationChange: vi.fn(),
+  liveTurn: null as LiveConversationTurn | null,
   submit: vi.fn().mockResolvedValue("accepted"),
 }));
 
@@ -42,10 +45,13 @@ vi.mock("../features/conversations", async () => {
     ConversationSidebar: () => <aside aria-label="Conversation sidebar" />,
     ConversationMessageHistory: ({
       conversationPublicId,
+      liveTurn,
     }: {
       conversationPublicId: string;
+      liveTurn?: LiveConversationTurn | null;
     }) => {
       conversationMocks.history(conversationPublicId);
+      conversationMocks.historyLiveTurn(liveTurn ?? null);
       if (conversationMocks.historyState === "loading") {
         return <p role="status">Loading messages…</p>;
       }
@@ -84,6 +90,7 @@ vi.mock("../features/conversations", async () => {
       }, []);
       return {
         feedback: null,
+        liveTurn: conversationMocks.liveTurn,
         phase: "idle",
         resetForConversationChange:
           conversationMocks.resetForConversationChange,
@@ -151,11 +158,13 @@ describe("ConversationPage", () => {
       .mockReset()
       .mockResolvedValue(createdConversation);
     conversationMocks.history.mockReset();
+    conversationMocks.historyLiveTurn.mockReset();
     conversationMocks.historyState = "loaded";
     conversationMocks.hookMounts = 0;
     conversationMocks.hookUnmounts = 0;
     conversationMocks.resetCreation.mockReset();
     conversationMocks.resetForConversationChange.mockReset();
+    conversationMocks.liveTurn = null;
     conversationMocks.submit.mockReset().mockResolvedValue("accepted");
   });
 
@@ -208,6 +217,23 @@ describe("ConversationPage", () => {
       model: "gpt-4o-mini",
     });
     expect(conversationMocks.createConversation).not.toHaveBeenCalled();
+  });
+
+  it("passes the selected Conversation live turn to message history", () => {
+    conversationMocks.liveTurn = {
+      projectionId: 1,
+      conversationPublicId: firstConversationId,
+      userContent: "Live question",
+      assistantContent: "Live answer",
+      generationId: "55555555-5555-4555-8555-555555555555",
+      persistedMessagePublicIds: [],
+    };
+
+    renderPage(`/conversations/${firstConversationId}`);
+
+    expect(conversationMocks.historyLiveTurn).toHaveBeenCalledWith(
+      conversationMocks.liveTurn,
+    );
   });
 
   it.each([
@@ -276,6 +302,35 @@ describe("ConversationPage", () => {
     expect(conversationMocks.resetForConversationChange).not.toHaveBeenCalled();
     expect(conversationMocks.hookMounts).toBe(1);
     expect(conversationMocks.hookUnmounts).toBe(0);
+  });
+
+  it("keeps a New Chat live turn through the expected created route transition", async () => {
+    const user = userEvent.setup();
+    conversationMocks.liveTurn = {
+      projectionId: 1,
+      conversationPublicId: firstConversationId,
+      userContent: "First live message",
+      assistantContent: "Streaming response",
+      generationId: "55555555-5555-4555-8555-555555555555",
+      persistedMessagePublicIds: [],
+    };
+    renderPage("/conversations");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "First live message",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        `/conversations/${firstConversationId}`,
+      ),
+    );
+    expect(conversationMocks.historyLiveTurn).toHaveBeenCalledWith(
+      conversationMocks.liveTurn,
+    );
+    expect(conversationMocks.resetForConversationChange).not.toHaveBeenCalled();
   });
 
   it("shows creation pending and synchronously prevents duplicate creation", async () => {
