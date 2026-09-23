@@ -1,6 +1,9 @@
 import { useParams } from "react-router-dom";
 
-import { ConversationSidebar } from "../features/conversations";
+import {
+  ConversationMessageHistory,
+  ConversationSidebar,
+} from "../features/conversations";
 
 export function ConversationPage() {
   const { conversationId } = useParams<{ conversationId?: string }>();
@@ -12,19 +15,17 @@ export function ConversationPage() {
 
       <section
         className="conversation-workspace"
-        aria-labelledby="conversation-workspace-title"
+        aria-label="Conversation workspace"
       >
-        <p className="eyebrow">NEXUS</p>
-        <h2 id="conversation-workspace-title">
-          {hasSelectedConversation
-            ? "Conversation selected"
-            : "Start a new conversation"}
-        </h2>
-        <p>
-          {hasSelectedConversation
-            ? "Messages for this conversation will appear here in the next phase."
-            : "Choose a conversation from the sidebar or begin a new chat."}
-        </p>
+        {hasSelectedConversation ? (
+          <ConversationMessageHistory conversationPublicId={conversationId} />
+        ) : (
+          <div className="conversation-workspace-placeholder">
+            <p className="eyebrow">NEXUS</p>
+            <h2>Start a new conversation</h2>
+            <p>Choose a conversation from the sidebar or begin a new chat.</p>
+          </div>
+        )}
       </section>
     </section>
   );
