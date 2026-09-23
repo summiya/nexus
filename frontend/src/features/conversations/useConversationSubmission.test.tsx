@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { NexusApiError } from "../../services/api/error";
 import type { ConversationStreamEvent } from "./types";
 
 const streamMocks = vi.hoisted(() => ({
@@ -243,6 +244,63 @@ describe("useConversationSubmission", () => {
       queryKey: ["conversations", "messages", firstConversationId],
     });
   });
+
+  it.each([401, 403, 404, 422])(
+    "treats known pre-persistence HTTP %s rejection as not submitted",
+    async (status) => {
+      streamMocks.streamConversationMessage.mockImplementation(() =>
+        (async function* rejectBeforeEvent() {
+          throw new NexusApiError(
+            "private backend rejection detail",
+            status,
+            "PRIVATE_REJECTION",
+          );
+          yield startedEvent;
+        })(),
+      );
+      const queryClient = createTestQueryClient();
+      const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderSubmissionHook(queryClient);
+
+      await act(async () => {
+        expect(await result.current.submit(defaultInput)).toBe("not_submitted");
+      });
+
+      expect(streamMocks.streamConversationMessage).toHaveBeenCalledOnce();
+      expect(result.current.feedback).toEqual({ kind: "submission_rejected" });
+      expect(invalidateQueries).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([409, 429, 500, 503])(
+    "keeps HTTP %s conservative when persistence timing is not guaranteed",
+    async (status) => {
+      streamMocks.streamConversationMessage.mockImplementation(() =>
+        (async function* rejectBeforeEvent() {
+          throw new NexusApiError(
+            "private ambiguous backend detail",
+            status,
+            "PRIVATE_AMBIGUOUS",
+          );
+          yield startedEvent;
+        })(),
+      );
+      const queryClient = createTestQueryClient();
+      const invalidateQueries = vi
+        .spyOn(queryClient, "invalidateQueries")
+        .mockResolvedValue();
+      const { result } = renderSubmissionHook(queryClient);
+
+      await act(async () => {
+        expect(await result.current.submit(defaultInput)).toBe("uncertain");
+      });
+
+      expect(result.current.feedback).toEqual({ kind: "delivery_uncertain" });
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["conversations", "messages", firstConversationId],
+      });
+    },
+  );
 
   it("treats failure after acceptance as an interrupted stream", async () => {
     streamMocks.streamConversationMessage.mockImplementation(() =>

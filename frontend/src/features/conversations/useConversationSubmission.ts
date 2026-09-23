@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { NexusApiError } from "../../services/api/error";
 import { conversationKeys } from "./queries";
 import { streamConversationMessage } from "./stream";
 
@@ -9,7 +10,8 @@ export type SubmissionPhase = "idle" | "submitting" | "generating";
 export type SubmissionFeedback =
   | { kind: "delivery_uncertain" }
   | { kind: "generation_failure" }
-  | { kind: "stream_interrupted" };
+  | { kind: "stream_interrupted" }
+  | { kind: "submission_rejected" };
 
 export type SubmissionResult =
   "accepted" | "uncertain" | "cancelled" | "ignored" | "not_submitted";
@@ -35,6 +37,15 @@ const idleState: SubmissionState = {
   phase: "idle",
   feedback: null,
 };
+
+const prePersistenceRejectionStatuses = new Set([401, 403, 404, 422]);
+
+function isKnownPrePersistenceRejection(error: unknown): boolean {
+  return (
+    error instanceof NexusApiError &&
+    prePersistenceRejectionStatuses.has(error.status)
+  );
+}
 
 export function useConversationSubmission() {
   const queryClient = useQueryClient();
@@ -81,6 +92,7 @@ export function useConversationSubmission() {
       let accepted = false;
       let attempted = false;
       let feedback: SubmissionFeedback | null = null;
+      let rejectedBeforePersistence = false;
       let result: SubmissionResult = "not_submitted";
 
       try {
@@ -110,7 +122,7 @@ export function useConversationSubmission() {
           feedback = { kind: "delivery_uncertain" };
           result = "uncertain";
         }
-      } catch {
+      } catch (error) {
         if (operation.controller.signal.aborted) {
           result = "cancelled";
         } else if (!attempted) {
@@ -118,12 +130,16 @@ export function useConversationSubmission() {
         } else if (accepted) {
           feedback = { kind: "stream_interrupted" };
           result = "accepted";
+        } else if (isKnownPrePersistenceRejection(error)) {
+          rejectedBeforePersistence = true;
+          feedback = { kind: "submission_rejected" };
+          result = "not_submitted";
         } else {
           feedback = { kind: "delivery_uncertain" };
           result = "uncertain";
         }
       } finally {
-        if (attempted) {
+        if (attempted && !rejectedBeforePersistence) {
           await queryClient.invalidateQueries({
             queryKey: conversationKeys.messages(operation.conversationPublicId),
           });

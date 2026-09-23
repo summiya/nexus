@@ -105,16 +105,19 @@ describe("ConversationComposer", () => {
     },
   );
 
-  it("retains the draft when delivery is uncertain", async () => {
-    const user = userEvent.setup();
-    renderComposer({ result: "uncertain" });
-    const textarea = screen.getByRole("textbox", { name: "Message" });
+  it.each(["uncertain", "not_submitted"] satisfies SubmissionResult[])(
+    "retains the draft when submission result is %s",
+    async (result) => {
+      const user = userEvent.setup();
+      renderComposer({ result });
+      const textarea = screen.getByRole("textbox", { name: "Message" });
 
-    await user.type(textarea, "Keep this draft");
-    await user.click(screen.getByRole("button", { name: "Send" }));
+      await user.type(textarea, "Keep this draft");
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(textarea).toHaveValue("Keep this draft");
-  });
+      expect(textarea).toHaveValue("Keep this draft");
+    },
+  );
 
   it.each([
     [
@@ -125,6 +128,10 @@ describe("ConversationComposer", () => {
     [
       "stream_interrupted",
       "The response was interrupted. Check the conversation before trying again.",
+    ],
+    [
+      "submission_rejected",
+      "The message was not sent. Please review it and try again.",
     ],
   ] satisfies Array<[SubmissionFeedback["kind"], string]>)(
     "maps %s to fixed safe feedback",
