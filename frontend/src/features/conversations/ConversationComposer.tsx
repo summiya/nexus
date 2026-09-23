@@ -19,7 +19,7 @@ interface ConversationComposerProps {
 
 const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
   conversation_creation_failed:
-    "The conversation could not be created. Please try again.",
+    "We couldn't confirm the conversation was created. Check your conversations before trying again.",
   delivery_uncertain:
     "We couldn't confirm whether the message was sent. Check the conversation before trying again.",
   generation_failure: "The response could not be completed.",

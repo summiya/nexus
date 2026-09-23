@@ -126,7 +126,7 @@ describe("ConversationComposer", () => {
   it.each([
     [
       "conversation_creation_failed",
-      "The conversation could not be created. Please try again.",
+      "We couldn't confirm the conversation was created. Check your conversations before trying again.",
     ],
     [
       "delivery_uncertain",

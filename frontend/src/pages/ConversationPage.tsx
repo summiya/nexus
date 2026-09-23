@@ -38,6 +38,14 @@ function ConversationWorkspace({
   const nextFirstMessageOperationIdRef = useRef(0);
   const previousConversationPublicId = useRef(conversationPublicId);
 
+  useEffect(
+    () => () => {
+      activeFirstMessageRef.current = null;
+      expectedConversationPublicIdRef.current = null;
+    },
+    [],
+  );
+
   useEffect(() => {
     if (previousConversationPublicId.current === conversationPublicId) {
       return;

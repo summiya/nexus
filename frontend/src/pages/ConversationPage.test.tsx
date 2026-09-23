@@ -125,9 +125,12 @@ function renderPage(initialEntry: string, withNavigation = false) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       {withNavigation ? (
-        <Link to={`/conversations/${secondConversationId}`}>
-          Open second Conversation
-        </Link>
+        <>
+          <Link to={`/conversations/${secondConversationId}`}>
+            Open second Conversation
+          </Link>
+          <Link to="/settings">Leave Conversations</Link>
+        </>
       ) : null}
       <LocationProbe />
       <Routes>
@@ -136,6 +139,7 @@ function renderPage(initialEntry: string, withNavigation = false) {
           path="/conversations/:conversationId"
           element={<ConversationPage />}
         />
+        <Route path="/settings" element={<h1>Settings</h1>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -323,7 +327,7 @@ describe("ConversationPage", () => {
     await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "The conversation could not be created. Please try again.",
+      "We couldn't confirm the conversation was created. Check your conversations before trying again.",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent(
       "private infrastructure detail",
@@ -386,7 +390,9 @@ describe("ConversationPage", () => {
       `/conversations/${secondConversationId}`,
     );
     expect(conversationMocks.submit).not.toHaveBeenCalled();
-    expect(screen.queryByText(/could not be created/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't confirm the conversation was created/i),
+    ).not.toBeInTheDocument();
   });
 
   it("ignores a stale creation failure after navigation", async () => {
@@ -415,7 +421,49 @@ describe("ConversationPage", () => {
       `/conversations/${secondConversationId}`,
     );
     expect(conversationMocks.submit).not.toHaveBeenCalled();
-    expect(screen.queryByText(/could not be created/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't confirm the conversation was created/i),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
   });
+
+  it.each(["success", "failure"] as const)(
+    "invalidates pending creation on unmount before late %s",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const pendingCreation = deferred<CreatedConversation>();
+      conversationMocks.createConversation.mockReturnValueOnce(
+        pendingCreation.promise,
+      );
+      renderPage("/conversations", true);
+
+      await user.type(
+        screen.getByRole("textbox", { name: "Message" }),
+        "Message from a page we leave",
+      );
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await user.click(
+        screen.getByRole("link", { name: "Leave Conversations" }),
+      );
+
+      expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+      expect(conversationMocks.hookUnmounts).toBe(1);
+
+      await act(async () => {
+        if (outcome === "success") {
+          pendingCreation.resolve(createdConversation);
+          await pendingCreation.promise;
+        } else {
+          pendingCreation.reject(new Error("late creation failure"));
+          await pendingCreation.promise.catch(() => undefined);
+        }
+      });
+
+      expect(screen.getByTestId("location")).toHaveTextContent("/settings");
+      expect(conversationMocks.submit).not.toHaveBeenCalled();
+      expect(
+        screen.queryByText(/couldn't confirm the conversation was created/i),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
