@@ -3,6 +3,7 @@ export {
   getConversationMessages,
   listConversations,
 } from "./api";
+export { ConversationSidebar } from "./ConversationSidebar";
 export {
   conversationKeys,
   useConversationMessagesQuery,
