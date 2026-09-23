@@ -56,10 +56,11 @@ function refreshFailureInvalidatesSession(error: unknown): boolean {
   return error instanceof NexusApiError && error.status === 401;
 }
 
-function refreshFailureIsTransient(error: unknown): boolean {
+function refreshFailureIsRetryable(error: unknown): boolean {
   return (
     error instanceof TypeError ||
-    (error instanceof NexusApiError && error.status >= 500)
+    (error instanceof NexusApiError &&
+      (error.status === 429 || error.status >= 500))
   );
 }
 
@@ -169,7 +170,7 @@ export function initializeSession(): Promise<AuthStatus> {
         return "unauthenticated";
       }
 
-      if (refreshFailureIsTransient(error)) {
+      if (refreshFailureIsRetryable(error)) {
         return "unavailable";
       }
 

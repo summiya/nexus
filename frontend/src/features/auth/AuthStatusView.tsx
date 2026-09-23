@@ -1,7 +1,9 @@
 import { initializeSession } from "./session";
 import type { AuthStatus } from "./types";
 
-export function AuthStatusView({ status }: { status: AuthStatus }) {
+type AuthStatusViewStatus = Extract<AuthStatus, "initializing" | "unavailable">;
+
+export function AuthStatusView({ status }: { status: AuthStatusViewStatus }) {
   if (status === "unavailable") {
     return (
       <main className="auth-status" aria-labelledby="auth-status-title">
