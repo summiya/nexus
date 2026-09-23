@@ -299,7 +299,10 @@ describe("useConversationSubmission", () => {
     });
 
     await waitFor(() =>
-      expect(result.current.liveTurn?.assistantContent).toBe("First"),
+      expect(result.current.liveTurn).toMatchObject({
+        assistantContent: "First",
+        persistedMessagePublicIds: null,
+      }),
     );
 
     releaseSecondDelta.resolve();

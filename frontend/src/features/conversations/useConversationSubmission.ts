@@ -23,7 +23,7 @@ export interface LiveConversationTurn {
   userContent: string;
   assistantContent: string;
   generationId: string | null;
-  persistedMessagePublicIds: readonly string[];
+  persistedMessagePublicIds: readonly string[] | null;
 }
 
 interface SubmitConversationMessageInput {
@@ -151,10 +151,9 @@ export function useConversationSubmission() {
       try {
         const idempotencyKey = crypto.randomUUID();
         attempted = true;
-        const persistedMessages =
-          queryClient.getQueryData<ConversationMessage[]>(
-            conversationKeys.messages(conversationPublicId),
-          ) ?? [];
+        const persistedMessages = queryClient.getQueryData<
+          ConversationMessage[]
+        >(conversationKeys.messages(conversationPublicId));
 
         if (operationIsCurrent(operation)) {
           setState({
@@ -166,9 +165,8 @@ export function useConversationSubmission() {
               userContent: content,
               assistantContent: "",
               generationId: null,
-              persistedMessagePublicIds: persistedMessages.map(
-                (message) => message.publicId,
-              ),
+              persistedMessagePublicIds:
+                persistedMessages?.map((message) => message.publicId) ?? null,
             },
           });
         }

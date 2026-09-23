@@ -81,10 +81,13 @@ export function ConversationMessageHistory({
   const activeLiveTurn =
     liveTurn?.conversationPublicId === conversationPublicId ? liveTurn : null;
   const persistedMessages = messages.data ?? [];
+  const baselineIsKnown =
+    activeLiveTurn !== null &&
+    activeLiveTurn.persistedMessagePublicIds !== null;
   const baselineMessagePublicIds = new Set(
     activeLiveTurn?.persistedMessagePublicIds ?? [],
   );
-  const messagesPersistedSinceSubmission = activeLiveTurn
+  const messagesPersistedSinceSubmission = baselineIsKnown
     ? persistedMessages.filter(
         (message) => !baselineMessagePublicIds.has(message.publicId),
       )
@@ -99,7 +102,7 @@ export function ConversationMessageHistory({
   const assistantProjectionPersisted =
     activeLiveTurn?.generationId !== null &&
     activeLiveTurn?.generationId !== undefined &&
-    messagesPersistedSinceSubmission.some(
+    persistedMessages.some(
       (message) =>
         message.role === "assistant" &&
         message.generation?.publicId === activeLiveTurn.generationId,

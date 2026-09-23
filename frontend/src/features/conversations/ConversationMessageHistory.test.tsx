@@ -221,6 +221,36 @@ describe("ConversationMessageHistory", () => {
     expect(document.querySelector(".conversation-message-live")).toBeNull();
   });
 
+  it("keeps an identical live turn when previously unloaded history arrives", () => {
+    const projection = liveTurn({
+      userContent: "Hello",
+      persistedMessagePublicIds: null,
+    });
+    const rendered = renderHistory(
+      { data: undefined, isPending: true },
+      projection,
+    );
+
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+
+    queryMocks.useConversationMessagesQuery.mockReturnValue(
+      queryResult({
+        data: [message("older-user-message", "user", "Hello")],
+      }),
+    );
+    rendered.rerender(
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+        liveTurn={projection}
+      />,
+    );
+
+    expect(screen.getAllByText("Hello")).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".conversation-message-live"),
+    ).toHaveLength(1);
+  });
+
   it("lets a persisted assistant from the current generation replace its projection", () => {
     const metadata = generation("completed");
     const projection = liveTurn({
