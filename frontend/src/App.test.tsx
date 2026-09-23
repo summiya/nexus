@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,6 +27,15 @@ vi.mock("./lib/query-client", () => ({
 
 import App from "./App";
 import { setAuthStatus } from "./features/auth/store";
+
+const conversationId = "11111111-1111-4111-8111-111111111111";
+
+function conversationListResponse(): Response {
+  return new Response(JSON.stringify({ items: [] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -70,6 +79,60 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { name: "Foundation configuration" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the new Conversation shell inside the authenticated layout", async () => {
+    window.history.replaceState({}, "", "/conversations");
+    vi.mocked(globalThis.fetch).mockResolvedValue(conversationListResponse());
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Start a new conversation" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("No conversations yet."),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("link", { name: "Conversations" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("keeps a stale Conversation route selected without fetching messages", async () => {
+    window.history.replaceState({}, "", `/conversations/${conversationId}`);
+    vi.mocked(globalThis.fetch).mockResolvedValue(conversationListResponse());
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Conversation selected" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("No conversations yet."),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/conversations/${conversationId}`);
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("link", { name: "Conversations" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Conversation routes behind the existing authentication gate", async () => {
+    setAuthStatus("unauthenticated");
+    window.history.replaceState({}, "", "/conversations");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign in" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Start a new conversation" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the API error state when backend health fails", async () => {
