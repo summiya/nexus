@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 -include .env
 export VITE_API_BASE_URL
+export VITE_CONVERSATION_MODEL
 
 .PHONY: check backend-check frontend-check docker-check
 
@@ -30,8 +31,10 @@ frontend-check:
 	@echo "2/3 FRONTEND QUALITY"
 	@echo "========================================"
 	@test -n "$$VITE_API_BASE_URL" || (echo "ERROR: VITE_API_BASE_URL is required"; exit 1)
+	@test -n "$$VITE_CONVERSATION_MODEL" || (echo "ERROR: VITE_CONVERSATION_MODEL is required"; exit 1)
 	docker run --rm \
 		-e VITE_API_BASE_URL="$${VITE_API_BASE_URL}" \
+		-e VITE_CONVERSATION_MODEL="$${VITE_CONVERSATION_MODEL}" \
 		-v "$(CURDIR)/frontend:/source:ro" \
 		-w /app \
 		node:20-bookworm \
@@ -44,7 +47,7 @@ frontend-check:
 			npm test && \
 			npm run test:coverage && \
 			rm -rf dist && \
-			VITE_API_BASE_URL=$${VITE_API_BASE_URL} npm run build && \
+			VITE_API_BASE_URL=$${VITE_API_BASE_URL} VITE_CONVERSATION_MODEL=$${VITE_CONVERSATION_MODEL} npm run build && \
 			npx playwright install --with-deps chromium && \
 			npm run test:e2e \
 		'

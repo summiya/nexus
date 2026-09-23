@@ -3,6 +3,7 @@ export {
   getConversationMessages,
   listConversations,
 } from "./api";
+export { ConversationComposer } from "./ConversationComposer";
 export { ConversationMessageHistory } from "./ConversationMessageHistory";
 export { ConversationSidebar } from "./ConversationSidebar";
 export {
@@ -12,6 +13,12 @@ export {
   useCreateConversationMutation,
 } from "./queries";
 export { streamConversationMessage } from "./stream";
+export { useConversationSubmission } from "./useConversationSubmission";
+export type {
+  SubmissionFeedback,
+  SubmissionPhase,
+  SubmissionResult,
+} from "./useConversationSubmission";
 export type {
   ConversationGenerationMetadata,
   ConversationMessage,

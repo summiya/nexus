@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 vi.stubEnv("VITE_API_BASE_URL", "http://localhost:8000/api/v1");
+vi.stubEnv("VITE_CONVERSATION_MODEL", "gpt-4o-mini");
 
 afterEach(() => {
   cleanup();
