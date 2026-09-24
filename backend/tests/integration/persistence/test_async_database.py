@@ -10,9 +10,7 @@ def test_async_session_executes_against_postgresql(
     migrated_database: tuple[Config, Engine],
 ) -> None:
     _, migrated_engine = migrated_database
-    database = build_database(
-        migrated_engine.url.render_as_string(hide_password=False)
-    )
+    database = build_database(migrated_engine.url.render_as_string(hide_password=False))
 
     async def execute_query() -> None:
         try:
