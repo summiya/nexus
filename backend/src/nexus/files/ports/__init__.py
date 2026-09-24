@@ -5,5 +5,19 @@ from nexus.files.ports.persistence import (
     FilePersistenceError,
     FileReferenceError,
 )
+from nexus.files.ports.storage import (
+    ObjectStorage,
+    ObjectStorageAlreadyExistsError,
+    ObjectStorageError,
+    ObjectStorageNotFoundError,
+)
 
-__all__ = ["FilePersistence", "FilePersistenceError", "FileReferenceError"]
+__all__ = [
+    "FilePersistence",
+    "FilePersistenceError",
+    "FileReferenceError",
+    "ObjectStorage",
+    "ObjectStorageAlreadyExistsError",
+    "ObjectStorageError",
+    "ObjectStorageNotFoundError",
+]

@@ -23,6 +23,16 @@ FORBIDDEN_DOMAIN_IMPORTS = (
     "starlette",
 )
 
+FORBIDDEN_PORT_IMPORTS = (
+    "azure",
+    "boto3",
+    "botocore",
+    "fastapi",
+    "nexus.infrastructure",
+    "sqlalchemy",
+    "starlette",
+)
+
 
 def _imports(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -52,7 +62,11 @@ def test_file_ports_depend_only_on_file_contracts() -> None:
             not module.startswith("nexus") or module.startswith("nexus.files")
             for module in imports
         ), path
-        assert not any(module.startswith("sqlalchemy") for module in imports), path
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in FORBIDDEN_PORT_IMPORTS
+        ), path
 
 
 def test_file_persistence_remains_native_async_sqlalchemy() -> None:
