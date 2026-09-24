@@ -5,8 +5,10 @@ from pathlib import Path
 
 SOURCE_ROOT = Path(__file__).resolve().parents[3] / "src" / "nexus"
 FILES_ROOT = SOURCE_ROOT / "files"
+APPLICATION_ROOT = FILES_ROOT / "application"
 DOMAIN_ROOT = FILES_ROOT / "domain"
 PORTS_ROOT = FILES_ROOT / "ports"
+UPLOAD_INTENT_POLICY = APPLICATION_ROOT / "upload_intent.py"
 PERSISTENCE_FILES = (
     SOURCE_ROOT / "infrastructure" / "persistence" / "file.py",
     SOURCE_ROOT / "infrastructure" / "persistence" / "_file_queries.py",
@@ -31,6 +33,28 @@ FORBIDDEN_PORT_IMPORTS = (
     "nexus.infrastructure",
     "sqlalchemy",
     "starlette",
+)
+
+FORBIDDEN_APPLICATION_IMPORTS = (
+    "aiohttp",
+    "alembic",
+    "azure",
+    "boto3",
+    "botocore",
+    "fastapi",
+    "httpx",
+    "nexus.api",
+    "nexus.composition",
+    "nexus.files.api",
+    "nexus.infrastructure",
+    "pydantic",
+    "redis",
+    "requests",
+    "socket",
+    "sqlalchemy",
+    "starlette",
+    "urllib",
+    "urllib3",
 )
 
 
@@ -67,6 +91,26 @@ def test_file_ports_depend_only_on_file_contracts() -> None:
             for module in imports
             for forbidden in FORBIDDEN_PORT_IMPORTS
         ), path
+
+
+def test_file_application_has_no_forbidden_dependencies() -> None:
+    for path in sorted(APPLICATION_ROOT.rglob("*.py")):
+        imports = _imports(path)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in FORBIDDEN_APPLICATION_IMPORTS
+        ), path
+
+
+def test_upload_intent_policy_has_no_configuration_or_port_dependency() -> None:
+    imports = _imports(UPLOAD_INTENT_POLICY)
+
+    assert not any(
+        module in {"nexus.config", "nexus.files.ports"}
+        or module.startswith(("nexus.config.", "nexus.files.ports."))
+        for module in imports
+    )
 
 
 def test_file_persistence_remains_native_async_sqlalchemy() -> None:

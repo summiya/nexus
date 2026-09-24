@@ -8,8 +8,8 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-_MAX_ORIGINAL_NAME_LENGTH = 255
-_MAX_MIME_TYPE_LENGTH = 255
+MAX_ORIGINAL_NAME_LENGTH = 255
+MAX_MIME_TYPE_LENGTH = 255
 _MAX_STORAGE_KEY_LENGTH = 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -54,12 +54,12 @@ class File:
         _require_nonblank_bounded(
             self.original_name,
             "original_name",
-            _MAX_ORIGINAL_NAME_LENGTH,
+            MAX_ORIGINAL_NAME_LENGTH,
         )
         _require_nonblank_bounded(
             self.mime_type,
             "mime_type",
-            _MAX_MIME_TYPE_LENGTH,
+            MAX_MIME_TYPE_LENGTH,
         )
         _require_nonblank_bounded(
             self.storage_key,

@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 4 storage configuration and composition
+**Status:** Implemented Phase 5 upload-intent validation and storage-key policy
 
 ## Purpose
 
@@ -10,11 +10,18 @@ provider-neutral contract for binary object storage. Phase 3 provides the first
 infrastructure adapter using the native asynchronous Azure Blob SDK. It does
 not process Files or expose Files through an API. Phase 4 composes the adapter
 as an application-owned dependency for local Azurite and Azure Managed Identity.
+Phase 5 adds a pure application policy for validating untrusted upload metadata
+and generating opaque Nexus storage keys. It performs no persistence, storage,
+or network I/O.
 
 ## Boundary
 
 ```text
-Future File application service
+Future File upload application service
+        ├── UploadIntentPolicy
+        │       ↓
+        │   ValidatedUploadIntent
+        │
         ├── FilePersistence
         │       ↓
         │   SqlAlchemyFilePersistence
@@ -30,7 +37,9 @@ Future File application service
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
 provider. SQLAlchemy remains inside infrastructure. Binary storage adapters
-will also remain infrastructure details.
+remain infrastructure details. `UploadIntentPolicy` is an application policy,
+but it is provider-neutral and has no dependency on persistence or storage
+ports.
 
 ## File semantics
 
@@ -39,7 +48,7 @@ A File represents:
 - public File identity;
 - organization and creator ownership;
 - original user-visible name and MIME metadata;
-- optional final byte size while storage is pending;
+- optional verified byte size of the stored object;
 - an opaque provider-neutral storage key;
 - storage lifecycle state;
 - optional SHA-256 integrity metadata;
@@ -57,6 +66,24 @@ An available File must have a known size. A SHA-256 checksum remains optional
 in every state and is validated only when present. Phase 1 does not implement
 checksum-based deduplication.
 
+The size accepted by `UploadIntentPolicy` is deliberately named
+`declared_size_bytes`: it is untrusted request metadata. It is not copied into
+`File.size_bytes` while a File is pending. The intended later lifecycle is:
+
+```text
+ValidatedUploadIntent.declared_size_bytes
+    untrusted client declaration
+
+File(PENDING).size_bytes
+    None
+
+File(AVAILABLE).size_bytes
+    actual verified object size
+```
+
+A later verification phase must measure the stored object before making the
+File available.
+
 ## Tenant ownership
 
 Every File belongs to exactly one Organization. The persistence schema enforces
@@ -70,13 +97,16 @@ authorization, which belongs to later File use cases.
 ## Storage identity
 
 `storage_key` is an opaque logical identity, not a URL, filesystem path,
-container name, bucket, credential, or access token. The future upload
-application boundary owns its detailed generation and validation policy.
-`ObjectStorage` and its infrastructure adapters receive the resulting key and
-treat it as opaque.
+container name, bucket, credential, or access token. `UploadIntentPolicy`
+generates the canonical form `files/<uuid4 hex>` only after input validation
+succeeds. `ObjectStorage` and its infrastructure adapters receive the
+resulting key and treat it as opaque.
 
 The original filename is display metadata and must not become physical object
-identity.
+identity. Storage keys contain no filename, extension, MIME type, organization,
+user, project, workspace, provider, account, container, bucket, URL, or
+credential. Authorization comes from persisted File metadata and application
+policy, never from possession or interpretation of a storage key.
 
 Nexus currently assumes one configured object-storage backend and therefore
 does not persist a provider or container per File. A future multi-backend
@@ -203,6 +233,80 @@ permission at storage-account scope or higher, for example through the
 `Storage Blob Delegator` role. Phase 4 neither grants that permission nor
 implements upload grants.
 
+## Upload-intent policy
+
+`UploadIntentPolicy` is the Phase 5 pure application boundary for preparing an
+upload request. It accepts an original filename, optional declared MIME type,
+and declared size, then returns an immutable `ValidatedUploadIntent` containing
+normalized metadata, `declared_size_bytes`, and a newly generated opaque
+storage key. It does not authorize a user, create a File, query PostgreSQL,
+contact object storage, or issue an upload grant.
+
+Filename handling is intentionally metadata-focused rather than filesystem or
+cloud-path policy:
+
+- surrounding whitespace is removed;
+- blank names, `/`, `\`, and Unicode `Cc` control characters are rejected;
+- names are bounded by the File domain's 255-character limit;
+- Unicode, internal spaces, ordinary extensions, multiple dots, and leading
+  dots remain valid.
+
+The policy does not apply basename extraction, Unicode rewriting, platform
+reserved-name rules, or provider-specific sanitization. A filename remains
+untrusted display metadata in later UI and download-response handling.
+
+MIME metadata is also a declaration rather than verified content identity.
+Absent or blank input becomes `application/octet-stream`; other values are
+trimmed, lowercased, bounded by the File domain's 255-character limit, and must
+be a single bare `type/subtype`. Vendor types and structured suffixes remain
+valid. Parameters, wildcards, embedded whitespace, control characters, and
+malformed values are rejected. Phase 5 has no MIME allowlist and does not
+compare the MIME value with a filename extension.
+
+Declared size must be an integer other than `bool`, must be nonnegative, and
+must not exceed `FILE_UPLOAD_MAX_SIZE_BYTES`. The initial configurable default
+is 52,428,800 bytes (50 MiB), and zero-byte uploads are valid. This limit does
+not prove the object's actual size and is not an object-storage capability
+limit.
+
+The generated `files/<uuid4 hex>` key is 38 provider-portable ASCII characters
+using lowercase hexadecimal plus `/`. Nexus performs no database or storage
+existence preflight and no deduplication. The database uniqueness constraint
+and create-only object storage semantics remain the final collision defenses.
+
+Validation failures use one application error contract with fixed,
+non-sensitive messages. Invalid filenames, MIME values, and sizes are never
+echoed into an error. Transport-specific error mapping belongs to the later
+File API phase.
+
+## Future upload and verification lifecycle
+
+Phase 5 prepares but does not execute a direct upload. Later phases can compose
+the policy without changing its boundary:
+
+```text
+authenticate and authorize upload
+        ↓
+UploadIntentPolicy
+        ↓
+persist File(PENDING) with size_bytes=None
+        ↓
+issue an exact-object upload grant
+        ↓
+client uploads directly to object storage
+        ↓
+verify actual object size, type, checksum, and security state
+        ↓
+transition File to AVAILABLE or FAILED
+```
+
+The client never chooses the storage key. A successful object upload or a
+provider event alone does not establish tenant ownership, authorization, or
+File availability. Later verification must compare the actual object size
+with both `declared_size_bytes` and the configured maximum, inspect actual
+content type where required, compute integrity metadata, and apply future
+malware/security policy before persisting the verified final size.
+
 ## File and Document separation
 
 ```text
@@ -243,6 +347,16 @@ workspace/project, retrieval, tool-permission, and audit enforcement belong to
 those later application and security phases. The storage port contains no RAG,
 MCP, Agent, authorization, or provider-credential concepts.
 
+The upload intent likewise contains no Document, chunk, embedding, vector,
+retrieval, MCP-resource, tool, or Agent metadata. Future Document processing
+starts only from an authorized, verified File. Future MCP and Agent operations
+must resolve that File through Nexus authorization boundaries; neither an
+opaque storage key nor an upload intent grants access.
+
+The canonical storage key is portable across Azure Blob, S3, and future object
+stores. Changing the configured adapter must not require changing File identity
+or adding provider concepts to upload validation.
+
 ## Phase boundaries
 
 ```text
@@ -254,14 +368,20 @@ Phase 3
 
 Phase 4
     storage configuration, provider selection, and composition (implemented)
+
+Phase 5
+    upload-intent validation and storage-key generation (implemented)
 ```
 
 ## Deferred work
 
 Later phases own:
 
-- upload application service and API;
-- key generation and filename/upload validation;
+- authorization, File(PENDING) creation, and upload application orchestration;
+- upload grants and provider-specific direct-upload credentials;
+- actual size, type, checksum, and security verification;
+- File lifecycle transitions after storage verification;
+- upload and management APIs;
 - list, download, and delete use cases and APIs;
 - retention and object cleanup;
 - Document processing, chunks, embeddings, and RAG;
