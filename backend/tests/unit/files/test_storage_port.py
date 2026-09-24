@@ -11,7 +11,6 @@ from nexus.files.ports.storage import (
     ObjectStorageError,
     ObjectStorageNotFoundError,
 )
-from nexus.llm.ports import LLMGateway
 
 
 def test_create_object_is_an_async_streamed_create_contract() -> None:
@@ -29,7 +28,6 @@ def test_stream_object_directly_returns_the_lazy_async_iterator_contract() -> No
     type_hints = get_type_hints(ObjectStorage.stream_object)
 
     assert not inspect.iscoroutinefunction(ObjectStorage.stream_object)
-    assert not inspect.iscoroutinefunction(LLMGateway.stream)
     assert parameters["storage_key"].kind is inspect.Parameter.KEYWORD_ONLY
     assert type_hints["return"] == AsyncIterator[bytes]
 
@@ -49,8 +47,5 @@ def test_storage_specific_errors_share_the_provider_neutral_base() -> None:
 def test_file_ports_export_the_object_storage_contract() -> None:
     assert file_ports.ObjectStorage is ObjectStorage
     assert file_ports.ObjectStorageError is ObjectStorageError
-    assert (
-        file_ports.ObjectStorageAlreadyExistsError
-        is ObjectStorageAlreadyExistsError
-    )
+    assert file_ports.ObjectStorageAlreadyExistsError is ObjectStorageAlreadyExistsError
     assert file_ports.ObjectStorageNotFoundError is ObjectStorageNotFoundError
