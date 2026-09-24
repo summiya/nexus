@@ -14,6 +14,9 @@ from nexus.files.ports import ObjectStorage
 from nexus.infrastructure.storage import AzureBlobObjectStorage
 
 _LOCAL_CONNECTION_STRING_ENVIRONMENTS = frozenset({"development", "test"})
+_INVALID_ACCOUNT_URL_MESSAGE = (
+    "Azure storage account URL must be a credential-free HTTPS service root"
+)
 
 type AsyncCloseCallback = Callable[[], Awaitable[None]]
 
@@ -111,8 +114,15 @@ def _azure_configuration(
 
     if settings.azure_storage_account_url is None:
         raise StorageConfigurationError("Azure storage account URL is not configured")
-    if settings.azure_storage_account_url.scheme != "https":
-        raise StorageConfigurationError("Azure storage account URL must use HTTPS")
+    if (
+        settings.azure_storage_account_url.scheme != "https"
+        or settings.azure_storage_account_url.username is not None
+        or settings.azure_storage_account_url.password is not None
+        or settings.azure_storage_account_url.path != "/"
+        or settings.azure_storage_account_url.query is not None
+        or settings.azure_storage_account_url.fragment is not None
+    ):
+        raise StorageConfigurationError(_INVALID_ACCOUNT_URL_MESSAGE)
     return container_name, None, account_url
 
 

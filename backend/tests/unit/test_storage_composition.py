@@ -211,12 +211,21 @@ def test_test_environment_allows_connection_string() -> None:
     asyncio.run(scenario())
 
 
-def test_account_url_uses_system_assigned_managed_identity() -> None:
+@pytest.mark.parametrize(
+    "account_url",
+    [
+        "https://account.blob.core.windows.net",
+        "https://account.blob.core.windows.net/",
+    ],
+)
+def test_root_https_account_url_uses_system_assigned_managed_identity(
+    account_url: str,
+) -> None:
     async def scenario() -> None:
         composition = await build_storage_composition(
             build_settings(
                 app_env="production",
-                azure_storage_account_url="https://account.blob.core.windows.net",
+                azure_storage_account_url=account_url,
             )
         )
         credential = FakeManagedIdentityCredential.instances[0]
@@ -276,10 +285,6 @@ def test_account_url_uses_configured_user_assigned_identity() -> None:
             },
             "client ID requires",
         ),
-        (
-            {"azure_storage_account_url": "http://account.blob.core.windows.net"},
-            "must use HTTPS",
-        ),
     ],
 )
 def test_invalid_storage_configuration_fails_before_client_construction(
@@ -289,6 +294,37 @@ def test_invalid_storage_configuration_fails_before_client_construction(
     async def scenario() -> None:
         with pytest.raises(StorageConfigurationError, match=expected_message):
             await build_storage_composition(build_settings(**overrides))
+
+        assert FakeBlobServiceClient.instances == []
+        assert FakeManagedIdentityCredential.instances == []
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "account_url",
+    [
+        "http://account.blob.core.windows.net",
+        "https://account.blob.core.windows.net/?sv=version&sig=signature",
+        "https://user:password@account.blob.core.windows.net/",
+        "https://account.blob.core.windows.net/container",
+        "https://account.blob.core.windows.net/#fragment",
+    ],
+)
+def test_unsafe_account_url_is_rejected_before_azure_resource_construction(
+    account_url: str,
+) -> None:
+    async def scenario() -> None:
+        with pytest.raises(
+            StorageConfigurationError,
+            match="credential-free HTTPS service root",
+        ):
+            await build_storage_composition(
+                build_settings(
+                    app_env="production",
+                    azure_storage_account_url=account_url,
+                )
+            )
 
         assert FakeBlobServiceClient.instances == []
         assert FakeManagedIdentityCredential.instances == []
