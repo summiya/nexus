@@ -125,10 +125,12 @@ creates the container and never closes the shared client. Future Phase 4
 composition owns client construction, credentials, container selection, and
 application-lifetime cleanup.
 
-Object creation passes the caller's asynchronous byte iterable directly to the
-SDK as an explicit Block Blob with `overwrite=False`. This preserves streamed,
-single-pass uploads and uses Azure's atomic create-only behavior without an
-existence preflight. Existing blobs map to the provider-neutral
+Object creation streams the caller's asynchronous byte iterable into the SDK
+as an explicit Block Blob with `overwrite=False`. A private pass-through
+records producer-origin failures without buffering content, so caller failures
+remain distinct from Azure destination failures. This preserves single-pass
+uploads and uses Azure's atomic create-only behavior without an existence
+preflight. Existing blobs map to the provider-neutral
 `ObjectStorageAlreadyExistsError`.
 
 Downloads remain lazy. `stream_object()` returns an asynchronous generator and
