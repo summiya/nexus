@@ -96,13 +96,16 @@ class AppContainer:
     conversations: ConversationComposition
     event_publisher: EventPublisher
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Release application-scoped resources in dependency order."""
 
         try:
             self.authentication.close()
         finally:
-            self.database.dispose()
+            try:
+                self.database.dispose()
+            finally:
+                await self.database.dispose_async()
 
 
 def build_app_container(

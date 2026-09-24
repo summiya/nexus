@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         container: AppContainer = app.state.container
-        container.close()
+        await container.close()
         logger.info("application_stopped")
 
 
