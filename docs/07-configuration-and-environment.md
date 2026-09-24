@@ -77,7 +77,7 @@ LLM, Conversation, and event capabilities from that container.
 ```text
 create_app(settings)
         ├── logging
-        ├── SQLAlchemy engine and session factory
+        ├── SQLAlchemy async engine and session factory
         ├── Redis-backed rate limiter
         ├── email provider
         ├── token services
@@ -99,12 +99,12 @@ Dependencies must have an intentional lifetime.
 | Dependency | Lifetime |
 |---|---|
 | `Settings` | Application |
-| SQLAlchemy engine/session factory | Application |
+| SQLAlchemy `AsyncEngine` / async session factory | Application |
 | Redis client/rate limiter | Application |
 | Access-token verifier | Application |
 | LLM gateway/model policy | Application |
 | Email provider | Application |
-| SQLAlchemy `Session` | Request or short operation |
+| SQLAlchemy `AsyncSession` | Request or short operation |
 | Repositories using a session | Request or short operation |
 | Use cases using request repositories | Request |
 

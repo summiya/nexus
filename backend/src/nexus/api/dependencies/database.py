@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from nexus.api.dependencies import AppContainerDep
 from nexus.infrastructure.persistence.session import Database
@@ -20,21 +19,11 @@ def get_database(container: AppContainerDep) -> Database:
 DatabaseDep = Annotated[Database, Depends(get_database)]
 
 
-def get_db_session(database: DatabaseDep) -> Iterator[Session]:
-    """Yield one request-scoped session from the current application's database."""
+async def get_db_session(database: DatabaseDep) -> AsyncIterator[AsyncSession]:
+    """Yield one request-scoped session from the application database."""
 
-    with database.session_factory() as session:
+    async with database.session_factory() as session:
         yield session
 
 
-RequestSession = Annotated[Session, Depends(get_db_session)]
-
-
-async def get_async_db_session(database: DatabaseDep) -> AsyncIterator[AsyncSession]:
-    """Yield one request-scoped async session from the application database."""
-
-    async with database.async_session_factory() as session:
-        yield session
-
-
-AsyncRequestSession = Annotated[AsyncSession, Depends(get_async_db_session)]
+RequestSession = Annotated[AsyncSession, Depends(get_db_session)]

@@ -14,12 +14,9 @@ def test_async_session_executes_against_postgresql(
 
     async def execute_query() -> None:
         try:
-            async with database.async_session_factory() as session:
+            async with database.session_factory() as session:
                 assert await session.scalar(text("SELECT 1")) == 1
         finally:
-            await database.dispose_async()
+            await database.dispose()
 
-    try:
-        asyncio.run(execute_query())
-    finally:
-        database.dispose()
+    asyncio.run(execute_query())

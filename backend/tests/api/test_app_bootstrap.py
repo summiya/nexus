@@ -8,10 +8,14 @@ from fastapi.testclient import TestClient
 
 from nexus.api.dependencies import get_event_publisher
 from nexus.authentication.tokens import AuthTokenContext
+from nexus.composition import root as composition_root
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
+from nexus.infrastructure.persistence.conversation import (
+    SqlAlchemyConversationPersistence,
+)
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
@@ -42,6 +46,12 @@ class TrackingRateLimiter(AllowAllRateLimiter):
         self.closed = True
 
 
+class FailingTrackingRateLimiter(TrackingRateLimiter):
+    def close(self) -> None:
+        super().close()
+        raise RuntimeError("rate limiter cleanup failed")
+
+
 class StubEmailProvider:
     def send(self, message: EmailMessage) -> None:
         del message
@@ -49,16 +59,11 @@ class StubEmailProvider:
 
 class TrackingDatabase:
     def __init__(self) -> None:
-        self.disposed = False
-        self.async_disposed = False
+        self.dispose_calls = 0
         self.session_factory = lambda: None
-        self.async_session_factory = lambda: None
 
-    def dispose(self) -> None:
-        self.disposed = True
-
-    async def dispose_async(self) -> None:
-        self.async_disposed = True
+    async def dispose(self) -> None:
+        self.dispose_calls += 1
 
 
 async def _empty_llm_stream() -> AsyncIterator[LLMEvent]:
@@ -170,6 +175,16 @@ def test_llm_gateway_and_model_policy_are_application_scoped() -> None:
         assert app.state.container.conversations.stream_message.llm_gateway is gateway
 
 
+def test_conversation_composition_receives_database_session_factory() -> None:
+    database = TrackingDatabase()
+    app = create_test_app(build_settings(), database=database)
+
+    with TestClient(app):
+        persistence = app.state.container.conversations.create.persistence
+        assert isinstance(persistence, SqlAlchemyConversationPersistence)
+        assert persistence._session_factory is database.session_factory
+
+
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
     with pytest.raises(
         UnsupportedLLMGatewayError,
@@ -276,16 +291,34 @@ def test_lifespan_closes_application_owned_resources() -> None:
     )
 
     with TestClient(app):
-        assert database.disposed is False
-        assert database.async_disposed is False
+        assert database.dispose_calls == 0
         assert rate_limiter.closed is False
 
-    assert database.disposed is True
-    assert database.async_disposed is True
+    assert database.dispose_calls == 1
     assert rate_limiter.closed is True
 
 
-def test_composition_failure_disposes_created_resources() -> None:
+def test_lifespan_disposes_database_when_authentication_cleanup_fails() -> None:
+    database = TrackingDatabase()
+    rate_limiter = FailingTrackingRateLimiter()
+    app = create_app(
+        build_settings(),
+        database=database,  # type: ignore[arg-type]
+        rate_limiter=rate_limiter,
+        email_provider=StubEmailProvider(),
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="rate limiter cleanup failed"),
+        TestClient(app),
+    ):
+        pass
+
+    assert rate_limiter.closed is True
+    assert database.dispose_calls == 1
+
+
+def test_authentication_composition_failure_does_not_adopt_database() -> None:
     database = TrackingDatabase()
 
     with pytest.raises(EmailDeliveryError, match="Unsupported email provider"):
@@ -294,4 +327,29 @@ def test_composition_failure_disposes_created_resources() -> None:
             database=database,  # type: ignore[arg-type]
         )
 
-    assert database.disposed is True
+    assert database.dispose_calls == 0
+
+
+def test_database_construction_failure_closes_authentication_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rate_limiter = TrackingRateLimiter()
+
+    def fail_database_construction(database_url: str) -> None:
+        del database_url
+        raise RuntimeError("database construction failed")
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_database",
+        fail_database_construction,
+    )
+
+    with pytest.raises(RuntimeError, match="database construction failed"):
+        create_app(
+            build_settings(),
+            rate_limiter=rate_limiter,
+            email_provider=StubEmailProvider(),
+        )
+
+    assert rate_limiter.closed is True
