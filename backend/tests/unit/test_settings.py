@@ -1,6 +1,7 @@
 import importlib
 import logging
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from pydantic import ValidationError
 from pydantic_settings import SettingsError
 
 from nexus.config.settings import ROOT_ENV_FILE, Settings, load_settings
+from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 
 settings_module = importlib.import_module("nexus.config.settings")
@@ -41,6 +43,11 @@ SETTINGS_ENV_KEYS = [
     "CONVERSATION_HISTORY_LIMIT",
     "CONVERSATION_HISTORY_MAX_CHARS",
     "CONVERSATION_MESSAGE_MAX_LENGTH",
+    "STORAGE_PROVIDER",
+    "AZURE_STORAGE_CONTAINER",
+    "AZURE_STORAGE_CONNECTION_STRING",
+    "AZURE_STORAGE_ACCOUNT_URL",
+    "AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID",
 ]
 
 
@@ -103,6 +110,11 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.conversation_history_limit == 50
     assert settings.conversation_history_max_chars == 120_000
     assert settings.conversation_message_max_length == 32_000
+    assert settings.storage_provider == "azure_blob"
+    assert settings.azure_storage_container is None
+    assert settings.azure_storage_connection_string is None
+    assert settings.azure_storage_account_url is None
+    assert settings.azure_storage_managed_identity_client_id is None
 
 
 def test_database_url_is_required(clean_environment) -> None:
@@ -152,6 +164,12 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRES_SECONDS", "123")
     monkeypatch.setenv("REFRESH_TOKEN_EXPIRES_SECONDS", "456")
     monkeypatch.setenv("AUTH_TOKEN_ISSUER", "nexus-test")
+    monkeypatch.setenv("STORAGE_PROVIDER", "azure_blob")
+    monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "nexus-test-files")
+    monkeypatch.setenv(
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "UseDevelopmentStorage=true",
+    )
 
     reloaded = Settings(_env_file=None)
 
@@ -177,6 +195,13 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.access_token_expires_seconds == 123
     assert reloaded.refresh_token_expires_seconds == 456
     assert reloaded.auth_token_issuer == "nexus-test"
+    assert reloaded.storage_provider == "azure_blob"
+    assert reloaded.azure_storage_container == "nexus-test-files"
+    assert reloaded.azure_storage_connection_string is not None
+    assert (
+        reloaded.azure_storage_connection_string.get_secret_value()
+        == "UseDevelopmentStorage=true"
+    )
 
 
 @pytest.mark.parametrize(
@@ -260,7 +285,10 @@ def test_settings_module_has_no_eager_global_configuration() -> None:
 
 def test_create_app_uses_explicit_settings() -> None:
     app_settings = build_settings(APP_DEBUG=True, api_prefix="/api/test")
-    app = create_app(app_settings)
+    app = create_app(
+        app_settings,
+        object_storage=Mock(spec=ObjectStorage),
+    )
 
     with TestClient(app) as client:
         response = client.get("/api/test/health")
@@ -280,3 +308,12 @@ def test_sensitive_configuration_is_not_logged(caplog) -> None:
 
     assert secret_database_url not in caplog.text
     assert secret_redis_url not in caplog.text
+
+
+def test_storage_connection_string_is_redacted_from_settings_representation() -> None:
+    connection_string = "AccountName=nexus;AccountKey=top-secret-value"
+
+    settings = build_settings(azure_storage_connection_string=connection_string)
+
+    assert connection_string not in repr(settings)
+    assert connection_string not in str(settings)

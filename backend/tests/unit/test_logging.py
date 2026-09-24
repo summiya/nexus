@@ -1,9 +1,11 @@
 import json
 import logging
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
 from nexus.config.settings import Settings
+from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 
 
@@ -38,7 +40,10 @@ def test_configure_logging_sets_level_and_emits_message(capsys) -> None:
 
 
 def test_create_app_logs_startup_and_shutdown(capsys) -> None:
-    app = create_app(build_settings())
+    app = create_app(
+        build_settings(),
+        object_storage=Mock(spec=ObjectStorage),
+    )
 
     with TestClient(app):
         pass

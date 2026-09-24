@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from asyncio import CancelledError
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,6 +12,10 @@ from nexus.composition.authentication import (
     AuthenticationComposition,
     build_authentication_composition,
 )
+from nexus.composition.storage import (
+    StorageComposition,
+    build_storage_composition,
+)
 from nexus.config.settings import Settings
 from nexus.conversations.application import (
     CreateConversation,
@@ -19,6 +24,7 @@ from nexus.conversations.application import (
     StreamConversationMessage,
 )
 from nexus.events import EventPublisher, InProcessEventPublisher
+from nexus.files.ports import ObjectStorage
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -94,6 +100,7 @@ class AppContainer:
     llm: LLMComposition
     conversations: ConversationComposition
     event_publisher: EventPublisher
+    storage: StorageComposition
 
     async def close(self) -> None:
         """Release application-scoped resources in dependency order."""
@@ -101,10 +108,13 @@ class AppContainer:
         try:
             self.authentication.close()
         finally:
-            await self.database.dispose()
+            try:
+                await self.storage.close()
+            finally:
+                await self.database.dispose()
 
 
-def build_app_container(
+async def build_app_container(
     app_settings: Settings,
     *,
     event_publisher: EventPublisher | None = None,
@@ -112,6 +122,7 @@ def build_app_container(
     database: Database | None = None,
     rate_limiter: RateLimiter | None = None,
     email_provider: EmailProvider | None = None,
+    object_storage: ObjectStorage | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
@@ -130,16 +141,44 @@ def build_app_container(
             if database is not None
             else build_database(app_settings.database_url)
         )
-    except Exception:
-        authentication.close()
+    except Exception as construction_error:
+        try:
+            authentication.close()
+        except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
+            construction_error.add_note(
+                "An authentication resource also failed during startup cleanup: "
+                f"{type(cleanup_error).__name__}"
+            )
         raise
 
-    conversations = build_conversation_composition(
-        app_settings,
-        llm_gateway=llm.gateway,
-        model_policy=llm.model_policy,
-        session_factory=resolved_database.session_factory,
-    )
+    try:
+        conversations = build_conversation_composition(
+            app_settings,
+            llm_gateway=llm.gateway,
+            model_policy=llm.model_policy,
+            session_factory=resolved_database.session_factory,
+        )
+        storage = await build_storage_composition(
+            app_settings,
+            object_storage=object_storage,
+        )
+    except (Exception, CancelledError) as construction_error:
+        try:
+            authentication.close()
+        except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
+            construction_error.add_note(
+                "An authentication resource also failed during startup cleanup: "
+                f"{type(cleanup_error).__name__}"
+            )
+        try:
+            await resolved_database.dispose()
+        except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
+            construction_error.add_note(
+                "A database resource also failed during startup cleanup: "
+                f"{type(cleanup_error).__name__}"
+            )
+        raise
+
     return AppContainer(
         settings=app_settings,
         database=resolved_database,
@@ -147,4 +186,5 @@ def build_app_container(
         llm=llm,
         conversations=conversations,
         event_publisher=resolved_event_publisher,
+        storage=storage,
     )

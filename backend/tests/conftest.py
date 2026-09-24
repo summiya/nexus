@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from nexus.config.settings import Settings
+from nexus.files.ports import ObjectStorage
 from nexus.infrastructure.mailer import EmailMessage
 from nexus.main import create_app
 
@@ -41,6 +43,7 @@ def app(app_settings: Settings) -> FastAPI:
         app_settings,
         rate_limiter=AllowAllRateLimiter(),
         email_provider=StubEmailProvider(),
+        object_storage=Mock(spec=ObjectStorage),
     )
 
 

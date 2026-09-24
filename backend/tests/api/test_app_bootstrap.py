@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from typing import Annotated
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from nexus.composition import root as composition_root
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
+from nexus.files.ports import ObjectStorage
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -66,6 +68,21 @@ class TrackingDatabase:
         self.dispose_calls += 1
 
 
+class TrackingStorageComposition:
+    def __init__(self) -> None:
+        self.object_storage = Mock(spec=ObjectStorage)
+        self.close_calls = 0
+
+    async def close(self) -> None:
+        self.close_calls += 1
+
+
+class FailingTrackingStorageComposition(TrackingStorageComposition):
+    async def close(self) -> None:
+        await super().close()
+        raise RuntimeError("storage cleanup failed")
+
+
 async def _empty_llm_stream() -> AsyncIterator[LLMEvent]:
     if False:
         yield LLMStartedEvent()
@@ -87,6 +104,7 @@ def build_settings(**overrides: object) -> Settings:
 
 
 def create_test_app(settings: Settings, **overrides: object) -> FastAPI:
+    overrides.setdefault("object_storage", Mock(spec=ObjectStorage))
     return create_app(
         settings,
         rate_limiter=AllowAllRateLimiter(),
@@ -186,11 +204,16 @@ def test_conversation_composition_receives_database_session_factory() -> None:
 
 
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
-    with pytest.raises(
-        UnsupportedLLMGatewayError,
-        match="Unsupported LLM gateway configuration",
+    app = create_test_app(build_settings(llm_gateway="unsupported"))
+
+    with (
+        pytest.raises(
+            UnsupportedLLMGatewayError,
+            match="Unsupported LLM gateway configuration",
+        ),
+        TestClient(app),
     ):
-        create_test_app(build_settings(llm_gateway="unsupported"))
+        pass
 
 
 def test_event_publisher_can_be_injected_and_resolved_through_fastapi() -> None:
@@ -225,21 +248,26 @@ def test_two_apps_keep_database_redis_and_token_configuration_isolated() -> None
         redis_url="redis://localhost:6379/2",
         auth_token_secret="b" * 32,
     )
-    app_a = create_app(settings_a, email_provider=StubEmailProvider())
-    app_b = create_app(settings_b, email_provider=StubEmailProvider())
+    app_a = create_app(
+        settings_a,
+        email_provider=StubEmailProvider(),
+        object_storage=Mock(spec=ObjectStorage),
+    )
+    app_b = create_app(
+        settings_b,
+        email_provider=StubEmailProvider(),
+        object_storage=Mock(spec=ObjectStorage),
+    )
 
     context = AuthTokenContext(
         user_public_id=uuid4(),
         organization_public_id=uuid4(),
         session_public_id=uuid4(),
     )
-    token_a = (
-        app_a.state.container.authentication.access_token_service.issue_access_token(
+    with TestClient(app_a), TestClient(app_b):
+        token_a = app_a.state.container.authentication.access_token_service.issue_access_token(
             context
         )
-    )
-
-    with TestClient(app_a), TestClient(app_b):
         assert app_a.state.container.settings is settings_a
         assert app_b.state.container.settings is settings_b
         assert app_a.state.container.database.engine.url.database == "nexus_a"
@@ -274,15 +302,82 @@ def test_application_state_exposes_only_the_root_container() -> None:
             "database",
             "authentication",
             "event_publisher",
+            "llm_gateway",
+            "rate_limiter",
+            "email_provider",
+            "object_storage",
+            "bootstrap_dependencies",
             "llm",
             "conversations",
+            "storage",
         ):
             assert not hasattr(app.state, legacy_name)
 
 
-def test_lifespan_closes_application_owned_resources() -> None:
+def test_lifespan_forwards_storage_override_to_async_composition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = TrackingDatabase()
+    injected_storage = Mock(spec=ObjectStorage)
+    tracking_composition = TrackingStorageComposition()
+    captured: dict[str, object] = {}
+
+    async def build_tracking_storage(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+    ) -> TrackingStorageComposition:
+        captured["settings"] = settings
+        captured["object_storage"] = object_storage
+        tracking_composition.object_storage = object_storage
+        return tracking_composition
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        build_tracking_storage,
+    )
+    settings = build_settings()
+    app = create_app(
+        settings,
+        database=database,  # type: ignore[arg-type]
+        rate_limiter=AllowAllRateLimiter(),
+        email_provider=StubEmailProvider(),
+        object_storage=injected_storage,
+    )
+
+    assert not hasattr(app.state, "container")
+    with TestClient(app):
+        assert captured == {
+            "settings": settings,
+            "object_storage": injected_storage,
+        }
+        assert app.state.container.storage.object_storage is injected_storage
+
+    assert tracking_composition.close_calls == 1
+    assert database.dispose_calls == 1
+
+
+def test_lifespan_closes_application_owned_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     database = TrackingDatabase()
     rate_limiter = TrackingRateLimiter()
+    storage = TrackingStorageComposition()
+
+    async def build_tracking_storage(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+    ) -> TrackingStorageComposition:
+        del settings, object_storage
+        return storage
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        build_tracking_storage,
+    )
     app = create_app(
         build_settings(),
         database=database,  # type: ignore[arg-type]
@@ -296,11 +391,29 @@ def test_lifespan_closes_application_owned_resources() -> None:
 
     assert database.dispose_calls == 1
     assert rate_limiter.closed is True
+    assert storage.close_calls == 1
 
 
-def test_lifespan_disposes_database_when_authentication_cleanup_fails() -> None:
+def test_lifespan_closes_storage_and_database_when_authentication_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     database = TrackingDatabase()
     rate_limiter = FailingTrackingRateLimiter()
+    storage = TrackingStorageComposition()
+
+    async def build_tracking_storage(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+    ) -> TrackingStorageComposition:
+        del settings, object_storage
+        return storage
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        build_tracking_storage,
+    )
     app = create_app(
         build_settings(),
         database=database,  # type: ignore[arg-type]
@@ -315,17 +428,96 @@ def test_lifespan_disposes_database_when_authentication_cleanup_fails() -> None:
         pass
 
     assert rate_limiter.closed is True
+    assert storage.close_calls == 1
     assert database.dispose_calls == 1
+
+
+def test_lifespan_disposes_database_when_storage_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = TrackingDatabase()
+    storage = FailingTrackingStorageComposition()
+
+    async def build_tracking_storage(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+    ) -> FailingTrackingStorageComposition:
+        del settings, object_storage
+        return storage
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        build_tracking_storage,
+    )
+    app = create_app(
+        build_settings(),
+        database=database,  # type: ignore[arg-type]
+        rate_limiter=AllowAllRateLimiter(),
+        email_provider=StubEmailProvider(),
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="storage cleanup failed"),
+        TestClient(app),
+    ):
+        pass
+
+    assert storage.close_calls == 1
+    assert database.dispose_calls == 1
+
+
+def test_storage_composition_failure_cleans_earlier_owned_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = TrackingDatabase()
+    rate_limiter = TrackingRateLimiter()
+
+    async def fail_storage_composition(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+    ) -> TrackingStorageComposition:
+        del settings, object_storage
+        raise RuntimeError("storage composition failed")
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        fail_storage_composition,
+    )
+    app = create_app(
+        build_settings(),
+        database=database,  # type: ignore[arg-type]
+        rate_limiter=rate_limiter,
+        email_provider=StubEmailProvider(),
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="storage composition failed"),
+        TestClient(app),
+    ):
+        pass
+
+    assert rate_limiter.closed is True
+    assert database.dispose_calls == 1
+    assert not hasattr(app.state, "container")
 
 
 def test_authentication_composition_failure_does_not_adopt_database() -> None:
     database = TrackingDatabase()
+    app = create_app(
+        build_settings(email_provider="unsupported"),
+        database=database,  # type: ignore[arg-type]
+        object_storage=Mock(spec=ObjectStorage),
+    )
 
-    with pytest.raises(EmailDeliveryError, match="Unsupported email provider"):
-        create_app(
-            build_settings(email_provider="unsupported"),
-            database=database,  # type: ignore[arg-type]
-        )
+    with (
+        pytest.raises(EmailDeliveryError, match="Unsupported email provider"),
+        TestClient(app),
+    ):
+        pass
 
     assert database.dispose_calls == 0
 
@@ -345,11 +537,17 @@ def test_database_construction_failure_closes_authentication_resources(
         fail_database_construction,
     )
 
-    with pytest.raises(RuntimeError, match="database construction failed"):
-        create_app(
-            build_settings(),
-            rate_limiter=rate_limiter,
-            email_provider=StubEmailProvider(),
-        )
+    app = create_app(
+        build_settings(),
+        rate_limiter=rate_limiter,
+        email_provider=StubEmailProvider(),
+        object_storage=Mock(spec=ObjectStorage),
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="database construction failed"),
+        TestClient(app),
+    ):
+        pass
 
     assert rate_limiter.closed is True
