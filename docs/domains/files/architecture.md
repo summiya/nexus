@@ -69,9 +69,10 @@ authorization, which belongs to later File use cases.
 ## Storage identity
 
 `storage_key` is an opaque logical identity, not a URL, filesystem path,
-container name, bucket, credential, or access token. Its detailed generation
-and validation rules belong to the future upload application boundary and
-storage adapter.
+container name, bucket, credential, or access token. The future upload
+application boundary owns its detailed generation and validation policy.
+`ObjectStorage` and its infrastructure adapters receive the resulting key and
+treat it as opaque.
 
 The original filename is display metadata and must not become physical object
 identity.

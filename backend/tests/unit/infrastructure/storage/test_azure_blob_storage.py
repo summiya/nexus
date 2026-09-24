@@ -33,9 +33,11 @@ class FakeDownloader:
 class FakeContainerClient:
     def __init__(self) -> None:
         self.upload_calls: list[dict[str, object]] = []
+        self.uploaded_chunks: list[bytes] = []
         self.download_calls: list[str] = []
         self.delete_calls: list[str] = []
         self.upload_error: BaseException | None = None
+        self.upload_failure_wrapper: AzureError | None = None
         self.download_error: BaseException | None = None
         self.delete_error: BaseException | None = None
         self.consume_upload = False
@@ -61,8 +63,13 @@ class FakeContainerClient:
         if self.upload_error is not None:
             raise self.upload_error
         if self.consume_upload:
-            async for _ in data:
-                pass
+            try:
+                async for chunk in data:
+                    self.uploaded_chunks.append(chunk)
+            except BaseException as exc:
+                if self.upload_failure_wrapper is not None:
+                    raise self.upload_failure_wrapper from exc
+                raise
 
     async def download_blob(self, blob: str) -> FakeDownloader:
         self.download_calls.append(blob)
@@ -87,22 +94,21 @@ async def collect(stream: AsyncIterator[bytes]) -> list[bytes]:
     return [chunk async for chunk in stream]
 
 
-def test_create_passes_original_stream_to_atomic_block_blob_upload() -> None:
+def test_create_streams_content_to_atomic_block_blob_upload() -> None:
     async def scenario() -> None:
         fake_client = FakeContainerClient()
+        fake_client.consume_upload = True
         adapter = adapter_for(fake_client)
         content = byte_stream(b"first", b"second")
 
         await adapter.create_object(storage_key="opaque-key", content=content)
 
-        assert fake_client.upload_calls == [
-            {
-                "name": "opaque-key",
-                "data": content,
-                "blob_type": BlobType.BLOCKBLOB,
-                "overwrite": False,
-            }
-        ]
+        assert len(fake_client.upload_calls) == 1
+        assert fake_client.upload_calls[0]["name"] == "opaque-key"
+        assert isinstance(fake_client.upload_calls[0]["data"], AsyncIterable)
+        assert fake_client.upload_calls[0]["blob_type"] is BlobType.BLOCKBLOB
+        assert fake_client.upload_calls[0]["overwrite"] is False
+        assert fake_client.uploaded_chunks == [b"first", b"second"]
 
     asyncio.run(scenario())
 
@@ -152,6 +158,30 @@ def test_create_does_not_translate_upload_producer_failure() -> None:
         adapter = adapter_for(fake_client)
 
         with pytest.raises(ProducerError) as captured:
+            await adapter.create_object(
+                storage_key="opaque-key",
+                content=failing_content(),
+            )
+
+        assert captured.value is producer_error
+
+    asyncio.run(scenario())
+
+
+def test_create_does_not_translate_azure_error_from_upload_producer() -> None:
+    producer_error = AzureError("producer failed")
+
+    async def failing_content() -> AsyncIterator[bytes]:
+        yield b"first"
+        raise producer_error
+
+    async def scenario() -> None:
+        fake_client = FakeContainerClient()
+        fake_client.consume_upload = True
+        fake_client.upload_failure_wrapper = AzureError("SDK upload failed")
+        adapter = adapter_for(fake_client)
+
+        with pytest.raises(AzureError) as captured:
             await adapter.create_object(
                 storage_key="opaque-key",
                 content=failing_content(),
@@ -278,9 +308,9 @@ def test_early_stream_close_leaves_borrowed_client_reusable() -> None:
         await stream.aclose()
 
         fake_client.download_chunks = byte_stream(b"next")
-        assert await collect(
-            adapter.stream_object(storage_key="second-key")
-        ) == [b"next"]
+        assert await collect(adapter.stream_object(storage_key="second-key")) == [
+            b"next"
+        ]
         assert fake_client.download_calls == ["first-key", "second-key"]
         assert fake_client.close_calls == 0
 

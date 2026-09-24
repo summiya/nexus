@@ -106,9 +106,10 @@ def test_multichunk_round_trip_preserves_exact_byte_order() -> None:
             content=byte_stream(b"alpha", b"-", b"beta", b"-", b"omega"),
         )
 
-        assert await collect(
-            storage.stream_object(storage_key="multi-chunk")
-        ) == b"alpha-beta-omega"
+        assert (
+            await collect(storage.stream_object(storage_key="multi-chunk"))
+            == b"alpha-beta-omega"
+        )
 
     asyncio.run(_with_isolated_storage(scenario))
 
@@ -141,9 +142,9 @@ def test_duplicate_create_preserves_original_bytes() -> None:
                 content=byte_stream(b"replacement"),
             )
 
-        assert await collect(
-            storage.stream_object(storage_key="immutable")
-        ) == b"original"
+        assert (
+            await collect(storage.stream_object(storage_key="immutable")) == b"original"
+        )
 
     asyncio.run(_with_isolated_storage(scenario))
 
@@ -198,9 +199,10 @@ def test_early_stream_close_leaves_shared_client_usable() -> None:
             storage_key="second",
             content=byte_stream(b"still-usable"),
         )
-        assert await collect(
-            storage.stream_object(storage_key="second")
-        ) == b"still-usable"
+        assert (
+            await collect(storage.stream_object(storage_key="second"))
+            == b"still-usable"
+        )
 
     asyncio.run(_with_isolated_storage(scenario))
 
@@ -214,16 +216,12 @@ def test_normal_completion_leaves_shared_client_usable() -> None:
             storage_key="first",
             content=byte_stream(b"first"),
         )
-        assert await collect(
-            storage.stream_object(storage_key="first")
-        ) == b"first"
+        assert await collect(storage.stream_object(storage_key="first")) == b"first"
 
         await storage.create_object(
             storage_key="second",
             content=byte_stream(b"second"),
         )
-        assert await collect(
-            storage.stream_object(storage_key="second")
-        ) == b"second"
+        assert await collect(storage.stream_object(storage_key="second")) == b"second"
 
     asyncio.run(_with_isolated_storage(scenario))

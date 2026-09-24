@@ -20,6 +20,25 @@ _NOT_FOUND_MESSAGE = "The object was not found in storage."
 _STORAGE_FAILURE_MESSAGE = "The object storage operation failed."
 
 
+class _TrackedUploadContent:
+    """Stream caller content while retaining failures raised by its producer."""
+
+    def __init__(self, content: AsyncIterable[bytes]) -> None:
+        self._content = content
+        self._source_failure: BaseException | None = None
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[bytes]:
+        try:
+            async for chunk in self._content:
+                yield chunk
+        except BaseException as exc:
+            self._source_failure = exc
+            raise
+
+
 async def _await_provider_operation[T](awaitable: Awaitable[T]) -> T:
     """Let an in-flight provider operation settle before propagating cancellation."""
     operation = asyncio.ensure_future(awaitable)
@@ -49,16 +68,21 @@ class AzureBlobObjectStorage:
         content: AsyncIterable[bytes],
     ) -> None:
         """Create an immutable Block Blob without replacing an existing object."""
+        tracked_content = _TrackedUploadContent(content)
         try:
             await self._container_client.upload_blob(
                 name=storage_key,
-                data=content,
+                data=tracked_content,
                 blob_type=BlobType.BLOCKBLOB,
                 overwrite=False,
             )
-        except ResourceExistsError as exc:
-            raise ObjectStorageAlreadyExistsError(_ALREADY_EXISTS_MESSAGE) from exc
         except AzureError as exc:
+            if tracked_content._source_failure is exc:
+                raise
+            if tracked_content._source_failure is not None:
+                raise tracked_content._source_failure from exc
+            if isinstance(exc, ResourceExistsError):
+                raise ObjectStorageAlreadyExistsError(_ALREADY_EXISTS_MESSAGE) from exc
             raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
 
     def stream_object(self, *, storage_key: str) -> AsyncIterator[bytes]:
