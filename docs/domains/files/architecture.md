@@ -1,13 +1,14 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 2 storage port foundation
+**Status:** Implemented Phase 3 Azure Blob storage adapter
 
 ## Purpose
 
 The File capability owns metadata for a tenant-owned binary object. Phase 1
 provides the domain and PostgreSQL persistence foundation. Phase 2 adds the
-provider-neutral contract for binary object storage. It does not yet configure
-or implement a storage provider, process Files, or expose Files through an API.
+provider-neutral contract for binary object storage. Phase 3 provides the first
+infrastructure adapter using the native asynchronous Azure Blob SDK. It does
+not yet configure the provider, process Files, or expose Files through an API.
 
 ## Boundary
 
@@ -21,7 +22,9 @@ Future File application service
         │
         └── ObjectStorage
                 ↑
-        Future infrastructure adapter
+        AzureBlobObjectStorage
+                ↓
+        Async Azure ContainerClient
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -66,9 +69,10 @@ authorization, which belongs to later File use cases.
 ## Storage identity
 
 `storage_key` is an opaque logical identity, not a URL, filesystem path,
-container name, bucket, credential, or access token. Its detailed generation
-and validation rules belong to the future upload application boundary and
-storage adapter.
+container name, bucket, credential, or access token. The future upload
+application boundary owns its detailed generation and validation policy.
+`ObjectStorage` and its infrastructure adapters receive the resulting key and
+treat it as opaque.
 
 The original filename is display metadata and must not become physical object
 identity.
@@ -111,6 +115,47 @@ introduce a custom closable stream.
 PostgreSQL stores File ownership and metadata. Object storage holds binary
 content addressed by the opaque `storage_key`; neither side exposes
 provider-specific location details through the File boundary.
+
+## Azure Blob infrastructure adapter
+
+`AzureBlobObjectStorage` lives under `nexus.infrastructure.storage` and is the
+only File storage implementation that imports the Azure SDK. It receives a
+preconfigured asynchronous `ContainerClient` and borrows it: the adapter never
+creates the container and never closes the shared client. Future Phase 4
+composition owns client construction, credentials, container selection, and
+application-lifetime cleanup.
+
+Object creation streams the caller's asynchronous byte iterable into the SDK
+as an explicit Block Blob with `overwrite=False`. A private pass-through
+records producer-origin failures without buffering content, so caller failures
+remain distinct from Azure destination failures. This preserves single-pass
+uploads and uses Azure's atomic create-only behavior without an existence
+preflight. Existing blobs map to the provider-neutral
+`ObjectStorageAlreadyExistsError`.
+
+Downloads remain lazy. `stream_object()` returns an asynchronous generator and
+does not call Azure until iteration begins. It yields chunks from the Azure
+downloader without reading the complete blob into memory. Missing blobs and
+other provider failures may therefore surface while the returned iterator is
+being consumed and are translated to provider-neutral storage errors.
+
+The Azure downloader has no public per-download close operation. The adapter
+does not access private downloader or HTTP state and does not close the shared
+client. Instead, each in-flight Azure download operation is retained and
+allowed to settle before outer task cancellation is propagated. At a yielded
+chunk boundary no provider operation is in flight, so closing the Nexus async
+generator early does not drain the remaining blob or invalidate the shared
+client. Normal completion, failure, cancellation, and early generator closure
+are covered by adapter tests, including shared-client reuse.
+
+Deletion is idempotent: Azure not-found results are accepted only for delete.
+Other Azure failures use safe provider-neutral messages. The adapter adds no
+application retry loop and uses the retry/pipeline behavior already configured
+on the injected client.
+
+Azurite integration tests verify streamed round trips, create conflicts,
+missing reads, idempotent deletion, empty objects, and client reuse. Azurite is
+test infrastructure only and is not part of the Nexus application composition.
 
 ## File and Document separation
 
@@ -159,7 +204,7 @@ Phase 2
     ObjectStorage contract only
 
 Phase 3
-    Azure Blob adapter, Azure SDK integration, and Azurite tests
+    Azure Blob adapter, Azure SDK integration, and Azurite tests (implemented)
 
 Phase 4
     storage configuration, provider selection, and composition
@@ -169,7 +214,6 @@ Phase 4
 
 Later phases own:
 
-- Azure Blob Storage adapter and Azurite integration;
 - storage configuration and composition;
 - upload application service and API;
 - key generation and filename/upload validation;
