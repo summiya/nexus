@@ -69,7 +69,7 @@ This is the single application-facing persistence boundary for Conversation, Mes
 
 ### `SqlAlchemyConversationPersistence`
 
-This adapter translates between domain records and SQLAlchemy models. Each operation owns a short-lived session, runs blocking database work in a worker thread, and commits or rolls back its transaction before returning. If an awaiting task is cancelled, it waits for the worker transaction to settle before propagating cancellation.
+This adapter translates between domain records and SQLAlchemy models using native SQLAlchemy `AsyncSession` operations. Each operation owns a short-lived async session and commits or rolls back its transaction before returning. Writes run in a narrowly shielded transaction task so cancellation waits for a deterministic commit or rollback before propagating; reads remain normally cancellable. Conversation persistence does not use worker-thread database execution.
 
 ### `LLMGateway`
 

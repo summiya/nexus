@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.conversations.domain import (
     Conversation,
@@ -31,9 +31,12 @@ _IDEMPOTENCY_INDEX = "uq_generations_conversation_idempotency_key"
 
 
 class SqlAlchemyConversationPersistence(ConversationPersistence):
-    """Run each Conversation persistence operation in a fresh worker session."""
+    """Run each Conversation persistence operation in a fresh async session."""
 
-    def __init__(self, session_factory: Callable[[], Session]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         self._session_factory = session_factory
 
     async def create_conversation(self, conversation: Conversation) -> None:
@@ -47,10 +50,11 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         conversation_public_id: UUID,
     ) -> Conversation | None:
-        return await self._run_worker(
-            lambda: self._get_conversation(
-                organization_public_id,
-                conversation_public_id,
+        return await self._run_read(
+            lambda session: queries.get_conversation(
+                session,
+                organization_public_id=organization_public_id,
+                conversation_public_id=conversation_public_id,
             )
         )
 
@@ -60,12 +64,14 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         created_by_user_public_id: UUID,
     ) -> tuple[Conversation, ...]:
-        return await self._run_worker(
-            lambda: self._list_conversations(
-                organization_public_id,
-                created_by_user_public_id,
+        conversations = await self._run_read(
+            lambda session: queries.list_conversations(
+                session,
+                organization_public_id=organization_public_id,
+                created_by_user_public_id=created_by_user_public_id,
             )
         )
+        return tuple(conversations)
 
     async def list_messages(
         self,
@@ -73,12 +79,14 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         organization_public_id: UUID,
         conversation_public_id: UUID,
     ) -> tuple[ConversationMessageHistoryItem, ...]:
-        return await self._run_worker(
-            lambda: self._list_messages(
-                organization_public_id,
-                conversation_public_id,
+        messages = await self._run_read(
+            lambda session: queries.list_messages(
+                session,
+                organization_public_id=organization_public_id,
+                conversation_public_id=conversation_public_id,
             )
         )
+        return tuple(messages)
 
     async def prepare_generation(
         self,
@@ -89,18 +97,18 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         generation: Generation,
         history_limit: int,
     ) -> tuple[Message, ...]:
-        def prepare(session: Session) -> tuple[Message, ...]:
-            queries.insert_message(
+        async def prepare(session: AsyncSession) -> tuple[Message, ...]:
+            await queries.insert_message(
                 session,
                 organization_public_id=organization_public_id,
                 message=message,
             )
-            queries.insert_generation(
+            await queries.insert_generation(
                 session,
                 organization_public_id=organization_public_id,
                 generation=generation,
             )
-            history = queries.list_recent_messages(
+            history = await queries.list_recent_messages(
                 session,
                 organization_public_id=organization_public_id,
                 conversation_public_id=conversation.public_id,
@@ -117,20 +125,20 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         assistant_message: Message,
         generation: Generation,
     ) -> bool:
-        def complete(session: Session) -> bool:
-            model = queries.lock_generation_for_terminal_transition(
+        async def complete(session: AsyncSession) -> bool:
+            model = await queries.lock_generation_for_terminal_transition(
                 session,
                 organization_public_id=organization_public_id,
                 generation=generation,
             )
             if model is None:
                 return False
-            queries.insert_message(
+            await queries.insert_message(
                 session,
                 organization_public_id=organization_public_id,
                 message=assistant_message,
             )
-            queries.apply_generation_terminal_transition(
+            await queries.apply_generation_terminal_transition(
                 session,
                 model=model,
                 generation=generation,
@@ -155,75 +163,20 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
     ) -> bool:
         return await self._transition_generation(organization_public_id, generation)
 
-    def _get_conversation(
-        self,
-        organization_public_id: UUID,
-        conversation_public_id: UUID,
-    ) -> Conversation | None:
-        try:
-            with self._session_factory() as session:
-                return queries.get_conversation(
-                    session,
-                    organization_public_id=organization_public_id,
-                    conversation_public_id=conversation_public_id,
-                )
-        except SQLAlchemyError as exc:
-            raise ConversationPersistenceError(
-                "Conversation persistence failed"
-            ) from exc
-
-    def _list_conversations(
-        self,
-        organization_public_id: UUID,
-        created_by_user_public_id: UUID,
-    ) -> tuple[Conversation, ...]:
-        try:
-            with self._session_factory() as session:
-                return tuple(
-                    queries.list_conversations(
-                        session,
-                        organization_public_id=organization_public_id,
-                        created_by_user_public_id=created_by_user_public_id,
-                    )
-                )
-        except SQLAlchemyError as exc:
-            raise ConversationPersistenceError(
-                "Conversation persistence failed"
-            ) from exc
-
-    def _list_messages(
-        self,
-        organization_public_id: UUID,
-        conversation_public_id: UUID,
-    ) -> tuple[ConversationMessageHistoryItem, ...]:
-        try:
-            with self._session_factory() as session:
-                return tuple(
-                    queries.list_messages(
-                        session,
-                        organization_public_id=organization_public_id,
-                        conversation_public_id=conversation_public_id,
-                    )
-                )
-        except SQLAlchemyError as exc:
-            raise ConversationPersistenceError(
-                "Conversation persistence failed"
-            ) from exc
-
     async def _transition_generation(
         self,
         organization_public_id: UUID,
         generation: Generation,
     ) -> bool:
-        def transition(session: Session) -> bool:
-            model = queries.lock_generation_for_terminal_transition(
+        async def transition(session: AsyncSession) -> bool:
+            model = await queries.lock_generation_for_terminal_transition(
                 session,
                 organization_public_id=organization_public_id,
                 generation=generation,
             )
             if model is None:
                 return False
-            queries.apply_generation_terminal_transition(
+            await queries.apply_generation_terminal_transition(
                 session,
                 model=model,
                 generation=generation,
@@ -232,48 +185,53 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
 
         return await self._run_transaction(transition)
 
-    async def _run_transaction(self, operation: Callable[[Session], T]) -> T:
-        return await self._run_worker(
-            lambda: self._run_transaction_sync(operation),
-        )
-
-    async def _run_worker(self, operation: Callable[[], T]) -> T:
-        """Do not abandon a session-owning worker when its caller is cancelled."""
-        worker = asyncio.create_task(asyncio.to_thread(operation))
+    async def _run_read(
+        self,
+        operation: Callable[[AsyncSession], Awaitable[T]],
+    ) -> T:
         try:
-            return await asyncio.shield(worker)
+            async with self._session_factory() as session:
+                return await operation(session)
+        except SQLAlchemyError as exc:
+            raise ConversationPersistenceError(
+                "Conversation persistence failed"
+            ) from exc
+
+    async def _run_transaction(
+        self,
+        operation: Callable[[AsyncSession], Awaitable[T]],
+    ) -> T:
+        transaction = asyncio.create_task(self._execute_transaction(operation))
+        try:
+            return await asyncio.shield(transaction)
         except asyncio.CancelledError:
-            await _settle_cancelled_worker(worker)
+            await _settle_cancelled_transaction(transaction)
             raise
 
-    def _run_transaction_sync(self, operation: Callable[[Session], T]) -> T:
-        with self._session_factory() as session:
-            try:
-                result = operation(session)
-                session.commit()
-                return result
-            except IntegrityError as exc:
-                session.rollback()
-                constraint_name = _constraint_name(exc)
-                if constraint_name == _ACTIVE_GENERATION_INDEX:
-                    raise ConversationGenerationInProgressError(
-                        "Conversation already has a running Generation"
-                    ) from exc
-                if constraint_name == _IDEMPOTENCY_INDEX:
-                    raise ConversationRequestAlreadySubmittedError(
-                        "Conversation message request was already submitted"
-                    ) from exc
-                raise ConversationPersistenceError(
-                    "Conversation persistence failed"
+    async def _execute_transaction(
+        self,
+        operation: Callable[[AsyncSession], Awaitable[T]],
+    ) -> T:
+        try:
+            async with self._session_factory.begin() as session:
+                return await operation(session)
+        except IntegrityError as exc:
+            constraint_name = _constraint_name(exc)
+            if constraint_name == _ACTIVE_GENERATION_INDEX:
+                raise ConversationGenerationInProgressError(
+                    "Conversation already has a running Generation"
                 ) from exc
-            except SQLAlchemyError as exc:
-                session.rollback()
-                raise ConversationPersistenceError(
-                    "Conversation persistence failed"
+            if constraint_name == _IDEMPOTENCY_INDEX:
+                raise ConversationRequestAlreadySubmittedError(
+                    "Conversation message request was already submitted"
                 ) from exc
-            except Exception:
-                session.rollback()
-                raise
+            raise ConversationPersistenceError(
+                "Conversation persistence failed"
+            ) from exc
+        except SQLAlchemyError as exc:
+            raise ConversationPersistenceError(
+                "Conversation persistence failed"
+            ) from exc
 
 
 def _constraint_name(exc: IntegrityError) -> str | None:
@@ -283,16 +241,16 @@ def _constraint_name(exc: IntegrityError) -> str | None:
     return name if isinstance(name, str) else None
 
 
-async def _settle_cancelled_worker(worker: asyncio.Task[object]) -> None:
-    """Wait until a shielded worker has definitely committed or rolled back."""
-    while not worker.done():
+async def _settle_cancelled_transaction(transaction: asyncio.Task[object]) -> None:
+    """Wait until a shielded transaction has definitely committed or rolled back."""
+    while not transaction.done():
         try:
-            await asyncio.shield(worker)
+            await asyncio.shield(transaction)
         except asyncio.CancelledError:
             continue
         except BaseException:  # noqa: BLE001 - cancellation remains authoritative
             return
 
-    if worker.cancelled():
+    if transaction.cancelled():
         return
-    worker.exception()
+    transaction.exception()

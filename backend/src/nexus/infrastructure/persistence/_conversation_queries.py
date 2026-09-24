@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.conversations.domain import (
     Conversation,
@@ -32,13 +32,18 @@ from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
 
 
-def insert_conversation(session: Session, conversation: Conversation) -> None:
-    reference = session.execute(
-        select(Organization.id, User.id)
-        .join(User, User.organization_id == Organization.id)
-        .where(
-            Organization.public_id == conversation.organization_public_id,
-            User.public_id == conversation.created_by_user_public_id,
+async def insert_conversation(
+    session: AsyncSession,
+    conversation: Conversation,
+) -> None:
+    reference = (
+        await session.execute(
+            select(Organization.id, User.id)
+            .join(User, User.organization_id == Organization.id)
+            .where(
+                Organization.public_id == conversation.organization_public_id,
+                User.public_id == conversation.created_by_user_public_id,
+            )
         )
     ).one_or_none()
     if reference is None:
@@ -59,26 +64,28 @@ def insert_conversation(session: Session, conversation: Conversation) -> None:
             updated_at=conversation.updated_at,
         )
     )
-    session.flush()
+    await session.flush()
 
 
-def get_conversation(
-    session: Session,
+async def get_conversation(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     conversation_public_id: UUID,
 ) -> Conversation | None:
-    row = session.execute(
-        select(ConversationModel, Organization.public_id, User.public_id)
-        .join(Organization, ConversationModel.organization_id == Organization.id)
-        .join(
-            User,
-            (User.id == ConversationModel.created_by_user_id)
-            & (User.organization_id == ConversationModel.organization_id),
-        )
-        .where(
-            Organization.public_id == organization_public_id,
-            ConversationModel.public_id == conversation_public_id,
+    row = (
+        await session.execute(
+            select(ConversationModel, Organization.public_id, User.public_id)
+            .join(Organization, ConversationModel.organization_id == Organization.id)
+            .join(
+                User,
+                (User.id == ConversationModel.created_by_user_id)
+                & (User.organization_id == ConversationModel.organization_id),
+            )
+            .where(
+                Organization.public_id == organization_public_id,
+                ConversationModel.public_id == conversation_public_id,
+            )
         )
     ).one_or_none()
     if row is None:
@@ -92,25 +99,27 @@ def get_conversation(
     )
 
 
-def list_conversations(
-    session: Session,
+async def list_conversations(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     created_by_user_public_id: UUID,
 ) -> list[Conversation]:
-    rows = session.execute(
-        select(ConversationModel, Organization.public_id, User.public_id)
-        .join(Organization, ConversationModel.organization_id == Organization.id)
-        .join(
-            User,
-            (User.id == ConversationModel.created_by_user_id)
-            & (User.organization_id == ConversationModel.organization_id),
+    rows = (
+        await session.execute(
+            select(ConversationModel, Organization.public_id, User.public_id)
+            .join(Organization, ConversationModel.organization_id == Organization.id)
+            .join(
+                User,
+                (User.id == ConversationModel.created_by_user_id)
+                & (User.organization_id == ConversationModel.organization_id),
+            )
+            .where(
+                Organization.public_id == organization_public_id,
+                User.public_id == created_by_user_public_id,
+            )
+            .order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc())
         )
-        .where(
-            Organization.public_id == organization_public_id,
-            User.public_id == created_by_user_public_id,
-        )
-        .order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc())
     ).all()
     return [
         _to_conversation(
@@ -140,13 +149,13 @@ def _to_conversation(
     )
 
 
-def insert_message(
-    session: Session,
+async def insert_message(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     message: Message,
 ) -> None:
-    reference = _conversation_reference(
+    reference = await _conversation_reference(
         session,
         organization_public_id=organization_public_id,
         conversation_public_id=message.conversation_public_id,
@@ -165,16 +174,16 @@ def insert_message(
             created_at=message.created_at,
         )
     )
-    session.flush()
+    await session.flush()
 
 
-def list_messages(
-    session: Session,
+async def list_messages(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     conversation_public_id: UUID,
 ) -> list[ConversationMessageHistoryItem]:
-    reference = _conversation_reference(
+    reference = await _conversation_reference(
         session,
         organization_public_id=organization_public_id,
         conversation_public_id=conversation_public_id,
@@ -183,19 +192,21 @@ def list_messages(
         return []
 
     organization_id, conversation_id = reference
-    rows = session.execute(
-        select(MessageModel, GenerationModel)
-        .outerjoin(
-            GenerationModel,
-            (GenerationModel.organization_id == MessageModel.organization_id)
-            & (GenerationModel.conversation_id == MessageModel.conversation_id)
-            & (GenerationModel.assistant_message_id == MessageModel.id),
+    rows = (
+        await session.execute(
+            select(MessageModel, GenerationModel)
+            .outerjoin(
+                GenerationModel,
+                (GenerationModel.organization_id == MessageModel.organization_id)
+                & (GenerationModel.conversation_id == MessageModel.conversation_id)
+                & (GenerationModel.assistant_message_id == MessageModel.id),
+            )
+            .where(
+                MessageModel.organization_id == organization_id,
+                MessageModel.conversation_id == conversation_id,
+            )
+            .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
         )
-        .where(
-            MessageModel.organization_id == organization_id,
-            MessageModel.conversation_id == conversation_id,
-        )
-        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
     ).all()
     return [
         ConversationMessageHistoryItem(
@@ -211,8 +222,8 @@ def list_messages(
     ]
 
 
-def list_recent_messages(
-    session: Session,
+async def list_recent_messages(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     conversation_public_id: UUID,
@@ -221,7 +232,7 @@ def list_recent_messages(
     if limit <= 0:
         raise ValueError("message history limit must be positive")
 
-    reference = _conversation_reference(
+    reference = await _conversation_reference(
         session,
         organization_public_id=organization_public_id,
         conversation_public_id=conversation_public_id,
@@ -240,21 +251,23 @@ def list_recent_messages(
         .limit(limit)
         .subquery()
     )
-    models = session.scalars(
-        select(MessageModel)
-        .where(MessageModel.id.in_(select(recent_ids.c.id)))
-        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+    models = (
+        await session.scalars(
+            select(MessageModel)
+            .where(MessageModel.id.in_(select(recent_ids.c.id)))
+            .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+        )
     ).all()
     return [_to_message(model, conversation_public_id) for model in models]
 
 
-def insert_generation(
-    session: Session,
+async def insert_generation(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     generation: Generation,
 ) -> None:
-    reference = _conversation_reference(
+    reference = await _conversation_reference(
         session,
         organization_public_id=organization_public_id,
         conversation_public_id=generation.conversation_public_id,
@@ -263,7 +276,7 @@ def insert_generation(
         raise ConversationReferenceError("Generation Conversation was not found")
 
     organization_id, conversation_id = reference
-    user_message_id, assistant_message_id = _message_references(
+    user_message_id, assistant_message_id = await _message_references(
         session,
         organization_id=organization_id,
         conversation_id=conversation_id,
@@ -292,11 +305,11 @@ def insert_generation(
             error_kind=generation.error_kind,
         )
     )
-    session.flush()
+    await session.flush()
 
 
-def lock_generation_for_terminal_transition(
-    session: Session,
+async def lock_generation_for_terminal_transition(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     generation: Generation,
@@ -308,26 +321,30 @@ def lock_generation_for_terminal_transition(
     }:
         raise ValueError("generation transition must target a terminal status")
 
-    row = session.execute(
-        select(GenerationModel, MessageModel.public_id)
-        .join(Organization, GenerationModel.organization_id == Organization.id)
-        .join(
-            ConversationModel,
-            (ConversationModel.id == GenerationModel.conversation_id)
-            & (ConversationModel.organization_id == GenerationModel.organization_id),
+    row = (
+        await session.execute(
+            select(GenerationModel, MessageModel.public_id)
+            .join(Organization, GenerationModel.organization_id == Organization.id)
+            .join(
+                ConversationModel,
+                (ConversationModel.id == GenerationModel.conversation_id)
+                & (
+                    ConversationModel.organization_id == GenerationModel.organization_id
+                ),
+            )
+            .join(
+                MessageModel,
+                (MessageModel.id == GenerationModel.user_message_id)
+                & (MessageModel.conversation_id == GenerationModel.conversation_id)
+                & (MessageModel.organization_id == GenerationModel.organization_id),
+            )
+            .where(
+                Organization.public_id == organization_public_id,
+                ConversationModel.public_id == generation.conversation_public_id,
+                GenerationModel.public_id == generation.public_id,
+            )
+            .with_for_update(of=GenerationModel)
         )
-        .join(
-            MessageModel,
-            (MessageModel.id == GenerationModel.user_message_id)
-            & (MessageModel.conversation_id == GenerationModel.conversation_id)
-            & (MessageModel.organization_id == GenerationModel.organization_id),
-        )
-        .where(
-            Organization.public_id == organization_public_id,
-            ConversationModel.public_id == generation.conversation_public_id,
-            GenerationModel.public_id == generation.public_id,
-        )
-        .with_for_update(of=GenerationModel)
     ).one_or_none()
     if row is None:
         raise ConversationEntityNotFoundError("Generation was not found")
@@ -352,13 +369,13 @@ def lock_generation_for_terminal_transition(
     return model
 
 
-def apply_generation_terminal_transition(
-    session: Session,
+async def apply_generation_terminal_transition(
+    session: AsyncSession,
     *,
     model: GenerationModel,
     generation: Generation,
 ) -> None:
-    model.assistant_message_id = _assistant_message_reference(
+    model.assistant_message_id = await _assistant_message_reference(
         session,
         organization_id=model.organization_id,
         conversation_id=model.conversation_id,
@@ -374,24 +391,26 @@ def apply_generation_terminal_transition(
     model.started_at = generation.started_at
     model.completed_at = generation.completed_at
     model.error_kind = generation.error_kind
-    session.flush()
+    await session.flush()
 
 
-def _conversation_reference(
-    session: Session,
+async def _conversation_reference(
+    session: AsyncSession,
     *,
     organization_public_id: UUID,
     conversation_public_id: UUID,
 ) -> tuple[int, int] | None:
-    reference = session.execute(
-        select(Organization.id, ConversationModel.id)
-        .join(
-            ConversationModel,
-            ConversationModel.organization_id == Organization.id,
-        )
-        .where(
-            Organization.public_id == organization_public_id,
-            ConversationModel.public_id == conversation_public_id,
+    reference = (
+        await session.execute(
+            select(Organization.id, ConversationModel.id)
+            .join(
+                ConversationModel,
+                ConversationModel.organization_id == Organization.id,
+            )
+            .where(
+                Organization.public_id == organization_public_id,
+                ConversationModel.public_id == conversation_public_id,
+            )
         )
     ).one_or_none()
     if reference is None:
@@ -399,8 +418,8 @@ def _conversation_reference(
     return reference[0], reference[1]
 
 
-def _message_references(
-    session: Session,
+async def _message_references(
+    session: AsyncSession,
     *,
     organization_id: int,
     conversation_id: int,
@@ -409,11 +428,13 @@ def _message_references(
     public_ids = [generation.user_message_public_id]
     if generation.assistant_message_public_id is not None:
         public_ids.append(generation.assistant_message_public_id)
-    rows = session.execute(
-        select(MessageModel.public_id, MessageModel.id).where(
-            MessageModel.organization_id == organization_id,
-            MessageModel.conversation_id == conversation_id,
-            MessageModel.public_id.in_(public_ids),
+    rows = (
+        await session.execute(
+            select(MessageModel.public_id, MessageModel.id).where(
+                MessageModel.organization_id == organization_id,
+                MessageModel.conversation_id == conversation_id,
+                MessageModel.public_id.in_(public_ids),
+            )
         )
     ).all()
     message_ids = {public_id: message_id for public_id, message_id in rows}
@@ -427,8 +448,8 @@ def _message_references(
     return message_ids[generation.user_message_public_id], assistant_message_id
 
 
-def _assistant_message_reference(
-    session: Session,
+async def _assistant_message_reference(
+    session: AsyncSession,
     *,
     organization_id: int,
     conversation_id: int,
@@ -436,7 +457,7 @@ def _assistant_message_reference(
 ) -> int | None:
     if assistant_message_public_id is None:
         return None
-    message_id = session.scalar(
+    message_id = await session.scalar(
         select(MessageModel.id).where(
             MessageModel.organization_id == organization_id,
             MessageModel.conversation_id == conversation_id,
