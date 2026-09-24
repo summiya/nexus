@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import uuid4
@@ -117,24 +118,26 @@ def test_valid_login_otp_consumes_challenge_stages_session_and_commits_once() ->
     )
     transaction.commit.side_effect = lambda: events.append("commit")
 
-    result = service.verify_login_otp(
-        request=LoginVerificationRequest(
-            email="  USER@Example.COM ",
-            otp=OTP,
+    result = asyncio.run(
+        service.verify_login_otp(
+            request=LoginVerificationRequest(
+                email="  USER@Example.COM ",
+                otp=OTP,
+            )
         )
     )
 
     assert result == token_result()
-    repository.get_latest_otp_challenge_for_update.assert_called_once_with(
+    repository.get_latest_otp_challenge_for_update.assert_awaited_once_with(
         email=EMAIL,
         purpose="login",
     )
-    repository.get_identity_by_email.assert_called_once_with(EMAIL)
+    repository.get_identity_by_email.assert_awaited_once_with(EMAIL)
     consumed = repository.update_otp_challenge.call_args.args[0]
     assert consumed.consumed_at == NOW
-    session_service.stage_session.assert_called_once_with(identity=expected_identity)
-    transaction.commit.assert_called_once_with()
-    transaction.rollback.assert_not_called()
+    session_service.stage_session.assert_awaited_once_with(identity=expected_identity)
+    transaction.commit.assert_awaited_once_with()
+    transaction.rollback.assert_not_awaited()
     assert events == ["otp", "session", "commit"]
 
 
@@ -145,11 +148,15 @@ def test_signup_purpose_challenge_cannot_verify_login() -> None:
     )
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=OTP))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=OTP)
+            )
+        )
 
     assert_invalid_credentials(exc_info.value)
-    session_service.stage_session.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    session_service.stage_session.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize(
@@ -169,12 +176,16 @@ def test_invalid_challenge_state_returns_generic_unauthorized(
     repository.get_latest_otp_challenge_for_update.return_value = challenge
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=OTP))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=OTP)
+            )
+        )
 
     assert_invalid_credentials(exc_info.value)
     repository.update_otp_challenge.assert_not_called()
-    session_service.stage_session.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    session_service.stage_session.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
 
 
 @pytest.mark.parametrize("otp", ["", "12345", "1234567", "12a456"])
@@ -182,12 +193,16 @@ def test_malformed_otp_returns_generic_unauthorized_without_lookup(otp: str) -> 
     service, repository, session_service, transaction = build_service()
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=otp))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=otp)
+            )
+        )
 
     assert_invalid_credentials(exc_info.value)
-    repository.get_latest_otp_challenge_for_update.assert_not_called()
-    session_service.stage_session.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    repository.get_latest_otp_challenge_for_update.assert_not_awaited()
+    session_service.stage_session.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
 
 
 def test_wrong_otp_commits_incremented_attempt_state() -> None:
@@ -196,17 +211,19 @@ def test_wrong_otp_commits_incremented_attempt_state() -> None:
     repository.get_latest_otp_challenge_for_update.return_value = original
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(
-            request=LoginVerificationRequest(email=EMAIL, otp="654321")
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp="654321")
+            )
         )
 
     assert_invalid_credentials(exc_info.value)
     updated = repository.update_otp_challenge.call_args.args[0]
     assert updated.attempt_count == 3
     assert updated.locked_at is None
-    session_service.stage_session.assert_not_called()
-    transaction.commit.assert_called_once_with()
-    transaction.rollback.assert_not_called()
+    session_service.stage_session.assert_not_awaited()
+    transaction.commit.assert_awaited_once_with()
+    transaction.rollback.assert_not_awaited()
 
 
 def test_final_wrong_attempt_commits_locked_challenge() -> None:
@@ -215,16 +232,18 @@ def test_final_wrong_attempt_commits_locked_challenge() -> None:
     repository.get_latest_otp_challenge_for_update.return_value = original
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(
-            request=LoginVerificationRequest(email=EMAIL, otp="654321")
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp="654321")
+            )
         )
 
     assert_invalid_credentials(exc_info.value)
     updated = repository.update_otp_challenge.call_args.args[0]
     assert updated.attempt_count == 5
     assert updated.locked_at == NOW
-    session_service.stage_session.assert_not_called()
-    transaction.commit.assert_called_once_with()
+    session_service.stage_session.assert_not_awaited()
+    transaction.commit.assert_awaited_once_with()
 
 
 def test_missing_active_identity_returns_generic_unauthorized() -> None:
@@ -232,12 +251,16 @@ def test_missing_active_identity_returns_generic_unauthorized() -> None:
     repository.get_identity_by_email.return_value = None
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=OTP))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=OTP)
+            )
+        )
 
     assert_invalid_credentials(exc_info.value)
     repository.update_otp_challenge.assert_not_called()
-    session_service.stage_session.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    session_service.stage_session.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
 
 
 def test_session_staging_failure_rolls_back_and_preserves_safe_error() -> None:
@@ -249,12 +272,16 @@ def test_session_staging_failure_rolls_back_and_preserves_safe_error() -> None:
     )
 
     with pytest.raises(NexusError) as exc_info:
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=OTP))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=OTP)
+            )
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     assert repository.update_otp_challenge.call_args.args[0].consumed_at == NOW
-    transaction.commit.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    transaction.commit.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
 
 
 def test_unexpected_repository_failure_rolls_back_without_translation() -> None:
@@ -262,8 +289,12 @@ def test_unexpected_repository_failure_rolls_back_without_translation() -> None:
     repository.get_identity_by_email.side_effect = RuntimeError("database failed")
 
     with pytest.raises(RuntimeError, match="database failed"):
-        service.verify_login_otp(request=LoginVerificationRequest(email=EMAIL, otp=OTP))
+        asyncio.run(
+            service.verify_login_otp(
+                request=LoginVerificationRequest(email=EMAIL, otp=OTP)
+            )
+        )
 
-    session_service.stage_session.assert_not_called()
-    transaction.commit.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    session_service.stage_session.assert_not_awaited()
+    transaction.commit.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()

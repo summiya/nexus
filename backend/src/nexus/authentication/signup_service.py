@@ -95,7 +95,7 @@ class SignupService:
     rate_limiter: RateLimiter
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
+    async def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
         _normalize_display_text(
             request.organization_name,
             "organization_name",
@@ -105,9 +105,9 @@ class SignupService:
         _normalize_display_text(request.last_name, "last_name", max_length=100)
         email = normalize_auth_email(request.email)
 
-        self._enforce_rate_limit(email)
-        if self.repository.user_exists_by_email(email):
-            self.transaction.commit()
+        await self._enforce_rate_limit(email)
+        if await self.repository.user_exists_by_email(email):
+            await self.transaction.commit()
             logger.info("signup_otp_request_accepted")
             return
 
@@ -130,15 +130,15 @@ class SignupService:
         )
 
         try:
-            self.repository.add_otp_challenge(challenge)
-            self.transaction.commit()
+            await self.repository.add_otp_challenge(challenge)
+            await self.transaction.commit()
         except Exception:
-            self.transaction.rollback()
+            await self.transaction.rollback()
             raise
 
         # The database transaction is closed before slow external email I/O.
         try:
-            self.email_gateway.send_signup_otp(
+            await self.email_gateway.send_signup_otp(
                 email=email,
                 otp=otp,
                 expires_at=expires_at,
@@ -149,7 +149,7 @@ class SignupService:
 
         logger.info("signup_otp_request_accepted")
 
-    def complete_signup(
+    async def complete_signup(
         self,
         *,
         request: SignupVerificationRequest,
@@ -173,16 +173,16 @@ class SignupService:
         display_name = f"{first_name} {last_name}"
 
         try:
-            challenge = self._verify_signup_otp(
+            challenge = await self._verify_signup_otp(
                 email=request.email,
                 otp=request.otp,
             )
-            self._reject_existing_signup(
+            await self._reject_existing_signup(
                 email=challenge.email,
                 organization_slug=organization_slug,
             )
             now = self.clock()
-            identity = self.repository.create_organization_administrator(
+            identity = await self.repository.create_organization_administrator(
                 SignupAccount(
                     organization_public_id=uuid4(),
                     organization_name=organization_name,
@@ -193,26 +193,28 @@ class SignupService:
                     email_verified_at=now,
                 )
             )
-            self.repository.update_otp_challenge(replace(challenge, consumed_at=now))
-            token_result = self.session_service.stage_session(identity=identity)
-            self.transaction.commit()
+            await self.repository.update_otp_challenge(
+                replace(challenge, consumed_at=now)
+            )
+            token_result = await self.session_service.stage_session(identity=identity)
+            await self.transaction.commit()
         except _OtpVerificationFailed as exc:
             try:
                 if exc.persist_attempt_state:
-                    self.transaction.commit()
+                    await self.transaction.commit()
                 else:
-                    self.transaction.rollback()
+                    await self.transaction.rollback()
             except Exception:
-                self.transaction.rollback()
+                await self.transaction.rollback()
                 raise
             raise _invalid_credentials() from exc
         except Exception:
-            self.transaction.rollback()
+            await self.transaction.rollback()
             raise
 
         # Signup is durable before best-effort welcome email delivery begins.
         try:
-            self.email_gateway.send_welcome_email(
+            await self.email_gateway.send_welcome_email(
                 email=challenge.email,
                 display_name=display_name,
             )
@@ -227,12 +229,12 @@ class SignupService:
             expires_in=token_result.expires_in,
         )
 
-    def _verify_signup_otp(self, *, email: str, otp: str) -> OtpChallenge:
+    async def _verify_signup_otp(self, *, email: str, otp: str) -> OtpChallenge:
         normalized_email = normalize_auth_email(email)
         if len(otp) != self.policy.signup_otp_length or _OTP_RE.fullmatch(otp) is None:
             raise _OtpVerificationFailed()
 
-        challenge = self.repository.get_latest_otp_challenge_for_update(
+        challenge = await self.repository.get_latest_otp_challenge_for_update(
             email=normalized_email,
             purpose=_SIGNUP_PURPOSE,
         )
@@ -254,7 +256,7 @@ class SignupService:
             return challenge
 
         attempt_count = challenge.attempt_count + 1
-        self.repository.update_otp_challenge(
+        await self.repository.update_otp_challenge(
             replace(
                 challenge,
                 attempt_count=attempt_count,
@@ -267,24 +269,24 @@ class SignupService:
         )
         raise _OtpVerificationFailed(persist_attempt_state=True)
 
-    def _reject_existing_signup(
+    async def _reject_existing_signup(
         self,
         *,
         email: str,
         organization_slug: str,
     ) -> None:
-        if self.repository.user_exists_by_email(email):
+        if await self.repository.user_exists_by_email(email):
             raise _conflict()
-        if self.repository.organization_exists_by_slug(organization_slug):
+        if await self.repository.organization_exists_by_slug(organization_slug):
             raise _conflict()
 
-    def _enforce_rate_limit(self, email: str) -> None:
+    async def _enforce_rate_limit(self, email: str) -> None:
         key_digest = keyed_digest(
             secret=self.policy.otp_hmac_secret,
             message=f"signup-rate-limit:{email}",
         )
         try:
-            allowed = self.rate_limiter.allow(
+            allowed = await self.rate_limiter.allow(
                 key=f"signup-otp:{key_digest}",
                 limit=self.policy.signup_otp_rate_limit_max_requests,
                 window_seconds=(self.policy.signup_otp_rate_limit_window_seconds),

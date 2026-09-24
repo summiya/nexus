@@ -31,20 +31,20 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
 @router.post("/login", response_model=LoginResponseBody, status_code=202)
-def request_login_otp(
+async def request_login_otp(
     body: LoginRequestBody,
     service: LoginServiceDep,
 ) -> LoginResponseBody:
-    service.request_login_otp(request=LoginOtpRequest(email=body.email))
+    await service.request_login_otp(request=LoginOtpRequest(email=body.email))
     return LoginResponseBody(status="accepted")
 
 
 @router.post("/login/verify", response_model=LoginVerificationResponseBody)
-def verify_login(
+async def verify_login(
     body: LoginVerificationRequestBody,
     service: LoginServiceDep,
 ) -> LoginVerificationResponseBody:
-    result = service.verify_login_otp(
+    result = await service.verify_login_otp(
         request=LoginVerificationRequest(
             email=body.email,
             otp=body.otp,
@@ -60,11 +60,11 @@ def verify_login(
 
 
 @router.post("/refresh", response_model=RefreshSessionResponseBody)
-def refresh_session(
+async def refresh_session(
     body: RefreshSessionRequestBody,
     service: SessionServiceDep,
 ) -> RefreshSessionResponseBody:
-    result = service.refresh_session(refresh_token=body.refresh_token)
+    result = await service.refresh_session(refresh_token=body.refresh_token)
     return RefreshSessionResponseBody(
         access_token=result.access_token,
         refresh_token=result.refresh_token,
@@ -74,11 +74,11 @@ def refresh_session(
 
 
 @router.post("/signup", response_model=SignupResponseBody, status_code=202)
-def request_signup_otp(
+async def request_signup_otp(
     body: SignupRequestBody,
     service: SignupServiceDep,
 ) -> SignupResponseBody:
-    service.request_signup_otp(
+    await service.request_signup_otp(
         request=SignupOtpRequest(
             organization_name=body.organization_name,
             first_name=body.first_name,
@@ -90,11 +90,11 @@ def request_signup_otp(
 
 
 @router.post("/signup/verify", response_model=SignupVerificationResponseBody)
-def verify_signup(
+async def verify_signup(
     body: SignupVerificationRequestBody,
     service: SignupServiceDep,
 ) -> SignupVerificationResponseBody:
-    result = service.complete_signup(
+    result = await service.complete_signup(
         request=SignupVerificationRequest(
             email=body.email,
             otp=body.otp,

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.authentication.gateways import (
     AccessTokenGateway,
@@ -66,7 +66,7 @@ class AuthenticationComposition:
     access_authentication_service: AccessAuthenticationService
     close_callback: Callable[[], None] = _noop
 
-    def build_login_service(self, session: Session) -> LoginService:
+    def build_login_service(self, session: AsyncSession) -> LoginService:
         transaction = SqlAlchemyTransactionManager(session)
         repository = SqlAlchemyAuthenticationRepository(session)
         session_service = SessionService(
@@ -100,7 +100,7 @@ class AuthenticationComposition:
             rate_limiter=self.rate_limiter,
         )
 
-    def build_signup_service(self, session: Session) -> SignupService:
+    def build_signup_service(self, session: AsyncSession) -> SignupService:
         transaction = SqlAlchemyTransactionManager(session)
         repository = SqlAlchemyAuthenticationRepository(session)
         session_service = SessionService(
@@ -134,7 +134,7 @@ class AuthenticationComposition:
             rate_limiter=self.rate_limiter,
         )
 
-    def build_session_service(self, session: Session) -> SessionService:
+    def build_session_service(self, session: AsyncSession) -> SessionService:
         return SessionService(
             policy=SessionPolicy(
                 refresh_token_secret=self.settings.refresh_token_secret,

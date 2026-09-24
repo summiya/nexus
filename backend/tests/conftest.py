@@ -12,7 +12,7 @@ from nexus.main import create_app
 
 
 class AllowAllRateLimiter:
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         del key, limit, window_seconds
         return True
 

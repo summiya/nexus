@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -35,7 +36,7 @@ class FakeEmailGateway:
     fail: bool = False
     sent: list[dict[str, Any]] = field(default_factory=list)
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -46,7 +47,7 @@ class FakeEmailGateway:
             raise AuthenticationEmailError("failed")
         self.sent.append({"email": email, "otp": otp, "expires_at": expires_at})
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         del email, display_name
 
 
@@ -55,7 +56,7 @@ class FakeRateLimiter:
     allowed: bool = True
     calls: list[dict[str, Any]] = field(default_factory=list)
 
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         self.calls.append(
             {"key": key, "limit": limit, "window_seconds": window_seconds}
         )
@@ -67,10 +68,10 @@ class FakeTransaction:
         self.committed = False
         self.rolled_back = False
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.committed = True
 
-    def rollback(self) -> None:
+    async def rollback(self) -> None:
         self.rolled_back = True
 
 
@@ -85,11 +86,11 @@ class FakeAuthenticationRepository:
         self.fail_add = fail_add
         self.added: list[OtpChallenge] = []
 
-    def user_exists_by_email(self, email: str) -> bool:
+    async def user_exists_by_email(self, email: str) -> bool:
         del email
         return self.existing_user
 
-    def add_otp_challenge(self, challenge: OtpChallenge) -> None:
+    async def add_otp_challenge(self, challenge: OtpChallenge) -> None:
         if self.fail_add:
             raise RuntimeError("flush failed")
         self.added.append(challenge)
@@ -124,7 +125,9 @@ def signup_request(email: str = "  SUMMIYA@Acme.COM ") -> SignupOtpRequest:
 
 def test_invalid_email_is_rejected() -> None:
     with pytest.raises(NexusError) as exc_info:
-        build_service().request_signup_otp(request=signup_request("not-an-email"))
+        asyncio.run(
+            build_service().request_signup_otp(request=signup_request("not-an-email"))
+        )
 
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
 
@@ -149,11 +152,13 @@ def test_creates_signup_challenge_and_sends_email_after_commit() -> None:
     transaction = FakeTransaction()
     repository = FakeAuthenticationRepository()
 
-    build_service(
-        email_gateway=email_gateway,
-        transaction=transaction,
-        repository=repository,
-    ).request_signup_otp(request=signup_request())
+    asyncio.run(
+        build_service(
+            email_gateway=email_gateway,
+            transaction=transaction,
+            repository=repository,
+        ).request_signup_otp(request=signup_request())
+    )
 
     assert transaction.committed is True
     assert len(email_gateway.sent) == 1
@@ -170,11 +175,13 @@ def test_existing_email_returns_generic_response_without_challenge_or_email() ->
     transaction = FakeTransaction()
     repository = FakeAuthenticationRepository(existing_user=True)
 
-    build_service(
-        email_gateway=email_gateway,
-        transaction=transaction,
-        repository=repository,
-    ).request_signup_otp(request=signup_request())
+    asyncio.run(
+        build_service(
+            email_gateway=email_gateway,
+            transaction=transaction,
+            repository=repository,
+        ).request_signup_otp(request=signup_request())
+    )
 
     assert repository.added == []
     assert email_gateway.sent == []
@@ -185,10 +192,12 @@ def test_email_failure_keeps_committed_challenge_and_reports_unavailable() -> No
     transaction = FakeTransaction()
 
     with pytest.raises(NexusError) as exc_info:
-        build_service(
-            email_gateway=FakeEmailGateway(fail=True),
-            transaction=transaction,
-        ).request_signup_otp(request=signup_request())
+        asyncio.run(
+            build_service(
+                email_gateway=FakeEmailGateway(fail=True),
+                transaction=transaction,
+            ).request_signup_otp(request=signup_request())
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     assert transaction.committed is True
@@ -200,11 +209,13 @@ def test_flush_failure_rolls_back_without_sending_email() -> None:
     transaction = FakeTransaction()
 
     with pytest.raises(RuntimeError, match="flush failed"):
-        build_service(
-            email_gateway=email_gateway,
-            transaction=transaction,
-            repository=FakeAuthenticationRepository(fail_add=True),
-        ).request_signup_otp(request=signup_request())
+        asyncio.run(
+            build_service(
+                email_gateway=email_gateway,
+                transaction=transaction,
+                repository=FakeAuthenticationRepository(fail_add=True),
+            ).request_signup_otp(request=signup_request())
+        )
 
     assert email_gateway.sent == []
     assert transaction.rolled_back is True
@@ -213,8 +224,10 @@ def test_flush_failure_rolls_back_without_sending_email() -> None:
 
 def test_rate_limit_exceeded_raises_rate_limited() -> None:
     with pytest.raises(NexusError) as exc_info:
-        build_service(rate_limiter=FakeRateLimiter(allowed=False)).request_signup_otp(
-            request=signup_request()
+        asyncio.run(
+            build_service(
+                rate_limiter=FakeRateLimiter(allowed=False)
+            ).request_signup_otp(request=signup_request())
         )
 
     assert exc_info.value.code == ErrorCode.RATE_LIMITED
@@ -241,7 +254,10 @@ def test_redis_rate_limiter_uses_atomic_script() -> None:
     redis = FakeRedis()
     limiter = RedisRateLimiter(redis=redis)  # type: ignore[arg-type]
 
-    assert limiter.allow(key="signup-otp:key", limit=5, window_seconds=900) is True
+    assert (
+        asyncio.run(limiter.allow(key="signup-otp:key", limit=5, window_seconds=900))
+        is True
+    )
 
     assert len(redis.eval_calls) == 1
     script, numkeys, key, limit, window_seconds = redis.eval_calls[0]

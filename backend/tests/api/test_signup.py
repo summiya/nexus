@@ -27,10 +27,10 @@ class FakeSignupService:
         self.otp_requests: list[SignupOtpRequest] = []
         self.verification_requests: list[SignupVerificationRequest] = []
 
-    def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
+    async def request_signup_otp(self, *, request: SignupOtpRequest) -> None:
         self.otp_requests.append(request)
 
-    def complete_signup(
+    async def complete_signup(
         self,
         *,
         request: SignupVerificationRequest,

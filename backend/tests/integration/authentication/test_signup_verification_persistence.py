@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -13,6 +14,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authentication.gateways import (
@@ -26,6 +28,7 @@ from nexus.authentication.signup_service import (
     SignupPolicy,
     SignupService,
     SignupVerificationRequest,
+    SignupVerificationResult,
     digest_otp,
 )
 from nexus.authentication.tokens import AccessTokenService
@@ -119,7 +122,7 @@ class RecordingWelcomeEmailSender:
     sent: list[dict[str, str]] = field(default_factory=list)
     fail: bool = False
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -128,7 +131,7 @@ class RecordingWelcomeEmailSender:
     ) -> None:
         del email, otp, expires_at
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         if self.fail:
             raise AuthenticationEmailError("welcome email failed")
         self.sent.append({"email": email, "display_name": display_name})
@@ -143,13 +146,13 @@ class FailingAccessTokenGateway:
 
 
 class AllowingRateLimiter:
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         del key, limit, window_seconds
         return True
 
 
 def build_service(
-    session: Session,
+    session: AsyncSession,
     *,
     settings_value: Settings | None = None,
     welcome_sender: RecordingWelcomeEmailSender | None = None,
@@ -192,6 +195,23 @@ def build_service(
         rate_limiter=AllowingRateLimiter(),
         clock=lambda: datetime.now(UTC),
     )
+
+
+async def complete_signup(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    request: SignupVerificationRequest | None = None,
+    settings_value: Settings | None = None,
+    welcome_sender: RecordingWelcomeEmailSender | None = None,
+    access_token_gateway: AccessTokenGateway | None = None,
+) -> SignupVerificationResult:
+    async with session_factory() as session:
+        return await build_service(
+            session,
+            settings_value=settings_value,
+            welcome_sender=welcome_sender,
+            access_token_gateway=access_token_gateway,
+        ).complete_signup(request=request or signup_request())
 
 
 def _access_token_service(settings_value: Settings) -> AccessTokenService:
@@ -249,18 +269,20 @@ def create_signup_challenge(
 
 def test_valid_normalized_values_complete_signup(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
     welcome_sender = RecordingWelcomeEmailSender()
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(
-            session,
+    result = asyncio.run(
+        complete_signup(
+            authentication_async_session_factory,
             settings_value=settings_value,
             welcome_sender=welcome_sender,
         )
-        result = service.complete_signup(request=signup_request())
+    )
 
     with Session(migrated_engine) as session:
         organization = session.scalars(select(Organization)).one()
@@ -309,6 +331,7 @@ def test_valid_normalized_values_complete_signup(
 )
 def test_blank_signup_profile_values_are_rejected(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
     field: str,
     value: str,
 ) -> None:
@@ -316,25 +339,35 @@ def test_blank_signup_profile_values_are_rejected(
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(session, settings_value=settings_value)
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
                 request=signup_request(**{field: value}),
             )
+        )
 
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
 
 
-def test_invalid_email_is_rejected(migrated_engine: Engine) -> None:
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        service = build_service(session)
-        service.complete_signup(request=signup_request(email="not-an-email"))
+def test_invalid_email_is_rejected(
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                request=signup_request(email="not-an-email"),
+            )
+        )
 
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
 
 
 def test_existing_normalized_email_conflict_does_not_consume_otp_or_create_state(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
@@ -348,10 +381,13 @@ def test_existing_normalized_email_conflict_does_not_consume_otp_or_create_state
         session.add_all([organization, user])
         session.commit()
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(session, settings_value=settings_value)
-
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(request=signup_request())
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
+            )
+        )
 
     assert exc_info.value.code == ErrorCode.CONFLICT
 
@@ -366,6 +402,7 @@ def test_existing_normalized_email_conflict_does_not_consume_otp_or_create_state
 
 def test_existing_organization_slug_returns_conflict(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
@@ -373,26 +410,33 @@ def test_existing_organization_slug_returns_conflict(
         session.add(Organization(name="Acme AI", slug="acme-ai"))
         session.commit()
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(session, settings_value=settings_value)
-
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(request=signup_request())
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
+            )
+        )
 
     assert exc_info.value.code == ErrorCode.CONFLICT
 
 
 def test_wrong_otp_persists_attempt_count_without_creating_signup_state(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(session, settings_value=settings_value)
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
                 request=signup_request(otp="000000"),
             )
+        )
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -407,6 +451,7 @@ def test_wrong_otp_persists_attempt_count_without_creating_signup_state(
 
 def test_max_attempt_failure_persists_locked_at(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
@@ -416,11 +461,14 @@ def test_max_attempt_failure_persists_locked_at(
             settings_value=settings_value,
             attempt_count=settings_value.signup_otp_max_attempts - 1,
         )
-        service = build_service(session, settings_value=settings_value)
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
                 request=signup_request(otp="000000"),
             )
+        )
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -436,18 +484,20 @@ def test_max_attempt_failure_persists_locked_at(
 
 def test_token_issuance_failure_rolls_back_partial_signup_state(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(
-            session,
-            settings_value=settings_value,
-            access_token_gateway=FailingAccessTokenGateway(),
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            complete_signup(
+                authentication_async_session_factory,
+                settings_value=settings_value,
+                access_token_gateway=FailingAccessTokenGateway(),
+            )
         )
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(request=signup_request())
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
 
@@ -467,6 +517,7 @@ def test_token_issuance_failure_rolls_back_partial_signup_state(
 )
 def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
     challenge_state: str,
 ) -> None:
     settings_value = build_settings()
@@ -491,10 +542,16 @@ def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
                 locked_at=datetime.now(UTC),
             )
 
-        session.add(Organization(name="Pending", slug="pending"))
-        service = build_service(session, settings_value=settings_value)
-        with pytest.raises(NexusError) as exc_info:
-            service.complete_signup(request=signup_request())
+    async def fail_signup() -> None:
+        async with authentication_async_session_factory() as session:
+            session.add(Organization(name="Pending", slug="pending"))
+            await build_service(
+                session,
+                settings_value=settings_value,
+            ).complete_signup(request=signup_request())
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(fail_signup())
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
 
@@ -509,17 +566,19 @@ def test_non_mutating_otp_failures_roll_back_unrelated_pending_state(
 
 def test_welcome_email_failure_does_not_roll_back_signup(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     settings_value = build_settings()
 
     with Session(migrated_engine) as session:
         create_signup_challenge(session, settings_value=settings_value)
-        service = build_service(
-            session,
+    result = asyncio.run(
+        complete_signup(
+            authentication_async_session_factory,
             settings_value=settings_value,
             welcome_sender=RecordingWelcomeEmailSender(fail=True),
         )
-        result = service.complete_signup(request=signup_request())
+    )
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(Organization.id))) == 1

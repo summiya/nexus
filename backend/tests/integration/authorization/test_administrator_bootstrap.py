@@ -1,9 +1,8 @@
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
 
 import pytest
 from alembic import command
@@ -11,6 +10,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authorization.bootstrap import (
@@ -74,24 +74,30 @@ def migrated_engine() -> Iterator[Engine]:
         admin_engine.dispose()
 
 
-def _create_organization(session: Session, slug: str) -> Organization:
+async def _create_organization(session: AsyncSession, slug: str) -> Organization:
     organization = Organization(name=f"Organization {slug}", slug=slug)
     session.add(organization)
-    session.flush()
+    await session.flush()
     return organization
 
 
 def test_bootstrap_is_idempotent_and_attaches_complete_catalog(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session, session.begin():
-        organization = _create_organization(session, "bootstrap-one")
-        organization_id = organization.id
-        first = provision_administrator_role(session, organization_id)
-        second = provision_administrator_role(session, organization_id)
-        role_id = first.id
+    async def bootstrap() -> tuple[int, int]:
+        async with (
+            authentication_async_session_factory() as session,
+            session.begin(),
+        ):
+            organization = await _create_organization(session, "bootstrap-one")
+            first = await provision_administrator_role(session, organization.id)
+            second = await provision_administrator_role(session, organization.id)
 
-        assert second.id == role_id
+            assert second.id == first.id
+            return organization.id, first.id
+
+    organization_id, role_id = asyncio.run(bootstrap())
 
     with Session(migrated_engine) as session:
         roles = list(
@@ -116,35 +122,56 @@ def test_bootstrap_is_idempotent_and_attaches_complete_catalog(
 
 
 def test_bootstrap_creates_distinct_administrator_per_organization(
-    migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session, session.begin():
-        first_org = _create_organization(session, "bootstrap-a")
-        second_org = _create_organization(session, "bootstrap-b")
-        first_role = provision_administrator_role(session, first_org.id)
-        second_role = provision_administrator_role(session, second_org.id)
+    async def bootstrap() -> None:
+        async with (
+            authentication_async_session_factory() as session,
+            session.begin(),
+        ):
+            first_org = await _create_organization(session, "bootstrap-a")
+            second_org = await _create_organization(session, "bootstrap-b")
+            first_role = await provision_administrator_role(session, first_org.id)
+            second_role = await provision_administrator_role(session, second_org.id)
 
-        assert first_role.id != second_role.id
-        assert first_role.organization_id == first_org.id
-        assert second_role.organization_id == second_org.id
+            assert first_role.id != second_role.id
+            assert first_role.organization_id == first_org.id
+            assert second_role.organization_id == second_org.id
+
+    asyncio.run(bootstrap())
 
 
 def test_concurrent_bootstrap_produces_single_administrator_role(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session, session.begin():
-        organization = _create_organization(session, "bootstrap-concurrent")
+    with Session(migrated_engine) as session:
+        organization = Organization(
+            name="Organization bootstrap-concurrent",
+            slug="bootstrap-concurrent",
+        )
+        session.add(organization)
+        session.commit()
         organization_id = organization.id
 
-    barrier = Barrier(2)
+    async def bootstrap_concurrently() -> list[int]:
+        ready = 0
+        both_ready = asyncio.Event()
 
-    def bootstrap() -> int:
-        with Session(migrated_engine) as session, session.begin():
-            barrier.wait()
-            return provision_administrator_role(session, organization_id).id
+        async def bootstrap() -> int:
+            nonlocal ready
+            async with authentication_async_session_factory() as session:
+                ready += 1
+                if ready == 2:
+                    both_ready.set()
+                await both_ready.wait()
+                async with session.begin():
+                    role = await provision_administrator_role(session, organization_id)
+                    return role.id
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        role_ids = list(executor.map(lambda _: bootstrap(), range(2)))
+        return list(await asyncio.gather(bootstrap(), bootstrap()))
+
+    role_ids = asyncio.run(bootstrap_concurrently())
 
     assert role_ids[0] == role_ids[1]
 
@@ -167,22 +194,28 @@ def test_concurrent_bootstrap_produces_single_administrator_role(
 
 def test_bootstrap_failure_rolls_back_with_callers_transaction(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     failed_slug = "bootstrap-rollback"
 
-    with (
-        pytest.raises(ValueError, match="Permission catalog is not seeded"),
-        Session(migrated_engine) as session,
-        session.begin(),
-    ):
-        organization = _create_organization(session, failed_slug)
-        missing_permission = session.scalar(
-            select(Permission).where(Permission.key == next(iter(PERMISSION_CATALOG)))
-        )
-        assert missing_permission is not None
-        session.delete(missing_permission)
-        session.flush()
-        provision_administrator_role(session, organization.id)
+    async def fail_bootstrap() -> None:
+        async with (
+            authentication_async_session_factory() as session,
+            session.begin(),
+        ):
+            organization = await _create_organization(session, failed_slug)
+            missing_permission = await session.scalar(
+                select(Permission).where(
+                    Permission.key == next(iter(PERMISSION_CATALOG))
+                )
+            )
+            assert missing_permission is not None
+            await session.delete(missing_permission)
+            await session.flush()
+            await provision_administrator_role(session, organization.id)
+
+    with pytest.raises(ValueError, match="Permission catalog is not seeded"):
+        asyncio.run(fail_bootstrap())
 
     with Session(migrated_engine) as session:
         organization_count = session.scalar(

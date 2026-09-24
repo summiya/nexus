@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -26,10 +27,10 @@ class FakeTransaction:
         self.committed = False
         self.rolled_back = False
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.committed = True
 
-    def rollback(self) -> None:
+    async def rollback(self) -> None:
         self.rolled_back = True
 
 
@@ -44,11 +45,11 @@ class FakeAuthenticationRepository:
         self.fail_update = fail_update
         self.added: list[AuthenticationSession] = []
 
-    def add_session(self, session: AuthenticationSession) -> None:
+    async def add_session(self, session: AuthenticationSession) -> None:
         self.session = session
         self.added.append(session)
 
-    def get_session_by_refresh_token_hash_for_update(
+    async def get_session_by_refresh_token_hash_for_update(
         self,
         refresh_token_hash: str,
     ) -> AuthenticationSession | None:
@@ -59,7 +60,7 @@ class FakeAuthenticationRepository:
             return None
         return self.session
 
-    def update_session(self, session: AuthenticationSession) -> None:
+    async def update_session(self, session: AuthenticationSession) -> None:
         if self.fail_update:
             raise RuntimeError("session update failed")
         self.session = session
@@ -119,10 +120,12 @@ def test_create_session_commits_and_hides_plaintext_refresh_token() -> None:
     repository = FakeAuthenticationRepository()
     transaction = FakeTransaction()
 
-    result = service(
-        repository=repository,
-        transaction=transaction,
-    ).create_session(identity=identity())
+    result = asyncio.run(
+        service(
+            repository=repository,
+            transaction=transaction,
+        ).create_session(identity=identity())
+    )
 
     assert result.token_type == "bearer"
     assert result.access_token
@@ -137,10 +140,12 @@ def test_stage_session_does_not_commit_or_roll_back() -> None:
     repository = FakeAuthenticationRepository()
     transaction = FakeTransaction()
 
-    result = service(
-        repository=repository,
-        transaction=transaction,
-    ).stage_session(identity=identity())
+    result = asyncio.run(
+        service(
+            repository=repository,
+            transaction=transaction,
+        ).stage_session(identity=identity())
+    )
 
     assert result.access_token
     assert len(repository.added) == 1
@@ -152,10 +157,12 @@ def test_stage_session_failure_does_not_commit_or_roll_back() -> None:
     transaction = FakeTransaction()
 
     with pytest.raises(NexusError) as exc_info:
-        service(
-            transaction=transaction,
-            token_gateway=FakeAccessTokenGateway(fail=True),
-        ).stage_session(identity=identity())
+        asyncio.run(
+            service(
+                transaction=transaction,
+                token_gateway=FakeAccessTokenGateway(fail=True),
+            ).stage_session(identity=identity())
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     assert transaction.committed is False
@@ -171,7 +178,7 @@ def test_refresh_session_rotates_token_and_commits_last_used_at() -> None:
     transaction = FakeTransaction()
     auth_service = service(repository=repository, transaction=transaction)
 
-    result = auth_service.refresh_session(refresh_token=old_refresh_token)
+    result = asyncio.run(auth_service.refresh_session(refresh_token=old_refresh_token))
 
     assert result.refresh_token != old_refresh_token
     assert repository.session is not None
@@ -190,7 +197,7 @@ def test_refresh_rejects_old_rotated_token_and_rolls_back() -> None:
     )
 
     with pytest.raises(NexusError) as exc_info:
-        auth_service.refresh_session(refresh_token="old-token")
+        asyncio.run(auth_service.refresh_session(refresh_token="old-token"))
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
     assert transaction.rolled_back is True
@@ -205,15 +212,15 @@ def test_refresh_persistence_failure_rolls_back_and_keeps_old_token_usable() -> 
     auth_service = service(repository=repository, transaction=transaction)
 
     with pytest.raises(RuntimeError, match="session update failed"):
-        auth_service.refresh_session(refresh_token=old_refresh_token)
+        asyncio.run(auth_service.refresh_session(refresh_token=old_refresh_token))
 
     assert repository.session == persisted
     assert transaction.committed is False
     assert transaction.rolled_back is True
 
     repository.fail_update = False
-    result = service(repository=repository).refresh_session(
-        refresh_token=old_refresh_token
+    result = asyncio.run(
+        service(repository=repository).refresh_session(refresh_token=old_refresh_token)
     )
     assert result.refresh_token != old_refresh_token
 
@@ -239,8 +246,10 @@ def test_inactive_refresh_token_is_rejected(state: str) -> None:
         )
 
     with pytest.raises(NexusError) as exc_info:
-        service(repository=FakeAuthenticationRepository(persisted)).refresh_session(
-            refresh_token=token
+        asyncio.run(
+            service(repository=FakeAuthenticationRepository(persisted)).refresh_session(
+                refresh_token=token
+            )
         )
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
@@ -255,7 +264,7 @@ def test_revoke_session_commits_revoked_at() -> None:
     transaction = FakeTransaction()
     auth_service = service(repository=repository, transaction=transaction)
 
-    auth_service.revoke_session(refresh_token=token)
+    asyncio.run(auth_service.revoke_session(refresh_token=token))
 
     assert repository.session is not None
     assert repository.session.revoked_at == datetime(2026, 9, 16, tzinfo=UTC)
@@ -266,10 +275,12 @@ def test_access_token_failure_rolls_back_session() -> None:
     transaction = FakeTransaction()
 
     with pytest.raises(NexusError) as exc_info:
-        service(
-            transaction=transaction,
-            token_gateway=FakeAccessTokenGateway(fail=True),
-        ).create_session(identity=identity())
+        asyncio.run(
+            service(
+                transaction=transaction,
+                token_gateway=FakeAccessTokenGateway(fail=True),
+            ).create_session(identity=identity())
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     assert transaction.rolled_back is True
@@ -278,7 +289,7 @@ def test_access_token_failure_rolls_back_session() -> None:
 def test_refresh_token_data_is_not_logged(caplog: pytest.LogCaptureFixture) -> None:
     refresh_token = "refresh-token-value"
     with pytest.raises(NexusError):
-        service().refresh_session(refresh_token=refresh_token)
+        asyncio.run(service().refresh_session(refresh_token=refresh_token))
 
     assert refresh_token not in caplog.text
     assert "test-refresh-token-secret-with-enough-length" not in caplog.text

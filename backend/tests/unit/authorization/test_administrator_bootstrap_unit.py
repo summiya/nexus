@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -17,10 +18,19 @@ def _permission(permission_id: int, key: str) -> Permission:
     return permission
 
 
+def _session() -> MagicMock:
+    session = MagicMock()
+    session.scalar = AsyncMock()
+    session.scalars = AsyncMock()
+    session.flush = AsyncMock()
+    session.commit = AsyncMock()
+    return session
+
+
 def test_provision_administrator_role_creates_system_role_with_all_permissions() -> (
     None
 ):
-    session = MagicMock()
+    session = _session()
     permissions = [
         _permission(index, key) for index, key in enumerate(PERMISSION_CATALOG, start=1)
     ]
@@ -37,7 +47,7 @@ def test_provision_administrator_role_creates_system_role_with_all_permissions()
 
     session.flush.side_effect = [assign_role_id, None]
 
-    role = provision_administrator_role(session, organization_id=7)
+    role = asyncio.run(provision_administrator_role(session, organization_id=7))
 
     assert role.organization_id == 7
     assert role.name == ADMINISTRATOR_ROLE_NAME
@@ -50,11 +60,11 @@ def test_provision_administrator_role_creates_system_role_with_all_permissions()
     assert {mapping.permission_id for mapping in role_permission_adds} == {
         permission.id for permission in permissions
     }
-    session.commit.assert_not_called()
+    session.commit.assert_not_awaited()
 
 
 def test_provision_administrator_role_is_idempotent() -> None:
-    session = MagicMock()
+    session = _session()
     role = Role(organization_id=7, name=ADMINISTRATOR_ROLE_NAME, is_system=True)
     role.id = 42
     permissions = [
@@ -66,26 +76,26 @@ def test_provision_administrator_role_is_idempotent() -> None:
         [permission.id for permission in permissions],
     ]
 
-    returned = provision_administrator_role(session, organization_id=7)
+    returned = asyncio.run(provision_administrator_role(session, organization_id=7))
 
     assert returned is role
     session.add.assert_not_called()
-    session.commit.assert_not_called()
+    session.commit.assert_not_awaited()
 
 
 def test_provision_administrator_role_rejects_missing_organization() -> None:
-    session = MagicMock()
+    session = _session()
     session.scalar.return_value = None
 
     with pytest.raises(ValueError, match="does not exist"):
-        provision_administrator_role(session, organization_id=999)
+        asyncio.run(provision_administrator_role(session, organization_id=999))
 
     session.add.assert_not_called()
-    session.commit.assert_not_called()
+    session.commit.assert_not_awaited()
 
 
 def test_provision_administrator_role_fails_when_catalog_is_not_seeded() -> None:
-    session = MagicMock()
+    session = _session()
     session.scalar.side_effect = [7, None]
     session.scalars.side_effect = [[], []]
 
@@ -96,18 +106,18 @@ def test_provision_administrator_role_fails_when_catalog_is_not_seeded() -> None
     session.flush.side_effect = assign_role_id
 
     with pytest.raises(ValueError, match="Permission catalog is not seeded"):
-        provision_administrator_role(session, organization_id=7)
+        asyncio.run(provision_administrator_role(session, organization_id=7))
 
-    session.commit.assert_not_called()
+    session.commit.assert_not_awaited()
 
 
 def test_provision_administrator_role_rejects_non_system_name_collision() -> None:
-    session = MagicMock()
+    session = _session()
     role = Role(organization_id=7, name=ADMINISTRATOR_ROLE_NAME, is_system=False)
     role.id = 42
     session.scalar.side_effect = [7, role]
 
     with pytest.raises(ValueError, match="not a system role"):
-        provision_administrator_role(session, organization_id=7)
+        asyncio.run(provision_administrator_role(session, organization_id=7))
 
-    session.commit.assert_not_called()
+    session.commit.assert_not_awaited()

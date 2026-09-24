@@ -33,12 +33,12 @@ class FakeLoginService:
         self.requests: list[LoginOtpRequest] = []
         self.verification_requests: list[LoginVerificationRequest] = []
 
-    def request_login_otp(self, *, request: LoginOtpRequest) -> None:
+    async def request_login_otp(self, *, request: LoginOtpRequest) -> None:
         self.requests.append(request)
         if self.error is not None:
             raise self.error
 
-    def verify_login_otp(
+    async def verify_login_otp(
         self,
         *,
         request: LoginVerificationRequest,
@@ -191,9 +191,9 @@ def test_login_endpoint_returns_accepted_when_email_delivery_fails(
 
     assert response.status_code == 202
     assert response.json() == {"status": "accepted"}
-    repository.add_otp_challenge.assert_called_once()
-    transaction.commit.assert_called_once_with()
-    transaction.rollback.assert_not_called()
+    repository.add_otp_challenge.assert_awaited_once()
+    transaction.commit.assert_awaited_once_with()
+    transaction.rollback.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import uuid4
@@ -123,11 +124,11 @@ def signup_request() -> SignupVerificationRequest:
 def test_complete_signup_commits_once_after_all_writes_are_staged() -> None:
     service, transaction, events = build_service()
 
-    result = service.complete_signup(request=signup_request())
+    result = asyncio.run(service.complete_signup(request=signup_request()))
 
     assert result.status == "completed"
-    transaction.commit.assert_called_once_with()
-    transaction.rollback.assert_not_called()
+    transaction.commit.assert_awaited_once_with()
+    transaction.rollback.assert_not_awaited()
     assert events == ["account", "otp", "session", "commit", "welcome-email"]
 
 
@@ -135,8 +136,8 @@ def test_session_staging_failure_rolls_back_signup() -> None:
     service, transaction, events = build_service(fail_session=True)
 
     with pytest.raises(RuntimeError, match="session staging failed"):
-        service.complete_signup(request=signup_request())
+        asyncio.run(service.complete_signup(request=signup_request()))
 
-    transaction.commit.assert_not_called()
-    transaction.rollback.assert_called_once_with()
+    transaction.commit.assert_not_awaited()
+    transaction.rollback.assert_awaited_once_with()
     assert events == ["account", "otp", "session", "rollback"]

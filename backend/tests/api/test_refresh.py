@@ -16,7 +16,7 @@ class FakeSessionService:
         self.error = error
         self.refresh_tokens: list[str] = []
 
-    def refresh_session(self, *, refresh_token: str) -> SessionTokenResult:
+    async def refresh_session(self, *, refresh_token: str) -> SessionTokenResult:
         self.refresh_tokens.append(refresh_token)
         if self.error is not None:
             raise self.error

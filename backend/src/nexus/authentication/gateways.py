@@ -15,7 +15,7 @@ class AuthenticationEmailError(Exception):
 class AuthenticationEmailGateway(Protocol):
     """Send authentication emails without exposing a provider SDK."""
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -24,7 +24,7 @@ class AuthenticationEmailGateway(Protocol):
     ) -> None:
         """Send a signup OTP."""
 
-    def send_login_otp(
+    async def send_login_otp(
         self,
         *,
         email: str,
@@ -33,7 +33,7 @@ class AuthenticationEmailGateway(Protocol):
     ) -> None:
         """Send a login OTP."""
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         """Send a post-signup welcome email."""
 
 
@@ -44,7 +44,7 @@ class RateLimitError(Exception):
 class RateLimiter(Protocol):
     """Decide whether an authentication action is allowed."""
 
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         """Return whether the key is allowed within the configured window."""
 
 

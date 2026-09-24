@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Event
 
 import pytest
 from alembic import command
@@ -15,6 +14,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authentication.gateways import (
@@ -30,7 +30,11 @@ from nexus.authentication.login_service import (
 from nexus.authentication.otp import digest_otp
 from nexus.authentication.repository import AuthenticationIdentity
 from nexus.authentication.repository import OtpChallenge as OtpChallengeRecord
-from nexus.authentication.session_service import SessionPolicy, SessionService
+from nexus.authentication.session_service import (
+    SessionPolicy,
+    SessionService,
+    SessionTokenResult,
+)
 from nexus.authentication.tokens import AccessTokenService
 from nexus.config.settings import load_settings
 from nexus.errors import ErrorCode, NexusError
@@ -120,18 +124,18 @@ class FailingAccessTokenGateway:
 class PausingAuthenticationRepository(SqlAlchemyAuthenticationRepository):
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
         *,
-        lock_acquired: Event | None = None,
-        release_lock: Event | None = None,
-        query_started: Event | None = None,
+        lock_acquired: asyncio.Event | None = None,
+        release_lock: asyncio.Event | None = None,
+        query_started: asyncio.Event | None = None,
     ) -> None:
         super().__init__(session)
         self._lock_acquired = lock_acquired
         self._release_lock = release_lock
         self._query_started = query_started
 
-    def get_latest_otp_challenge_for_update(
+    async def get_latest_otp_challenge_for_update(
         self,
         *,
         email: str,
@@ -139,14 +143,15 @@ class PausingAuthenticationRepository(SqlAlchemyAuthenticationRepository):
     ) -> OtpChallengeRecord | None:
         if self._query_started is not None:
             self._query_started.set()
-        challenge = super().get_latest_otp_challenge_for_update(
+        challenge = await super().get_latest_otp_challenge_for_update(
             email=email,
             purpose=purpose,
         )
         if self._lock_acquired is not None:
             self._lock_acquired.set()
-            if self._release_lock is None or not self._release_lock.wait(timeout=10):
-                raise TimeoutError("Timed out waiting to release OTP challenge lock")
+            if self._release_lock is None:
+                raise TimeoutError("Missing OTP challenge lock release event")
+            await asyncio.wait_for(self._release_lock.wait(), timeout=10)
         return challenge
 
 
@@ -160,7 +165,7 @@ def access_token_service() -> AccessTokenService:
 
 
 def build_service(
-    session: Session,
+    session: AsyncSession,
     *,
     repository: SqlAlchemyAuthenticationRepository | None = None,
     access_token_gateway: AccessTokenGateway | None = None,
@@ -195,6 +200,19 @@ def build_service(
         rate_limiter=None,  # type: ignore[arg-type]
         clock=lambda: NOW,
     )
+
+
+async def verify_login_otp(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    request: LoginVerificationRequest | None = None,
+    access_token_gateway: AccessTokenGateway | None = None,
+) -> SessionTokenResult:
+    async with session_factory() as session:
+        return await build_service(
+            session,
+            access_token_gateway=access_token_gateway,
+        ).verify_login_otp(request=request or verification_request())
 
 
 def seed_identity(
@@ -275,12 +293,12 @@ def assert_generic_unauthorized(exc: NexusError) -> None:
 
 def test_successful_verification_consumes_otp_and_creates_one_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     identity = seed_identity(migrated_engine)
     challenge_id = seed_challenge(migrated_engine)
 
-    with Session(migrated_engine) as session:
-        result = build_service(session).verify_login_otp(request=verification_request())
+    result = asyncio.run(verify_login_otp(authentication_async_session_factory))
 
     with Session(migrated_engine) as session:
         challenge = session.get(OtpChallengeModel, challenge_id)
@@ -304,12 +322,13 @@ def test_successful_verification_consumes_otp_and_creates_one_session(
 
 def test_signup_challenge_cannot_authenticate_login(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_identity(migrated_engine)
     challenge_id = seed_challenge(migrated_engine, purpose="signup")
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(session).verify_login_otp(request=verification_request())
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(verify_login_otp(authentication_async_session_factory))
 
     assert_generic_unauthorized(exc_info.value)
     with Session(migrated_engine) as session:
@@ -321,13 +340,17 @@ def test_signup_challenge_cannot_authenticate_login(
 
 def test_wrong_otp_persists_attempt_and_final_attempt_locks_challenge(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_identity(migrated_engine)
     challenge_id = seed_challenge(migrated_engine, attempt_count=4)
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(session).verify_login_otp(
-            request=verification_request(otp="654321")
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            verify_login_otp(
+                authentication_async_session_factory,
+                request=verification_request(otp="654321"),
+            )
         )
 
     assert_generic_unauthorized(exc_info.value)
@@ -362,6 +385,7 @@ def test_wrong_otp_persists_attempt_and_final_attempt_locks_challenge(
 )
 def test_ineligible_identity_returns_generic_unauthorized(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
     user_status: str,
     user_deleted_at: datetime | None,
     organization_status: str,
@@ -376,8 +400,8 @@ def test_ineligible_identity_returns_generic_unauthorized(
     )
     challenge_id = seed_challenge(migrated_engine)
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(session).verify_login_otp(request=verification_request())
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(verify_login_otp(authentication_async_session_factory))
 
     assert_generic_unauthorized(exc_info.value)
     with Session(migrated_engine) as session:
@@ -389,13 +413,17 @@ def test_ineligible_identity_returns_generic_unauthorized(
 
 def test_identity_lookup_returns_only_public_identity(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seeded = seed_identity(migrated_engine)
 
-    with Session(migrated_engine) as session:
-        identity = SqlAlchemyAuthenticationRepository(session).get_identity_by_email(
-            EMAIL
-        )
+    async def get_identity() -> AuthenticationIdentity | None:
+        async with authentication_async_session_factory() as session:
+            return await SqlAlchemyAuthenticationRepository(
+                session
+            ).get_identity_by_email(EMAIL)
+
+    identity = asyncio.run(get_identity())
 
     assert identity == AuthenticationIdentity(
         user_public_id=seeded.user_public_id,
@@ -410,15 +438,19 @@ def test_identity_lookup_returns_only_public_identity(
 
 def test_consumed_otp_cannot_create_a_second_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_identity(migrated_engine)
     seed_challenge(migrated_engine)
 
-    with Session(migrated_engine) as session:
-        service = build_service(session)
-        service.verify_login_otp(request=verification_request())
-        with pytest.raises(NexusError) as exc_info:
-            service.verify_login_otp(request=verification_request())
+    async def verify_twice() -> None:
+        async with authentication_async_session_factory() as session:
+            service = build_service(session)
+            await service.verify_login_otp(request=verification_request())
+            await service.verify_login_otp(request=verification_request())
+
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(verify_twice())
 
     assert_generic_unauthorized(exc_info.value)
     with Session(migrated_engine) as session:
@@ -427,15 +459,18 @@ def test_consumed_otp_cannot_create_a_second_session(
 
 def test_token_issuance_failure_rolls_back_otp_and_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_identity(migrated_engine)
     challenge_id = seed_challenge(migrated_engine)
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(
-            session,
-            access_token_gateway=FailingAccessTokenGateway(),
-        ).verify_login_otp(request=verification_request())
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            verify_login_otp(
+                authentication_async_session_factory,
+                access_token_gateway=FailingAccessTokenGateway(),
+            )
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     with Session(migrated_engine) as session:
@@ -447,38 +482,44 @@ def test_token_issuance_failure_rolls_back_otp_and_session(
 
 def test_concurrent_verification_creates_exactly_one_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_identity(migrated_engine)
     seed_challenge(migrated_engine)
-    lock_acquired = Event()
-    release_lock = Event()
-    competing_query_started = Event()
 
-    def verify(*, pause_with_lock: bool) -> str | ErrorCode:
-        with Session(migrated_engine) as session:
-            repository = PausingAuthenticationRepository(
-                session,
-                lock_acquired=lock_acquired if pause_with_lock else None,
-                release_lock=release_lock if pause_with_lock else None,
-                query_started=(None if pause_with_lock else competing_query_started),
-            )
-            try:
-                build_service(
+    async def verify_concurrently() -> set[str | ErrorCode]:
+        lock_acquired = asyncio.Event()
+        release_lock = asyncio.Event()
+        competing_query_started = asyncio.Event()
+
+        async def verify(*, pause_with_lock: bool) -> str | ErrorCode:
+            async with authentication_async_session_factory() as session:
+                repository = PausingAuthenticationRepository(
                     session,
-                    repository=repository,
-                ).verify_login_otp(request=verification_request())
-            except NexusError as exc:
-                return exc.code
-            return "completed"
+                    lock_acquired=lock_acquired if pause_with_lock else None,
+                    release_lock=release_lock if pause_with_lock else None,
+                    query_started=(
+                        None if pause_with_lock else competing_query_started
+                    ),
+                )
+                try:
+                    await build_service(
+                        session,
+                        repository=repository,
+                    ).verify_login_otp(request=verification_request())
+                except NexusError as exc:
+                    return exc.code
+                return "completed"
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first = executor.submit(verify, pause_with_lock=True)
-        assert lock_acquired.wait(timeout=10)
-        second = executor.submit(verify, pause_with_lock=False)
-        assert competing_query_started.wait(timeout=10)
+        first = asyncio.create_task(verify(pause_with_lock=True))
+        await asyncio.wait_for(lock_acquired.wait(), timeout=10)
+        second = asyncio.create_task(verify(pause_with_lock=False))
+        await asyncio.wait_for(competing_query_started.wait(), timeout=10)
         assert not second.done()
         release_lock.set()
-        outcomes = {first.result(timeout=10), second.result(timeout=10)}
+        return set(await asyncio.wait_for(asyncio.gather(first, second), timeout=10))
+
+    outcomes = asyncio.run(verify_concurrently())
 
     assert outcomes == {"completed", ErrorCode.UNAUTHORIZED}
     with Session(migrated_engine) as session:

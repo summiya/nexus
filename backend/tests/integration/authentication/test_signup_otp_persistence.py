@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -14,6 +15,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authentication.session_service import SessionPolicy, SessionService
@@ -99,7 +101,7 @@ def build_settings() -> Settings:
 class FakeEmailProvider:
     sent: list[dict[str, Any]] = field(default_factory=list)
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -108,12 +110,12 @@ class FakeEmailProvider:
     ) -> None:
         self.sent.append({"email": email, "otp": otp, "expires_at": expires_at})
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         del email, display_name
 
 
 class AllowingRateLimiter:
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         del key, limit, window_seconds
         return True
 
@@ -128,49 +130,54 @@ class StubAccessTokenGateway:
 
 def test_signup_request_persists_secure_otp_challenge(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     email_provider = FakeEmailProvider()
-    with Session(migrated_engine) as session:
-        settings_value = build_settings()
-        transaction = SqlAlchemyTransactionManager(session)
-        repository = SqlAlchemyAuthenticationRepository(session)
-        service = SignupService(
-            policy=SignupPolicy(
-                otp_hmac_secret=settings_value.otp_hmac_secret,
-                signup_otp_length=settings_value.signup_otp_length,
-                signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
-                signup_otp_max_attempts=settings_value.signup_otp_max_attempts,
-                signup_otp_rate_limit_max_requests=(
-                    settings_value.signup_otp_rate_limit_max_requests
-                ),
-                signup_otp_rate_limit_window_seconds=(
-                    settings_value.signup_otp_rate_limit_window_seconds
-                ),
-            ),
-            transaction=transaction,
-            repository=repository,
-            session_service=SessionService(
-                policy=SessionPolicy(
-                    refresh_token_secret=settings_value.refresh_token_secret,
-                    refresh_token_expires_seconds=(
-                        settings_value.refresh_token_expires_seconds
+
+    async def request_signup_otp() -> None:
+        async with authentication_async_session_factory() as session:
+            settings_value = build_settings()
+            transaction = SqlAlchemyTransactionManager(session)
+            repository = SqlAlchemyAuthenticationRepository(session)
+            service = SignupService(
+                policy=SignupPolicy(
+                    otp_hmac_secret=settings_value.otp_hmac_secret,
+                    signup_otp_length=settings_value.signup_otp_length,
+                    signup_otp_ttl_seconds=settings_value.signup_otp_ttl_seconds,
+                    signup_otp_max_attempts=settings_value.signup_otp_max_attempts,
+                    signup_otp_rate_limit_max_requests=(
+                        settings_value.signup_otp_rate_limit_max_requests
+                    ),
+                    signup_otp_rate_limit_window_seconds=(
+                        settings_value.signup_otp_rate_limit_window_seconds
                     ),
                 ),
                 transaction=transaction,
                 repository=repository,
-                access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
-            ),
-            email_gateway=email_provider,
-            rate_limiter=AllowingRateLimiter(),
-        )
-        service.request_signup_otp(
-            request=SignupOtpRequest(
-                organization_name="Acme AI",
-                first_name="Summiya",
-                last_name="Rasheed",
-                email="SUMMIYA@Acme.COM",
-            ),
-        )
+                session_service=SessionService(
+                    policy=SessionPolicy(
+                        refresh_token_secret=settings_value.refresh_token_secret,
+                        refresh_token_expires_seconds=(
+                            settings_value.refresh_token_expires_seconds
+                        ),
+                    ),
+                    transaction=transaction,
+                    repository=repository,
+                    access_token_gateway=StubAccessTokenGateway(),  # type: ignore[arg-type]
+                ),
+                email_gateway=email_provider,
+                rate_limiter=AllowingRateLimiter(),
+            )
+            await service.request_signup_otp(
+                request=SignupOtpRequest(
+                    organization_name="Acme AI",
+                    first_name="Summiya",
+                    last_name="Rasheed",
+                    email="SUMMIYA@Acme.COM",
+                ),
+            )
+
+    asyncio.run(request_signup_otp())
 
     with Session(migrated_engine) as session:
         challenge = session.scalars(select(OtpChallenge)).one()
