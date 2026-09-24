@@ -101,10 +101,7 @@ class AppContainer:
         try:
             self.authentication.close()
         finally:
-            try:
-                self.database.dispose()
-            finally:
-                await self.database.dispose_async()
+            await self.database.dispose()
 
 
 def build_app_container(
@@ -119,36 +116,35 @@ def build_app_container(
     """Build one explicit object graph from one settings instance."""
 
     llm = build_llm_composition(app_settings, gateway=llm_gateway)
-    resolved_database = (
-        database if database is not None else build_database(app_settings.database_url)
+    resolved_event_publisher = (
+        event_publisher if event_publisher is not None else InProcessEventPublisher()
     )
-    authentication: AuthenticationComposition | None = None
+    authentication = build_authentication_composition(
+        app_settings,
+        rate_limiter=rate_limiter,
+        email_provider=email_provider,
+    )
     try:
-        authentication = build_authentication_composition(
-            app_settings,
-            rate_limiter=rate_limiter,
-            email_provider=email_provider,
-        )
-        conversations = build_conversation_composition(
-            app_settings,
-            llm_gateway=llm.gateway,
-            model_policy=llm.model_policy,
-            session_factory=resolved_database.async_session_factory,
-        )
-        return AppContainer(
-            settings=app_settings,
-            database=resolved_database,
-            authentication=authentication,
-            llm=llm,
-            conversations=conversations,
-            event_publisher=(
-                event_publisher
-                if event_publisher is not None
-                else InProcessEventPublisher()
-            ),
+        resolved_database = (
+            database
+            if database is not None
+            else build_database(app_settings.database_url)
         )
     except Exception:
-        if authentication is not None:
-            authentication.close()
-        resolved_database.dispose()
+        authentication.close()
         raise
+
+    conversations = build_conversation_composition(
+        app_settings,
+        llm_gateway=llm.gateway,
+        model_policy=llm.model_policy,
+        session_factory=resolved_database.session_factory,
+    )
+    return AppContainer(
+        settings=app_settings,
+        database=resolved_database,
+        authentication=authentication,
+        llm=llm,
+        conversations=conversations,
+        event_publisher=resolved_event_publisher,
+    )
