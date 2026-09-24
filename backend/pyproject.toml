@@ -18,7 +18,7 @@ dependencies = [
   "pydantic-settings>=2.2.1",
   "redis>=5.0.0,<6.0.0",
   "resend>=2.0.0,<3.0.0",
-  "sqlalchemy>=2.0.53,<3.0.0",
+  "sqlalchemy[asyncio]>=2.0.53,<3.0.0",
   "structlog>=25.4.0,<26.0.0",
 ]
 

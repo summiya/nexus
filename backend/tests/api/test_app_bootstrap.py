@@ -50,10 +50,14 @@ class StubEmailProvider:
 class TrackingDatabase:
     def __init__(self) -> None:
         self.disposed = False
+        self.async_disposed = False
         self.session_factory = lambda: None
 
     def dispose(self) -> None:
         self.disposed = True
+
+    async def dispose_async(self) -> None:
+        self.async_disposed = True
 
 
 async def _empty_llm_stream() -> AsyncIterator[LLMEvent]:
@@ -272,9 +276,11 @@ def test_lifespan_closes_application_owned_resources() -> None:
 
     with TestClient(app):
         assert database.disposed is False
+        assert database.async_disposed is False
         assert rate_limiter.closed is False
 
     assert database.disposed is True
+    assert database.async_disposed is True
     assert rate_limiter.closed is True
 
 
