@@ -6,6 +6,7 @@ from pathlib import Path
 AUTHENTICATION_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "authentication"
 )
+NEXUS_ROOT = AUTHENTICATION_ROOT.parent
 
 FORBIDDEN_IMPORTS = (
     "fastapi",
@@ -55,3 +56,20 @@ def test_authentication_records_expose_only_public_identity_fields() -> None:
         "public_id",
         "user_public_id",
     }
+
+
+def test_authentication_persistence_uses_only_async_sqlalchemy_sessions() -> None:
+    paths = (
+        NEXUS_ROOT
+        / "infrastructure"
+        / "persistence"
+        / "repositories"
+        / "authentication.py",
+        NEXUS_ROOT / "infrastructure" / "persistence" / "transaction.py",
+        NEXUS_ROOT / "authorization" / "bootstrap.py",
+    )
+
+    for path in paths:
+        source = path.read_text(encoding="utf-8")
+        assert "from sqlalchemy.orm import Session" not in source
+        assert "asyncio.to_thread" not in source

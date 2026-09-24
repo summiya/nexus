@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -15,6 +16,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authentication.login_service import (
@@ -87,7 +89,7 @@ def migrated_engine() -> Iterator[Engine]:
 class RecordingEmailGateway:
     sent: list[dict[str, Any]] = field(default_factory=list)
 
-    def send_login_otp(
+    async def send_login_otp(
         self,
         *,
         email: str,
@@ -96,7 +98,7 @@ class RecordingEmailGateway:
     ) -> None:
         self.sent.append({"email": email, "otp": otp, "expires_at": expires_at})
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -105,18 +107,18 @@ class RecordingEmailGateway:
     ) -> None:
         del email, otp, expires_at
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         del email, display_name
 
 
 class AllowingRateLimiter:
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         del key, limit, window_seconds
         return True
 
 
 def build_service(
-    session: Session,
+    session: AsyncSession,
     email_gateway: RecordingEmailGateway,
 ) -> LoginService:
     return LoginService(
@@ -161,14 +163,18 @@ def seed_registered_user(engine: Engine) -> None:
 
 def test_registered_email_persists_normalized_login_challenge(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     seed_registered_user(migrated_engine)
     email_gateway = RecordingEmailGateway()
 
-    with Session(migrated_engine) as session:
-        build_service(session, email_gateway).request_login_otp(
-            request=LoginOtpRequest(email="  USER@Example.COM ")
-        )
+    async def request_login_otp() -> None:
+        async with authentication_async_session_factory() as session:
+            await build_service(session, email_gateway).request_login_otp(
+                request=LoginOtpRequest(email="  USER@Example.COM ")
+            )
+
+    asyncio.run(request_login_otp())
 
     with Session(migrated_engine) as session:
         challenge = session.scalars(select(OtpChallenge)).one()
@@ -190,13 +196,17 @@ def test_registered_email_persists_normalized_login_challenge(
 
 def test_unknown_email_persists_nothing_and_sends_nothing(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     email_gateway = RecordingEmailGateway()
 
-    with Session(migrated_engine) as session:
-        build_service(session, email_gateway).request_login_otp(
-            request=LoginOtpRequest(email="unknown@example.com")
-        )
+    async def request_login_otp() -> None:
+        async with authentication_async_session_factory() as session:
+            await build_service(session, email_gateway).request_login_otp(
+                request=LoginOtpRequest(email="unknown@example.com")
+            )
+
+    asyncio.run(request_login_otp())
 
     with Session(migrated_engine) as session:
         challenges = tuple(session.scalars(select(OtpChallenge)))

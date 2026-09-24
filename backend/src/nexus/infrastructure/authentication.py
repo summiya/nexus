@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -28,14 +29,14 @@ class ProviderAuthenticationEmailGateway:
 
     email_provider: EmailProvider
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
         otp: str,
         expires_at: datetime,
     ) -> None:
-        self._send(
+        await self._send(
             EmailMessage(
                 to=email,
                 subject="Your NEXUS signup code",
@@ -47,14 +48,14 @@ class ProviderAuthenticationEmailGateway:
             )
         )
 
-    def send_login_otp(
+    async def send_login_otp(
         self,
         *,
         email: str,
         otp: str,
         expires_at: datetime,
     ) -> None:
-        self._send(
+        await self._send(
             EmailMessage(
                 to=email,
                 subject="Your NEXUS login code",
@@ -66,8 +67,8 @@ class ProviderAuthenticationEmailGateway:
             )
         )
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
-        self._send(
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
+        await self._send(
             EmailMessage(
                 to=email,
                 subject="Welcome to NEXUS",
@@ -75,9 +76,9 @@ class ProviderAuthenticationEmailGateway:
             )
         )
 
-    def _send(self, message: EmailMessage) -> None:
+    async def _send(self, message: EmailMessage) -> None:
         try:
-            self.email_provider.send(message)
+            await asyncio.to_thread(self.email_provider.send, message)
         except EmailDeliveryError as exc:
             raise AuthenticationEmailError("Email delivery failed") from exc
 

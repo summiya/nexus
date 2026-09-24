@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, contains_eager
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from nexus.authentication.repository import (
     AuthenticationIdentity,
@@ -24,27 +25,30 @@ from nexus.infrastructure.persistence.models.user_role import UserRole
 class SqlAlchemyAuthenticationRepository:
     """Map authentication records to the existing SQLAlchemy schema."""
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    def user_exists_by_email(self, email: str) -> bool:
+    async def user_exists_by_email(self, email: str) -> bool:
         return (
-            self._session.scalar(select(User.id).where(User.email == email)) is not None
+            await self._session.scalar(select(User.id).where(User.email == email))
+            is not None
         )
 
-    def get_identity_by_email(
+    async def get_identity_by_email(
         self,
         email: str,
     ) -> AuthenticationIdentity | None:
-        row = self._session.execute(
-            select(User.public_id, Organization.public_id)
-            .join(Organization, User.organization_id == Organization.id)
-            .where(
-                User.email == email,
-                User.status == "active",
-                User.deleted_at.is_(None),
-                Organization.status == "active",
-                Organization.deleted_at.is_(None),
+        row = (
+            await self._session.execute(
+                select(User.public_id, Organization.public_id)
+                .join(Organization, User.organization_id == Organization.id)
+                .where(
+                    User.email == email,
+                    User.status == "active",
+                    User.deleted_at.is_(None),
+                    Organization.status == "active",
+                    Organization.deleted_at.is_(None),
+                )
             )
         ).one_or_none()
         if row is None:
@@ -54,15 +58,15 @@ class SqlAlchemyAuthenticationRepository:
             organization_public_id=row[1],
         )
 
-    def organization_exists_by_slug(self, slug: str) -> bool:
+    async def organization_exists_by_slug(self, slug: str) -> bool:
         return (
-            self._session.scalar(
+            await self._session.scalar(
                 select(Organization.id).where(Organization.slug == slug)
             )
             is not None
         )
 
-    def add_otp_challenge(self, challenge: OtpChallenge) -> None:
+    async def add_otp_challenge(self, challenge: OtpChallenge) -> None:
         self._session.add(
             OtpChallengeModel(
                 id=challenge.public_id,
@@ -77,15 +81,15 @@ class SqlAlchemyAuthenticationRepository:
                 locked_at=challenge.locked_at,
             )
         )
-        self._session.flush()
+        await self._session.flush()
 
-    def get_latest_otp_challenge_for_update(
+    async def get_latest_otp_challenge_for_update(
         self,
         *,
         email: str,
         purpose: str,
     ) -> OtpChallenge | None:
-        model = self._session.scalar(
+        model = await self._session.scalar(
             select(OtpChallengeModel)
             .where(
                 OtpChallengeModel.email == email,
@@ -97,16 +101,16 @@ class SqlAlchemyAuthenticationRepository:
         )
         return None if model is None else _otp_challenge_record(model)
 
-    def update_otp_challenge(self, challenge: OtpChallenge) -> None:
-        model = self._session.get(OtpChallengeModel, challenge.public_id)
+    async def update_otp_challenge(self, challenge: OtpChallenge) -> None:
+        model = await self._session.get(OtpChallengeModel, challenge.public_id)
         if model is None:
             raise LookupError("OTP challenge does not exist")
         model.attempt_count = challenge.attempt_count
         model.consumed_at = challenge.consumed_at
         model.locked_at = challenge.locked_at
-        self._session.flush()
+        await self._session.flush()
 
-    def create_organization_administrator(
+    async def create_organization_administrator(
         self,
         account: SignupAccount,
     ) -> AuthenticationIdentity:
@@ -117,7 +121,7 @@ class SqlAlchemyAuthenticationRepository:
             status="active",
         )
         self._session.add(organization)
-        self._session.flush()
+        await self._session.flush()
 
         user = User(
             public_id=account.user_public_id,
@@ -128,9 +132,9 @@ class SqlAlchemyAuthenticationRepository:
             email_verified_at=account.email_verified_at,
         )
         self._session.add(user)
-        self._session.flush()
+        await self._session.flush()
 
-        administrator_role = provision_administrator_role(
+        administrator_role = await provision_administrator_role(
             self._session,
             organization.id,
         )
@@ -141,14 +145,14 @@ class SqlAlchemyAuthenticationRepository:
                 role_id=administrator_role.id,
             )
         )
-        self._session.flush()
+        await self._session.flush()
         return AuthenticationIdentity(
             user_public_id=user.public_id,
             organization_public_id=organization.public_id,
         )
 
-    def add_session(self, session: AuthenticationSession) -> None:
-        user_id = self._user_id(session.identity)
+    async def add_session(self, session: AuthenticationSession) -> None:
+        user_id = await self._user_id(session.identity)
         self._session.add(
             AuthSession(
                 public_id=session.public_id,
@@ -159,13 +163,13 @@ class SqlAlchemyAuthenticationRepository:
                 last_used_at=session.last_used_at,
             )
         )
-        self._session.flush()
+        await self._session.flush()
 
-    def get_session_by_refresh_token_hash_for_update(
+    async def get_session_by_refresh_token_hash_for_update(
         self,
         refresh_token_hash: str,
     ) -> AuthenticationSession | None:
-        model = self._session.scalar(
+        model = await self._session.scalar(
             select(AuthSession)
             .join(AuthSession.user)
             .join(User.organization)
@@ -181,8 +185,8 @@ class SqlAlchemyAuthenticationRepository:
         )
         return None if model is None else _authentication_session_record(model)
 
-    def update_session(self, session: AuthenticationSession) -> None:
-        model = self._session.scalar(
+    async def update_session(self, session: AuthenticationSession) -> None:
+        model = await self._session.scalar(
             select(AuthSession)
             .where(AuthSession.public_id == session.public_id)
             .with_for_update()
@@ -192,10 +196,10 @@ class SqlAlchemyAuthenticationRepository:
         model.refresh_token_hash = session.refresh_token_hash
         model.revoked_at = session.revoked_at
         model.last_used_at = session.last_used_at
-        self._session.flush()
+        await self._session.flush()
 
-    def _user_id(self, identity: AuthenticationIdentity) -> int:
-        user_id = self._session.scalar(
+    async def _user_id(self, identity: AuthenticationIdentity) -> int:
+        user_id = await self._session.scalar(
             select(User.id)
             .join(Organization, User.organization_id == Organization.id)
             .where(

@@ -1,7 +1,7 @@
 """Built-in RBAC role provisioning."""
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.domain.permissions import PERMISSION_CATALOG
 from nexus.infrastructure.persistence.models.organization import Organization
@@ -13,14 +13,17 @@ ADMINISTRATOR_ROLE_NAME = "Administrator"
 ADMINISTRATOR_ROLE_DESCRIPTION = "Built-in organization administrator role"
 
 
-def provision_administrator_role(session: Session, organization_id: int) -> Role:
+async def provision_administrator_role(
+    session: AsyncSession,
+    organization_id: int,
+) -> Role:
     """Provision the protected Administrator role for one organization.
 
     The caller owns the surrounding transaction. The organization row is locked so
     concurrent bootstrap attempts for the same organization are serialized. This
     function flushes generated state but never commits.
     """
-    locked_organization_id = session.scalar(
+    locked_organization_id = await session.scalar(
         select(Organization.id)
         .where(Organization.id == organization_id)
         .with_for_update()
@@ -28,7 +31,7 @@ def provision_administrator_role(session: Session, organization_id: int) -> Role
     if locked_organization_id is None:
         raise ValueError(f"Organization {organization_id} does not exist")
 
-    role = session.scalar(
+    role = await session.scalar(
         select(Role).where(
             Role.organization_id == organization_id,
             Role.name == ADMINISTRATOR_ROLE_NAME,
@@ -43,14 +46,14 @@ def provision_administrator_role(session: Session, organization_id: int) -> Role
             is_system=True,
         )
         session.add(role)
-        session.flush()
+        await session.flush()
     elif not role.is_system:
         raise ValueError(
             "Administrator role already exists for the organization but is not a system role"
         )
 
     permissions = list(
-        session.scalars(
+        await session.scalars(
             select(Permission).where(Permission.key.in_(PERMISSION_CATALOG))
         )
     )
@@ -61,7 +64,7 @@ def provision_administrator_role(session: Session, organization_id: int) -> Role
         raise ValueError(f"Permission catalog is not seeded: {missing}")
 
     existing_permission_ids = set(
-        session.scalars(
+        await session.scalars(
             select(RolePermission.permission_id).where(
                 RolePermission.role_id == role.id
             )
@@ -71,5 +74,5 @@ def provision_administrator_role(session: Session, organization_id: int) -> Role
         if permission.id not in existing_permission_ids:
             session.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
-    session.flush()
+    await session.flush()
     return role

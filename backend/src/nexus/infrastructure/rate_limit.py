@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import cast
 
@@ -32,7 +33,15 @@ class RedisRateLimiter:
     def from_url(cls, redis_url: str) -> RedisRateLimiter:
         return cls(redis=Redis.from_url(redis_url, decode_responses=True))
 
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+        return await asyncio.to_thread(
+            self._allow_sync,
+            key=key,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+
+    def _allow_sync(self, *, key: str, limit: int, window_seconds: int) -> bool:
         try:
             allowed = cast(
                 int,

@@ -8,8 +8,8 @@ from typing import Protocol
 class TransactionManager(Protocol):
     """Minimal transaction boundary owned by application use cases."""
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         """Commit pending transaction state."""
 
-    def rollback(self) -> None:
+    async def rollback(self) -> None:
         """Roll back pending transaction state."""

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import hmac
 import os
 import uuid
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
-from threading import Event
 
 import pytest
 from alembic import command
@@ -14,6 +15,7 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.authentication.repository import (
@@ -23,6 +25,7 @@ from nexus.authentication.repository import (
 from nexus.authentication.session_service import (
     SessionPolicy,
     SessionService,
+    SessionTokenResult,
 )
 from nexus.authentication.tokens import (
     AccessTokenError,
@@ -41,6 +44,7 @@ from nexus.infrastructure.persistence.repositories.authentication import (
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
+REFRESH_TOKEN_SECRET = "test-refresh-token-secret-with-enough-length"
 
 
 class FailingAccessTokenService(AccessTokenService):
@@ -49,38 +53,39 @@ class FailingAccessTokenService(AccessTokenService):
 
 
 class FailingAfterSessionUpdateRepository(SqlAlchemyAuthenticationRepository):
-    def update_session(self, session: AuthenticationSession) -> None:
-        super().update_session(session)
+    async def update_session(self, session: AuthenticationSession) -> None:
+        await super().update_session(session)
         raise RuntimeError("session persistence failed")
 
 
 class PausingAuthenticationRepository(SqlAlchemyAuthenticationRepository):
     def __init__(
         self,
-        session: Session,
+        session: AsyncSession,
         *,
-        lock_acquired: Event | None = None,
-        release_lock: Event | None = None,
-        query_started: Event | None = None,
+        lock_acquired: asyncio.Event | None = None,
+        release_lock: asyncio.Event | None = None,
+        query_started: asyncio.Event | None = None,
     ) -> None:
         super().__init__(session)
         self._lock_acquired = lock_acquired
         self._release_lock = release_lock
         self._query_started = query_started
 
-    def get_session_by_refresh_token_hash_for_update(
+    async def get_session_by_refresh_token_hash_for_update(
         self,
         refresh_token_hash: str,
     ) -> AuthenticationSession | None:
         if self._query_started is not None:
             self._query_started.set()
-        session = super().get_session_by_refresh_token_hash_for_update(
+        session = await super().get_session_by_refresh_token_hash_for_update(
             refresh_token_hash
         )
         if self._lock_acquired is not None:
             self._lock_acquired.set()
-            if self._release_lock is None or not self._release_lock.wait(timeout=10):
-                raise TimeoutError("Timed out waiting to release auth session lock")
+            if self._release_lock is None:
+                raise TimeoutError("Missing auth session lock release event")
+            await asyncio.wait_for(self._release_lock.wait(), timeout=10)
         return session
 
 
@@ -131,7 +136,7 @@ def migrated_engine() -> Iterator[Engine]:
 
 
 def build_service(
-    session: Session,
+    session: AsyncSession,
     *,
     repository: SqlAlchemyAuthenticationRepository | None = None,
 ) -> SessionService:
@@ -147,7 +152,7 @@ def build_service(
     )
 
 
-def build_failing_service(session: Session) -> SessionService:
+def build_failing_service(session: AsyncSession) -> SessionService:
     return _build_service(
         session,
         FailingAccessTokenService(
@@ -160,14 +165,14 @@ def build_failing_service(session: Session) -> SessionService:
 
 
 def _build_service(
-    session: Session,
+    session: AsyncSession,
     token_service: AccessTokenService,
     *,
     repository: SqlAlchemyAuthenticationRepository | None = None,
 ) -> SessionService:
     return SessionService(
         policy=SessionPolicy(
-            refresh_token_secret="test-refresh-token-secret-with-enough-length",
+            refresh_token_secret=REFRESH_TOKEN_SECRET,
             refresh_token_expires_seconds=2_592_000,
         ),
         transaction=SqlAlchemyTransactionManager(session),
@@ -177,32 +182,58 @@ def _build_service(
     )
 
 
-def identity_for(user: User) -> AuthenticationIdentity:
-    return AuthenticationIdentity(
-        user_public_id=user.public_id,
-        organization_public_id=user.organization.public_id,
-    )
+def hash_refresh_token(refresh_token: str) -> str:
+    return hmac.new(
+        REFRESH_TOKEN_SECRET.encode(),
+        refresh_token.encode(),
+        sha256,
+    ).hexdigest()
 
 
-def create_user(session: Session) -> User:
-    organization = Organization(name="Acme", slug="acme", status="active")
-    user = User(
-        organization=organization,
-        email="person@example.com",
-        status="active",
-    )
-    session.add_all([organization, user])
-    session.flush()
-    return user
+def create_identity(engine: Engine) -> AuthenticationIdentity:
+    with Session(engine) as session:
+        organization = Organization(name="Acme", slug="acme", status="active")
+        user = User(
+            organization=organization,
+            email="person@example.com",
+            status="active",
+        )
+        session.add_all([organization, user])
+        session.commit()
+        return AuthenticationIdentity(
+            user_public_id=user.public_id,
+            organization_public_id=organization.public_id,
+        )
+
+
+async def create_session(
+    session_factory: async_sessionmaker[AsyncSession],
+    identity: AuthenticationIdentity,
+    *,
+    failing: bool = False,
+) -> SessionTokenResult:
+    async with session_factory() as session:
+        service = build_failing_service(session) if failing else build_service(session)
+        return await service.create_session(identity=identity)
+
+
+async def refresh_session(
+    session_factory: async_sessionmaker[AsyncSession],
+    refresh_token: str,
+    *,
+    failing: bool = False,
+) -> SessionTokenResult:
+    async with session_factory() as session:
+        service = build_failing_service(session) if failing else build_service(session)
+        return await service.refresh_session(refresh_token=refresh_token)
 
 
 def test_create_session_persists_hash_without_plaintext(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        result = auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    result = asyncio.run(create_session(authentication_async_session_factory, identity))
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
@@ -213,31 +244,28 @@ def test_create_session_persists_hash_without_plaintext(
 
 def test_refresh_rotates_token_invalidates_old_token_and_allows_next_rotation(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        first = auth_service.create_session(identity=identity_for(user))
-
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        second = auth_service.refresh_session(
-            refresh_token=first.refresh_token,
-        )
+    identity = create_identity(migrated_engine)
+    first = asyncio.run(create_session(authentication_async_session_factory, identity))
+    second = asyncio.run(
+        refresh_session(authentication_async_session_factory, first.refresh_token)
+    )
 
     assert second.refresh_token != first.refresh_token
     assert second.access_token
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(session).refresh_session(refresh_token=first.refresh_token)
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            refresh_session(authentication_async_session_factory, first.refresh_token)
+        )
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
     assert exc_info.value.message == "Authentication credentials are invalid."
 
-    with Session(migrated_engine) as session:
-        third = build_service(session).refresh_session(
-            refresh_token=second.refresh_token,
-        )
+    third = asyncio.run(
+        refresh_session(authentication_async_session_factory, second.refresh_token)
+    )
 
     assert third.refresh_token not in {first.refresh_token, second.refresh_token}
 
@@ -246,39 +274,50 @@ def test_refresh_rotates_token_invalidates_old_token_and_allows_next_rotation(
             session.scalar(
                 select(func.count(AuthSession.id)).where(
                     AuthSession.refresh_token_hash
-                    == auth_service._hash_refresh_token(first.refresh_token)
+                    == hash_refresh_token(first.refresh_token)
                 )
             )
             == 0
         )
         auth_session = session.scalars(select(AuthSession)).one()
         assert auth_session.last_used_at == datetime(2026, 9, 16, tzinfo=UTC)
-        assert auth_session.refresh_token_hash == auth_service._hash_refresh_token(
+        assert auth_session.refresh_token_hash == hash_refresh_token(
             third.refresh_token
         )
 
 
-def test_revoke_persists_revoked_at(migrated_engine: Engine) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        result = auth_service.create_session(identity=identity_for(user))
+def test_revoke_persists_revoked_at(
+    migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    identity = create_identity(migrated_engine)
+    result = asyncio.run(create_session(authentication_async_session_factory, identity))
 
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        auth_service.revoke_session(refresh_token=result.refresh_token)
+    async def revoke() -> None:
+        async with authentication_async_session_factory() as session:
+            await build_service(session).revoke_session(
+                refresh_token=result.refresh_token
+            )
+
+    asyncio.run(revoke())
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
         assert auth_session.revoked_at == datetime(2026, 9, 16, tzinfo=UTC)
 
 
-def test_create_session_owns_commit(migrated_engine: Engine) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        auth_service.create_session(identity=identity_for(user))
-        session.rollback()
+def test_create_session_owns_commit(
+    migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    identity = create_identity(migrated_engine)
+
+    async def create_then_rollback() -> None:
+        async with authentication_async_session_factory() as session:
+            await build_service(session).create_session(identity=identity)
+            await session.rollback()
+
+    asyncio.run(create_then_rollback())
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(AuthSession.id))) == 1
@@ -286,14 +325,19 @@ def test_create_session_owns_commit(migrated_engine: Engine) -> None:
 
 def test_create_session_token_failure_rolls_back_persisted_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_failing_service(session)
-        user = create_user(session)
-        with pytest.raises(NexusError) as exc_info:
-            auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            create_session(
+                authentication_async_session_factory,
+                identity,
+                failing=True,
+            )
+        )
 
-        assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
 
     with Session(migrated_engine) as session:
         assert session.scalar(select(func.count(AuthSession.id))) == 0
@@ -301,63 +345,63 @@ def test_create_session_token_failure_rolls_back_persisted_session(
 
 def test_refresh_session_token_failure_rolls_back_rotation(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        first = auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    first = asyncio.run(create_session(authentication_async_session_factory, identity))
 
-    original_hash = auth_service._hash_refresh_token(first.refresh_token)
+    original_hash = hash_refresh_token(first.refresh_token)
 
-    with Session(migrated_engine) as session:
-        failing_service = build_failing_service(session)
-        with pytest.raises(NexusError) as exc_info:
-            failing_service.refresh_session(
-                refresh_token=first.refresh_token,
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            refresh_session(
+                authentication_async_session_factory,
+                first.refresh_token,
+                failing=True,
             )
+        )
 
-        assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
+    assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
         assert auth_session.refresh_token_hash == original_hash
         assert auth_session.last_used_at is None
 
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        refreshed = auth_service.refresh_session(
-            refresh_token=first.refresh_token,
-        )
+    refreshed = asyncio.run(
+        refresh_session(authentication_async_session_factory, first.refresh_token)
+    )
 
     assert refreshed.refresh_token != first.refresh_token
 
 
 def test_refresh_persistence_failure_rolls_back_and_keeps_old_token_usable(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        first = auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    first = asyncio.run(create_session(authentication_async_session_factory, identity))
 
-    original_hash = auth_service._hash_refresh_token(first.refresh_token)
+    original_hash = hash_refresh_token(first.refresh_token)
 
-    with Session(migrated_engine) as session:
-        repository = FailingAfterSessionUpdateRepository(session)
-        with pytest.raises(RuntimeError, match="session persistence failed"):
-            build_service(session, repository=repository).refresh_session(
+    async def fail_refresh() -> None:
+        async with authentication_async_session_factory() as session:
+            repository = FailingAfterSessionUpdateRepository(session)
+            await build_service(session, repository=repository).refresh_session(
                 refresh_token=first.refresh_token,
             )
+
+    with pytest.raises(RuntimeError, match="session persistence failed"):
+        asyncio.run(fail_refresh())
 
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
         assert auth_session.refresh_token_hash == original_hash
         assert auth_session.last_used_at is None
 
-    with Session(migrated_engine) as session:
-        refreshed = build_service(session).refresh_session(
-            refresh_token=first.refresh_token,
-        )
+    refreshed = asyncio.run(
+        refresh_session(authentication_async_session_factory, first.refresh_token)
+    )
 
     assert refreshed.refresh_token != first.refresh_token
 
@@ -373,14 +417,13 @@ def test_refresh_persistence_failure_rolls_back_and_keeps_old_token_usable(
 )
 def test_ineligible_identity_cannot_refresh_session(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
     identity_state: str,
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        first = auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    first = asyncio.run(create_session(authentication_async_session_factory, identity))
 
-    original_hash = auth_service._hash_refresh_token(first.refresh_token)
+    original_hash = hash_refresh_token(first.refresh_token)
     with Session(migrated_engine) as session:
         user = session.scalars(select(User)).one()
         organization = session.scalars(select(Organization)).one()
@@ -394,8 +437,10 @@ def test_ineligible_identity_cannot_refresh_session(
             organization.deleted_at = datetime(2026, 9, 16, tzinfo=UTC)
         session.commit()
 
-    with Session(migrated_engine) as session, pytest.raises(NexusError) as exc_info:
-        build_service(session).refresh_session(refresh_token=first.refresh_token)
+    with pytest.raises(NexusError) as exc_info:
+        asyncio.run(
+            refresh_session(authentication_async_session_factory, first.refresh_token)
+        )
 
     assert exc_info.value.code == ErrorCode.UNAUTHORIZED
     assert exc_info.value.message == "Authentication credentials are invalid."
@@ -407,45 +452,50 @@ def test_ineligible_identity_cannot_refresh_session(
 
 def test_concurrent_refresh_allows_exactly_one_rotation(
     migrated_engine: Engine,
+    authentication_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    with Session(migrated_engine) as session:
-        auth_service = build_service(session)
-        user = create_user(session)
-        first = auth_service.create_session(identity=identity_for(user))
+    identity = create_identity(migrated_engine)
+    first = asyncio.run(create_session(authentication_async_session_factory, identity))
 
-    lock_acquired = Event()
-    release_lock = Event()
-    competing_query_started = Event()
+    async def refresh_concurrently() -> list[str]:
+        lock_acquired = asyncio.Event()
+        release_lock = asyncio.Event()
+        competing_query_started = asyncio.Event()
 
-    def refresh(*, pause_with_lock: bool) -> str:
-        with Session(migrated_engine) as session:
-            repository = PausingAuthenticationRepository(
-                session,
-                lock_acquired=lock_acquired if pause_with_lock else None,
-                release_lock=release_lock if pause_with_lock else None,
-                query_started=(None if pause_with_lock else competing_query_started),
-            )
-            try:
-                result = build_service(
+        async def refresh(*, pause_with_lock: bool) -> str:
+            async with authentication_async_session_factory() as session:
+                repository = PausingAuthenticationRepository(
                     session,
-                    repository=repository,
-                ).refresh_session(refresh_token=first.refresh_token)
-            except NexusError as exc:
-                assert exc.code == ErrorCode.UNAUTHORIZED
-                return "unauthorized"
-            return result.refresh_token
+                    lock_acquired=lock_acquired if pause_with_lock else None,
+                    release_lock=release_lock if pause_with_lock else None,
+                    query_started=(
+                        None if pause_with_lock else competing_query_started
+                    ),
+                )
+                try:
+                    result = await build_service(
+                        session,
+                        repository=repository,
+                    ).refresh_session(refresh_token=first.refresh_token)
+                except NexusError as exc:
+                    assert exc.code == ErrorCode.UNAUTHORIZED
+                    return "unauthorized"
+                return result.refresh_token
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first_attempt = executor.submit(refresh, pause_with_lock=True)
-        assert lock_acquired.wait(timeout=10)
-        second_attempt = executor.submit(refresh, pause_with_lock=False)
-        assert competing_query_started.wait(timeout=10)
+        first_attempt = asyncio.create_task(refresh(pause_with_lock=True))
+        await asyncio.wait_for(lock_acquired.wait(), timeout=10)
+        second_attempt = asyncio.create_task(refresh(pause_with_lock=False))
+        await asyncio.wait_for(competing_query_started.wait(), timeout=10)
         assert not second_attempt.done()
         release_lock.set()
-        outcomes = [
-            first_attempt.result(timeout=10),
-            second_attempt.result(timeout=10),
-        ]
+        return list(
+            await asyncio.wait_for(
+                asyncio.gather(first_attempt, second_attempt),
+                timeout=10,
+            )
+        )
+
+    outcomes = asyncio.run(refresh_concurrently())
 
     assert outcomes.count("unauthorized") == 1
     winning_refresh_tokens = [
@@ -454,6 +504,6 @@ def test_concurrent_refresh_allows_exactly_one_rotation(
     assert len(winning_refresh_tokens) == 1
     with Session(migrated_engine) as session:
         auth_session = session.scalars(select(AuthSession)).one()
-        assert auth_session.refresh_token_hash == auth_service._hash_refresh_token(
+        assert auth_session.refresh_token_hash == hash_refresh_token(
             winning_refresh_tokens[0]
         )

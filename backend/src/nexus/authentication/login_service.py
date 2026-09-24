@@ -74,19 +74,19 @@ class LoginService:
     rate_limiter: RateLimiter
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
-    def request_login_otp(self, *, request: LoginOtpRequest) -> None:
+    async def request_login_otp(self, *, request: LoginOtpRequest) -> None:
         email = normalize_auth_email(request.email)
-        self._enforce_rate_limit(email)
+        await self._enforce_rate_limit(email)
 
         try:
-            if not self.repository.user_exists_by_email(email):
-                self.transaction.commit()
+            if not await self.repository.user_exists_by_email(email):
+                await self.transaction.commit()
                 logger.info("login_otp_request_accepted")
                 return
 
             otp = generate_numeric_otp(self.policy.otp_length)
             expires_at = self.clock() + timedelta(seconds=self.policy.otp_ttl_seconds)
-            self.repository.add_otp_challenge(
+            await self.repository.add_otp_challenge(
                 OtpChallenge(
                     public_id=uuid4(),
                     email=email,
@@ -101,14 +101,14 @@ class LoginService:
                     max_attempts=self.policy.otp_max_attempts,
                 )
             )
-            self.transaction.commit()
+            await self.transaction.commit()
         except Exception:
-            self.transaction.rollback()
+            await self.transaction.rollback()
             raise
 
         # The database transaction is closed before slow external email I/O.
         try:
-            self.email_gateway.send_login_otp(
+            await self.email_gateway.send_login_otp(
                 email=email,
                 otp=otp,
                 expires_at=expires_at,
@@ -118,46 +118,46 @@ class LoginService:
 
         logger.info("login_otp_request_accepted")
 
-    def verify_login_otp(
+    async def verify_login_otp(
         self,
         *,
         request: LoginVerificationRequest,
     ) -> SessionTokenResult:
         try:
-            challenge = self._verify_login_otp(
+            challenge = await self._verify_login_otp(
                 email=request.email,
                 otp=request.otp,
             )
-            identity = self.repository.get_identity_by_email(challenge.email)
+            identity = await self.repository.get_identity_by_email(challenge.email)
             if identity is None:
                 raise _LoginOtpVerificationFailed()
 
-            self.repository.update_otp_challenge(
+            await self.repository.update_otp_challenge(
                 replace(challenge, consumed_at=self.clock())
             )
-            token_result = self.session_service.stage_session(identity=identity)
-            self.transaction.commit()
+            token_result = await self.session_service.stage_session(identity=identity)
+            await self.transaction.commit()
             return token_result
         except _LoginOtpVerificationFailed as exc:
             try:
                 if exc.persist_attempt_state:
-                    self.transaction.commit()
+                    await self.transaction.commit()
                 else:
-                    self.transaction.rollback()
+                    await self.transaction.rollback()
             except Exception:
-                self.transaction.rollback()
+                await self.transaction.rollback()
                 raise
             raise _invalid_credentials() from exc
         except Exception:
-            self.transaction.rollback()
+            await self.transaction.rollback()
             raise
 
-    def _verify_login_otp(self, *, email: str, otp: str) -> OtpChallenge:
+    async def _verify_login_otp(self, *, email: str, otp: str) -> OtpChallenge:
         normalized_email = normalize_auth_email(email)
         if len(otp) != self.policy.otp_length or _OTP_RE.fullmatch(otp) is None:
             raise _LoginOtpVerificationFailed()
 
-        challenge = self.repository.get_latest_otp_challenge_for_update(
+        challenge = await self.repository.get_latest_otp_challenge_for_update(
             email=normalized_email,
             purpose=_LOGIN_PURPOSE,
         )
@@ -180,7 +180,7 @@ class LoginService:
             return challenge
 
         attempt_count = challenge.attempt_count + 1
-        self.repository.update_otp_challenge(
+        await self.repository.update_otp_challenge(
             replace(
                 challenge,
                 attempt_count=attempt_count,
@@ -193,13 +193,13 @@ class LoginService:
         )
         raise _LoginOtpVerificationFailed(persist_attempt_state=True)
 
-    def _enforce_rate_limit(self, email: str) -> None:
+    async def _enforce_rate_limit(self, email: str) -> None:
         key_digest = keyed_digest(
             secret=self.policy.otp_hmac_secret,
             message=f"login-rate-limit:{email}",
         )
         try:
-            allowed = self.rate_limiter.allow(
+            allowed = await self.rate_limiter.allow(
                 key=f"login-otp:{key_digest}",
                 limit=self.policy.otp_rate_limit_max_requests,
                 window_seconds=self.policy.otp_rate_limit_window_seconds,

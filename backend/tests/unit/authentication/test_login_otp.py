@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -44,11 +45,11 @@ class FakeRepository:
     added: list[OtpChallenge] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
 
-    def user_exists_by_email(self, email: str) -> bool:
+    async def user_exists_by_email(self, email: str) -> bool:
         self.checked_emails.append(email)
         return self.existing_user
 
-    def add_otp_challenge(self, challenge: OtpChallenge) -> None:
+    async def add_otp_challenge(self, challenge: OtpChallenge) -> None:
         if self.fail_add:
             raise RuntimeError("flush failed")
         self.added.append(challenge)
@@ -61,7 +62,7 @@ class FakeEmailGateway:
     sent: list[dict[str, Any]] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
 
-    def send_login_otp(
+    async def send_login_otp(
         self,
         *,
         email: str,
@@ -73,7 +74,7 @@ class FakeEmailGateway:
             raise AuthenticationEmailError("failed")
         self.sent.append({"email": email, "otp": otp, "expires_at": expires_at})
 
-    def send_signup_otp(
+    async def send_signup_otp(
         self,
         *,
         email: str,
@@ -82,7 +83,7 @@ class FakeEmailGateway:
     ) -> None:
         del email, otp, expires_at
 
-    def send_welcome_email(self, *, email: str, display_name: str) -> None:
+    async def send_welcome_email(self, *, email: str, display_name: str) -> None:
         del email, display_name
 
 
@@ -92,7 +93,7 @@ class FakeRateLimiter:
     fail: bool = False
     calls: list[dict[str, Any]] = field(default_factory=list)
 
-    def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
+    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
         self.calls.append(
             {"key": key, "limit": limit, "window_seconds": window_seconds}
         )
@@ -107,11 +108,11 @@ class FakeTransaction:
     commit_count: int = 0
     rollback_count: int = 0
 
-    def commit(self) -> None:
+    async def commit(self) -> None:
         self.commit_count += 1
         self.events.append("commit")
 
-    def rollback(self) -> None:
+    async def rollback(self) -> None:
         self.rollback_count += 1
         self.events.append("rollback")
 
@@ -141,12 +142,14 @@ def test_registered_email_creates_login_challenge_and_emails_after_commit() -> N
     email_gateway = FakeEmailGateway(events=events)
     rate_limiter = FakeRateLimiter()
 
-    build_service(
-        repository=repository,
-        transaction=transaction,
-        email_gateway=email_gateway,
-        rate_limiter=rate_limiter,
-    ).request_login_otp(request=LoginOtpRequest(email="  USER@Example.COM "))
+    asyncio.run(
+        build_service(
+            repository=repository,
+            transaction=transaction,
+            email_gateway=email_gateway,
+            rate_limiter=rate_limiter,
+        ).request_login_otp(request=LoginOtpRequest(email="  USER@Example.COM "))
+    )
 
     assert repository.checked_emails == ["user@example.com"]
     assert events == ["challenge", "commit", "email"]
@@ -187,12 +190,14 @@ def test_unknown_email_returns_without_challenge_or_email() -> None:
     email_gateway = FakeEmailGateway()
     rate_limiter = FakeRateLimiter()
 
-    result = build_service(
-        repository=repository,
-        transaction=transaction,
-        email_gateway=email_gateway,
-        rate_limiter=rate_limiter,
-    ).request_login_otp(request=LoginOtpRequest(email="unknown@example.com"))
+    result = asyncio.run(
+        build_service(
+            repository=repository,
+            transaction=transaction,
+            email_gateway=email_gateway,
+            rate_limiter=rate_limiter,
+        ).request_login_otp(request=LoginOtpRequest(email="unknown@example.com"))
+    )
 
     assert result is None
     assert repository.checked_emails == ["unknown@example.com"]
@@ -208,10 +213,12 @@ def test_invalid_email_is_rejected_before_rate_limit_or_lookup() -> None:
     rate_limiter = FakeRateLimiter()
 
     with pytest.raises(NexusError) as exc_info:
-        build_service(
-            repository=repository,
-            rate_limiter=rate_limiter,
-        ).request_login_otp(request=LoginOtpRequest(email="not-an-email"))
+        asyncio.run(
+            build_service(
+                repository=repository,
+                rate_limiter=rate_limiter,
+            ).request_login_otp(request=LoginOtpRequest(email="not-an-email"))
+        )
 
     assert exc_info.value.code == ErrorCode.VALIDATION_ERROR
     assert repository.checked_emails == []
@@ -234,10 +241,12 @@ def test_rate_limit_rejection_happens_before_account_lookup() -> None:
     repository = FakeRepository()
 
     with pytest.raises(NexusError) as exc_info:
-        build_service(
-            repository=repository,
-            rate_limiter=FakeRateLimiter(allowed=False),
-        ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        asyncio.run(
+            build_service(
+                repository=repository,
+                rate_limiter=FakeRateLimiter(allowed=False),
+            ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        )
 
     assert exc_info.value.code == ErrorCode.RATE_LIMITED
     assert repository.checked_emails == []
@@ -245,9 +254,11 @@ def test_rate_limit_rejection_happens_before_account_lookup() -> None:
 
 def test_rate_limiter_failure_returns_safe_service_unavailable() -> None:
     with pytest.raises(NexusError) as exc_info:
-        build_service(
-            rate_limiter=FakeRateLimiter(fail=True),
-        ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        asyncio.run(
+            build_service(
+                rate_limiter=FakeRateLimiter(fail=True),
+            ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        )
 
     assert exc_info.value.code == ErrorCode.SERVICE_UNAVAILABLE
     assert exc_info.value.message == "The service is temporarily unavailable."
@@ -258,11 +269,13 @@ def test_persistence_failure_rolls_back_without_sending_email() -> None:
     email_gateway = FakeEmailGateway()
 
     with pytest.raises(RuntimeError, match="flush failed"):
-        build_service(
-            repository=FakeRepository(fail_add=True),
-            transaction=transaction,
-            email_gateway=email_gateway,
-        ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        asyncio.run(
+            build_service(
+                repository=FakeRepository(fail_add=True),
+                transaction=transaction,
+                email_gateway=email_gateway,
+            ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+        )
 
     assert transaction.commit_count == 0
     assert transaction.rollback_count == 1
@@ -284,11 +297,13 @@ def test_email_failure_keeps_committed_challenge_and_returns_success(
         test_logger,
     )
 
-    result = build_service(
-        repository=repository,
-        transaction=transaction,
-        email_gateway=FakeEmailGateway(fail=True),
-    ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+    result = asyncio.run(
+        build_service(
+            repository=repository,
+            transaction=transaction,
+            email_gateway=FakeEmailGateway(fail=True),
+        ).request_login_otp(request=LoginOtpRequest(email="user@example.com"))
+    )
 
     assert result is None
     assert len(repository.added) == 1
