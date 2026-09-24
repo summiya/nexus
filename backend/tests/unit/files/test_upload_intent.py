@@ -47,6 +47,7 @@ def test_prepare_normalizes_metadata_and_marks_size_as_declared(
         "archive.tar.gz",
         ".contract",
         "文件 版本一.pdf",
+        "تقرير 2026.pdf",
         "report\u200cfinal.pdf",
     ],
 )
@@ -89,6 +90,35 @@ def test_prepare_rejects_invalid_filename(
         policy.prepare(
             original_name=original_name,
             mime_type="application/pdf",
+            size_bytes=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "bidi_control",
+    [
+        "\u202a",  # LRE
+        "\u202b",  # RLE
+        "\u202d",  # LRO
+        "\u202e",  # RLO
+        "\u202c",  # PDF
+        "\u2066",  # LRI
+        "\u2067",  # RLI
+        "\u2068",  # FSI
+        "\u2069",  # PDI
+    ],
+)
+def test_prepare_rejects_explicit_filename_bidi_controls(
+    policy: UploadIntentPolicy,
+    bidi_control: str,
+) -> None:
+    with pytest.raises(
+        UploadIntentValidationError,
+        match=r"^File name is invalid\.$",
+    ):
+        policy.prepare(
+            original_name=f"invoice{bidi_control}fdp.exe",
+            mime_type="application/octet-stream",
             size_bytes=1,
         )
 
@@ -152,6 +182,42 @@ def test_prepare_normalizes_supported_bare_mime_types(
     )
 
     assert intent.mime_type == expected
+
+
+def test_prepare_accepts_mime_type_components_at_restricted_name_limit(
+    policy: UploadIntentPolicy,
+) -> None:
+    mime_type = f"{'a' * 127}/{'b' * 127}"
+
+    intent = policy.prepare(
+        original_name="report",
+        mime_type=mime_type,
+        size_bytes=1,
+    )
+
+    assert intent.mime_type == mime_type
+
+
+@pytest.mark.parametrize(
+    "mime_type",
+    [
+        f"{'a' * 128}/b",
+        f"a/{'b' * 128}",
+    ],
+)
+def test_prepare_rejects_mime_type_component_above_restricted_name_limit(
+    policy: UploadIntentPolicy,
+    mime_type: str,
+) -> None:
+    with pytest.raises(
+        UploadIntentValidationError,
+        match=r"^MIME type is invalid\.$",
+    ):
+        policy.prepare(
+            original_name="report",
+            mime_type=mime_type,
+            size_bytes=1,
+        )
 
 
 @pytest.mark.parametrize(

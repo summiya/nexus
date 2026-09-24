@@ -81,6 +81,15 @@ File(AVAILABLE).size_bytes
     actual verified object size
 ```
 
+During Phase 5, `ValidatedUploadIntent.declared_size_bytes` exists only in
+request/application memory. The current File schema intentionally does not
+persist that declaration, and `File(PENDING).size_bytes` remains `None`. Do not
+overload `File.size_bytes` with untrusted request metadata. If later
+asynchronous verification needs to compare the actual Blob size with the
+declaration, the Phase 8 upload-initiation design must preserve
+`declared_size_bytes` in trusted persistent upload-initiation or upload-attempt
+state. The exact persistence mechanism is deferred to Phase 8.
+
 A later verification phase must measure the stored object before making the
 File available.
 
@@ -289,6 +298,8 @@ authenticate and authorize upload
         ↓
 UploadIntentPolicy
         ↓
+Phase 8 preserves declared_size_bytes in trusted upload state when required
+        ↓
 persist File(PENDING) with size_bytes=None
         ↓
 issue an exact-object upload grant
@@ -302,10 +313,14 @@ transition File to AVAILABLE or FAILED
 
 The client never chooses the storage key. A successful object upload or a
 provider event alone does not establish tenant ownership, authorization, or
-File availability. Later verification must compare the actual object size
-with both `declared_size_bytes` and the configured maximum, inspect actual
-content type where required, compute integrity metadata, and apply future
-malware/security policy before persisting the verified final size.
+File availability. Later verification must measure the actual object size and
+enforce the configured maximum. When Phase 8 preserves `declared_size_bytes`
+in trusted persistent upload state, asynchronous verification must also compare
+the actual size with that declaration. It must not use `File.size_bytes` for
+the untrusted declaration; that field remains `None` while pending and records
+only the verified final size when the File becomes available. Verification must
+also inspect actual content type where required, compute integrity metadata,
+and apply future malware/security policy.
 
 ## File and Document separation
 

@@ -10,6 +10,10 @@ from uuid import uuid4
 from nexus.files.domain import MAX_MIME_TYPE_LENGTH, MAX_ORIGINAL_NAME_LENGTH
 
 _DEFAULT_MIME_TYPE = "application/octet-stream"
+_MAX_MIME_RESTRICTED_NAME_LENGTH = 127
+_DISALLOWED_FILENAME_BIDI_CLASSES = frozenset(
+    {"LRE", "RLE", "LRO", "RLO", "PDF", "LRI", "RLI", "FSI", "PDI"}
+)
 _MIME_TYPE_PATTERN = re.compile(
     r"^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$",
     re.ASCII,
@@ -76,7 +80,7 @@ class UploadIntentPolicy:
 def _normalize_original_name(value: str) -> str:
     if not isinstance(value, str):
         raise UploadIntentValidationError("File name is invalid.")
-    if "/" in value or "\\" in value or _contains_control_character(value):
+    if "/" in value or "\\" in value or _contains_unsafe_filename_character(value):
         raise UploadIntentValidationError("File name is invalid.")
 
     normalized = value.strip()
@@ -99,8 +103,23 @@ def _normalize_mime_type(value: str | None) -> str:
         or _MIME_TYPE_PATTERN.fullmatch(normalized) is None
     ):
         raise UploadIntentValidationError("MIME type is invalid.")
+
+    type_name, subtype_name = normalized.split("/", maxsplit=1)
+    if (
+        len(type_name) > _MAX_MIME_RESTRICTED_NAME_LENGTH
+        or len(subtype_name) > _MAX_MIME_RESTRICTED_NAME_LENGTH
+    ):
+        raise UploadIntentValidationError("MIME type is invalid.")
     return normalized
 
 
 def _contains_control_character(value: str) -> bool:
     return any(unicodedata.category(character) == "Cc" for character in value)
+
+
+def _contains_unsafe_filename_character(value: str) -> bool:
+    return any(
+        unicodedata.category(character) == "Cc"
+        or unicodedata.bidirectional(character) in _DISALLOWED_FILENAME_BIDI_CLASSES
+        for character in value
+    )
