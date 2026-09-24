@@ -68,7 +68,7 @@ def migrated_database() -> Iterator[tuple[Config, Engine]]:
 
 
 @pytest.fixture
-def conversation_async_engine(
+def persistence_async_engine(
     migrated_database: tuple[Config, Engine],
 ) -> Iterator[AsyncEngine]:
     _, engine = migrated_database
@@ -80,11 +80,27 @@ def conversation_async_engine(
 
 
 @pytest.fixture
-def conversation_async_session_factory(
-    conversation_async_engine: AsyncEngine,
+def persistence_async_session_factory(
+    persistence_async_engine: AsyncEngine,
 ) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(
-        bind=conversation_async_engine,
+        bind=persistence_async_engine,
         autoflush=False,
         expire_on_commit=False,
     )
+
+
+@pytest.fixture
+def conversation_async_engine(
+    persistence_async_engine: AsyncEngine,
+) -> AsyncEngine:
+    """Compatibility alias for existing Conversation persistence tests."""
+    return persistence_async_engine
+
+
+@pytest.fixture
+def conversation_async_session_factory(
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> async_sessionmaker[AsyncSession]:
+    """Compatibility alias for existing Conversation persistence tests."""
+    return persistence_async_session_factory

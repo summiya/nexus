@@ -795,49 +795,101 @@ for a different Conversation.
 
 ## Purpose
 
-Represents file metadata and the relationship between Nexus and Azure Blob Storage.
+Represents a tenant-owned binary object and its provider-neutral storage metadata.
+
+The implemented Phase 1 contract separates File storage from future Document
+processing. It does not expose a storage provider, container, URL, credential,
+or provider SDK concept.
 
 ## Fields
 
 ```text
-id
-organization_id
-workspace_id
-project_id
-owner_user_id
-conversation_id nullable
-storage_container
-storage_key
-original_filename
+id bigint internal
+public_id UUID
+organization_id bigint internal
+created_by_user_id bigint internal
+original_name
 mime_type
-size_bytes
-checksum
-storage_provider
-status
-metadata_json
+size_bytes nullable while pending
+storage_key
+storage_status: pending | available | failed
+checksum_sha256 nullable
 created_at
 updated_at
-deleted_at
 ```
 
-## Storage
+Application and domain boundaries use the corresponding public organization,
+user, and File UUIDs. Internal integer identities stay inside persistence.
 
-Binary content lives in Azure Blob Storage.
+## Storage identity
+
+`storage_key` is an opaque provider-neutral logical object identity. The exact
+generation and validation policy belongs to the future upload application and
+storage adapter work. User-provided filenames do not define physical object
+identity.
+
+Provider selection and container/bucket names remain deployment configuration
+while Nexus uses one configured object-storage backend.
+
+## Storage lifecycle
+
+```text
+pending
+    metadata exists; durable object availability is not confirmed
+
+available
+    object storage succeeded and final size is known
+
+failed
+    storage failed and the metadata remains recoverable
+```
+
+`checksum_sha256` is optional in every state. When present, it is a lowercase
+64-character hexadecimal SHA-256 digest. No checksum-based deduplication is
+implemented.
+
+## Ownership and integrity
+
+Every File belongs to exactly one Organization and records its creator. The
+database enforces that the creator belongs to that same Organization. File
+lookups must include the authenticated organization scope; creator provenance
+does not replace application authorization.
+
+## File and Document boundary
+
+```text
+File
+    binary identity, ownership, storage metadata
+
+Document (future)
+    parsed/indexable representation derived from a File
+```
+
+Extracted text, pages, chunks, embeddings, vector identifiers, retrieval data,
+and processing status do not belong on File.
+
+## Future storage
+
+Binary content will live in a configured private object store. Azure Blob
+Storage is the expected first production adapter and Azurite the likely local
+equivalent, but neither is implemented by the File database foundation.
 
 PostgreSQL stores:
 
 - ownership
 - authorization scope
 - metadata
-- checksum
+- optional checksum
 - storage key
 - lifecycle state
 
 ## Security
 
-Blob access MUST be mediated through Nexus authorization.
+Future object access MUST be mediated through Nexus authorization.
 
-Use short-lived authorized access mechanisms such as SAS where appropriate.
+Filename sanitization, storage-key generation rules, MIME/content verification,
+size policy, malware scanning, and upload validation belong to later upload and
+storage phases.
 
 ---
 
