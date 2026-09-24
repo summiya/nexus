@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 3 Azure Blob storage adapter
+**Status:** Implemented Phase 4 storage configuration and composition
 
 ## Purpose
 
@@ -8,7 +8,8 @@ The File capability owns metadata for a tenant-owned binary object. Phase 1
 provides the domain and PostgreSQL persistence foundation. Phase 2 adds the
 provider-neutral contract for binary object storage. Phase 3 provides the first
 infrastructure adapter using the native asynchronous Azure Blob SDK. It does
-not yet configure the provider, process Files, or expose Files through an API.
+not process Files or expose Files through an API. Phase 4 composes the adapter
+as an application-owned dependency for local Azurite and Azure Managed Identity.
 
 ## Boundary
 
@@ -121,7 +122,7 @@ provider-specific location details through the File boundary.
 `AzureBlobObjectStorage` lives under `nexus.infrastructure.storage` and is the
 only File storage implementation that imports the Azure SDK. It receives a
 preconfigured asynchronous `ContainerClient` and borrows it: the adapter never
-creates the container and never closes the shared client. Future Phase 4
+creates the container and never closes the shared client. Application
 composition owns client construction, credentials, container selection, and
 application-lifetime cleanup.
 
@@ -155,7 +156,52 @@ on the injected client.
 
 Azurite integration tests verify streamed round trips, create conflicts,
 missing reads, idempotent deletion, empty objects, and client reuse. Azurite is
-test infrastructure only and is not part of the Nexus application composition.
+also available in the local development Docker Compose stack.
+
+## Storage configuration and composition
+
+`StorageComposition` selects the configured provider with one explicit branch,
+constructs its resources, exposes only `ObjectStorage`, and owns asynchronous
+cleanup. The root `AppContainer` owns this composition for the FastAPI
+application lifetime. Azure SDK clients and credentials remain inside
+infrastructure and composition.
+
+Connection-string authentication is restricted to the explicit `development`
+and `test` environments and is intended only for Azurite. Every other
+environment, including unknown values, requires an HTTPS Azure Storage account
+URL and `ManagedIdentityCredential`. A configured client ID selects a
+user-assigned identity; otherwise Nexus uses the system-assigned identity.
+Nexus supports no production account-key, client-secret, interactive, or SAS
+authentication in this phase.
+
+The relevant runtime settings are:
+
+- `STORAGE_PROVIDER=azure_blob`;
+- `AZURE_STORAGE_CONTAINER` for the externally provisioned container;
+- `AZURE_STORAGE_CONNECTION_STRING` only for `development` and `test`;
+- `AZURE_STORAGE_ACCOUNT_URL` for Managed Identity environments;
+- optional `AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID` for a user-assigned
+  identity.
+
+Connection string and account URL authentication are mutually exclusive.
+
+Composition creates a top-level asynchronous `BlobServiceClient` and derives
+the configured `ContainerClient`, which `AzureBlobObjectStorage` borrows. The
+top-level client and any Managed Identity credential are closed during
+application shutdown. Client construction does not create or probe the
+container. Deployment infrastructure must provision the configured container
+before File operations use it.
+
+The production Managed Identity needs Blob data-plane permission for current
+create, read, and delete operations. `Storage Blob Data Contributor` is the
+normal built-in role; assign it at the configured container scope where
+practical. Nexus does not provision RBAC at runtime.
+
+Future User Delegation SAS work is separate. It will additionally require the
+`Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`
+permission at storage-account scope or higher, for example through the
+`Storage Blob Delegator` role. Phase 4 neither grants that permission nor
+implements upload grants.
 
 ## File and Document separation
 
@@ -207,14 +253,13 @@ Phase 3
     Azure Blob adapter, Azure SDK integration, and Azurite tests (implemented)
 
 Phase 4
-    storage configuration, provider selection, and composition
+    storage configuration, provider selection, and composition (implemented)
 ```
 
 ## Deferred work
 
 Later phases own:
 
-- storage configuration and composition;
 - upload application service and API;
 - key generation and filename/upload validation;
 - list, download, and delete use cases and APIs;

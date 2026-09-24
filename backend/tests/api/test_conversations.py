@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -34,6 +35,7 @@ from nexus.conversations.domain import (
     Message,
 )
 from nexus.errors import ErrorCode, NexusError
+from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
@@ -157,13 +159,20 @@ def _settings() -> Settings:
     )
 
 
+def _create_test_app(settings: Settings) -> FastAPI:
+    return create_app(
+        settings,
+        object_storage=Mock(spec=ObjectStorage),
+    )
+
+
 def _list_test_app(
     service: FakeListConversationsService,
     *,
     organization_public_id: UUID,
     user_public_id: UUID,
 ) -> FastAPI:
-    app = create_app(_settings())
+    app = _create_test_app(_settings())
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
         user_public_id=user_public_id,
         organization_public_id=organization_public_id,
@@ -179,7 +188,7 @@ def _messages_test_app(
     organization_public_id: UUID,
     user_public_id: UUID,
 ) -> FastAPI:
-    app = create_app(_settings())
+    app = _create_test_app(_settings())
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
         user_public_id=user_public_id,
         organization_public_id=organization_public_id,
@@ -712,7 +721,7 @@ def test_message_endpoint_uses_native_sse_and_maps_application_events() -> None:
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
     )
-    app = create_app(settings)
+    app = _create_test_app(settings)
     organization_id = uuid4()
     user_id = uuid4()
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
@@ -750,7 +759,7 @@ def test_message_endpoint_rejects_an_invalid_idempotency_key() -> None:
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
     )
-    app = create_app(settings)
+    app = _create_test_app(settings)
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
         user_public_id=uuid4(),
         organization_public_id=uuid4(),
@@ -780,7 +789,7 @@ def test_message_endpoint_returns_http_error_when_preflight_fails() -> None:
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
     )
-    app = create_app(settings)
+    app = _create_test_app(settings)
     organization_id = uuid4()
     user_id = uuid4()
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
@@ -814,7 +823,7 @@ def test_message_endpoint_returns_safe_conflict_before_streaming() -> None:
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
     )
-    app = create_app(settings)
+    app = _create_test_app(settings)
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
         user_public_id=uuid4(),
         organization_public_id=uuid4(),
