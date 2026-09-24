@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
-from typing import Any, Self
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, event, func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.conversations.application.events import (
@@ -129,7 +129,10 @@ def migrated_lifecycle_engine(
     return engine
 
 
-def _seed_conversation(engine: Engine) -> tuple[UUID, UUID, Conversation]:
+def _seed_conversation(
+    engine: Engine,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[UUID, UUID, Conversation]:
     organization_public_id = uuid4()
     user_public_id = uuid4()
     with Session(engine) as session:
@@ -158,7 +161,7 @@ def _seed_conversation(engine: Engine) -> tuple[UUID, UUID, Conversation]:
         updated_at=TIMESTAMP,
     )
     asyncio.run(
-        SqlAlchemyConversationPersistence(lambda: Session(engine)).create_conversation(
+        SqlAlchemyConversationPersistence(session_factory).create_conversation(
             conversation
         )
     )
@@ -166,15 +169,11 @@ def _seed_conversation(engine: Engine) -> tuple[UUID, UUID, Conversation]:
 
 
 def _service(
-    engine: Engine,
+    session_factory: async_sessionmaker[AsyncSession],
     gateway: TestGateway,
-    *,
-    session_factory: Callable[[], Session] | None = None,
 ) -> StreamConversationMessage:
     return StreamConversationMessage(
-        persistence=SqlAlchemyConversationPersistence(
-            session_factory or (lambda: Session(engine))
-        ),
+        persistence=SqlAlchemyConversationPersistence(session_factory),
         llm_gateway=gateway,
         model_policy=ModelPolicy.from_models(["gpt-test"]),
         history_limit=10,
@@ -232,22 +231,25 @@ def _assert_terminal_state(
 
 def test_concurrent_messages_to_one_conversation_accept_exactly_one_request(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     gateways = [
         TestGateway(EventIterator([LLMStartedEvent()])),
         TestGateway(EventIterator([LLMStartedEvent()])),
     ]
-    services = [_service(migrated_lifecycle_engine, gateway) for gateway in gateways]
-    barrier = threading.Barrier(2)
+    services = [
+        _service(conversation_async_session_factory, gateway) for gateway in gateways
+    ]
+    barrier = asyncio.Barrier(2)
     original_insert = queries.insert_generation
 
-    def race_generation_insert(*args: object, **kwargs: object) -> None:
-        barrier.wait(timeout=5)
-        original_insert(*args, **kwargs)  # type: ignore[arg-type]
+    async def race_generation_insert(*args: object, **kwargs: object) -> None:
+        await asyncio.wait_for(barrier.wait(), timeout=5)
+        await original_insert(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(queries, "insert_generation", race_generation_insert)
 
@@ -303,10 +305,11 @@ def test_concurrent_messages_to_one_conversation_accept_exactly_one_request(
 
 def test_different_conversations_run_concurrently_and_may_reuse_idempotency_key(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id, user_id, first_conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     second_conversation = Conversation(
         public_id=uuid4(),
@@ -316,22 +319,22 @@ def test_different_conversations_run_concurrently_and_may_reuse_idempotency_key(
         created_at=TIMESTAMP,
         updated_at=TIMESTAMP,
     )
-    persistence = SqlAlchemyConversationPersistence(
-        lambda: Session(migrated_lifecycle_engine)
-    )
+    persistence = SqlAlchemyConversationPersistence(conversation_async_session_factory)
     asyncio.run(persistence.create_conversation(second_conversation))
     gateways = [
         TestGateway(EventIterator([LLMStartedEvent()])),
         TestGateway(EventIterator([LLMStartedEvent()])),
     ]
-    services = [_service(migrated_lifecycle_engine, gateway) for gateway in gateways]
+    services = [
+        _service(conversation_async_session_factory, gateway) for gateway in gateways
+    ]
     idempotency_key = uuid4()
-    barrier = threading.Barrier(2)
+    barrier = asyncio.Barrier(2)
     original_insert = queries.insert_generation
 
-    def race_generation_insert(*args: object, **kwargs: object) -> None:
-        barrier.wait(timeout=5)
-        original_insert(*args, **kwargs)  # type: ignore[arg-type]
+    async def race_generation_insert(*args: object, **kwargs: object) -> None:
+        await asyncio.wait_for(barrier.wait(), timeout=5)
+        await original_insert(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(queries, "insert_generation", race_generation_insert)
 
@@ -381,9 +384,10 @@ def test_different_conversations_run_concurrently_and_may_reuse_idempotency_key(
 
 def test_completed_idempotent_request_is_not_submitted_again(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     idempotency_key = uuid4()
     first_gateway = TestGateway(
@@ -395,7 +399,7 @@ def test_completed_idempotent_request_is_not_submitted_again(
             ]
         )
     )
-    first_service = _service(migrated_lifecycle_engine, first_gateway)
+    first_service = _service(conversation_async_session_factory, first_gateway)
 
     async def complete_first_request() -> None:
         prepared = await first_service.prepare(
@@ -418,7 +422,7 @@ def test_completed_idempotent_request_is_not_submitted_again(
         )
 
     retry_gateway = TestGateway(EventIterator([LLMStartedEvent()]))
-    retry_service = _service(migrated_lifecycle_engine, retry_gateway)
+    retry_service = _service(conversation_async_session_factory, retry_gateway)
     with pytest.raises(NexusError) as exc_info:
         asyncio.run(
             retry_service.prepare(
@@ -446,31 +450,27 @@ def test_completed_idempotent_request_is_not_submitted_again(
 
 def test_successful_stream_closes_database_sessions_before_provider_waits(
     migrated_lifecycle_engine: Engine,
+    conversation_async_engine: AsyncEngine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
-    active_sessions = 0
-    active_sessions_lock = threading.Lock()
+    active_connections = 0
 
-    class TrackingSession(Session):
-        def __enter__(self) -> Self:
-            nonlocal active_sessions
-            with active_sessions_lock:
-                active_sessions += 1
-            return super().__enter__()
+    def track_checkout(*_args: object) -> None:
+        nonlocal active_connections
+        active_connections += 1
 
-        def __exit__(self, *args: object) -> None:
-            nonlocal active_sessions
-            try:
-                super().__exit__(*args)
-            finally:
-                with active_sessions_lock:
-                    active_sessions -= 1
+    def track_checkin(*_args: object) -> None:
+        nonlocal active_connections
+        active_connections -= 1
+
+    event.listen(conversation_async_engine.sync_engine, "checkout", track_checkout)
+    event.listen(conversation_async_engine.sync_engine, "checkin", track_checkin)
 
     def assert_no_active_session() -> None:
-        with active_sessions_lock:
-            assert active_sessions == 0
+        assert active_connections == 0
 
     iterator = EventIterator(
         [
@@ -481,11 +481,7 @@ def test_successful_stream_closes_database_sessions_before_provider_waits(
         before_next=assert_no_active_session,
     )
     gateway = TestGateway(iterator)
-    service = _service(
-        migrated_lifecycle_engine,
-        gateway,
-        session_factory=lambda: TrackingSession(migrated_lifecycle_engine),
-    )
+    service = _service(conversation_async_session_factory, gateway)
 
     async def run() -> tuple[UUID, list[object]]:
         prepared = await service.prepare(
@@ -494,7 +490,11 @@ def test_successful_stream_closes_database_sessions_before_provider_waits(
         events = [event async for event in prepared]
         return prepared.generation.public_id, events
 
-    generation_id, events = asyncio.run(run())
+    try:
+        generation_id, events = asyncio.run(run())
+    finally:
+        event.remove(conversation_async_engine.sync_engine, "checkout", track_checkout)
+        event.remove(conversation_async_engine.sync_engine, "checkin", track_checkin)
 
     assert isinstance(events[-1], GenerationCompleted)
     assert iterator.close_count == 1
@@ -508,12 +508,13 @@ def test_successful_stream_closes_database_sessions_before_provider_waits(
 
 def test_early_close_persists_cancelled_without_assistant(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     iterator = EventIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
-    service = _service(migrated_lifecycle_engine, TestGateway(iterator))
+    service = _service(conversation_async_session_factory, TestGateway(iterator))
 
     async def run() -> UUID:
         prepared = await service.prepare(
@@ -540,15 +541,16 @@ def test_early_close_persists_cancelled_without_assistant(
 @pytest.mark.parametrize("phase", ["preflight", "active"])
 def test_request_cancellation_persists_cancelled_without_assistant(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     phase: str,
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     iterator = BlockingIterator(
         first_event=LLMStartedEvent() if phase == "active" else None
     )
-    service = _service(migrated_lifecycle_engine, TestGateway(iterator))
+    service = _service(conversation_async_session_factory, TestGateway(iterator))
     generation_id: UUID | None = None
 
     async def run() -> None:
@@ -591,12 +593,13 @@ def test_request_cancellation_persists_cancelled_without_assistant(
 
 def test_incomplete_provider_stream_persists_failed_without_assistant(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     iterator = EventIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
-    service = _service(migrated_lifecycle_engine, TestGateway(iterator))
+    service = _service(conversation_async_session_factory, TestGateway(iterator))
 
     async def run() -> tuple[UUID, list[object]]:
         prepared = await service.prepare(
@@ -620,10 +623,11 @@ def test_incomplete_provider_stream_persists_failed_without_assistant(
 
 def test_unexpected_processing_error_persists_stable_failure_without_assistant(
     migrated_lifecycle_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     iterator = EventIterator(
         [
@@ -632,7 +636,7 @@ def test_unexpected_processing_error_persists_stable_failure_without_assistant(
             LLMCompletedEvent(),
         ]
     )
-    service = _service(migrated_lifecycle_engine, TestGateway(iterator))
+    service = _service(conversation_async_session_factory, TestGateway(iterator))
     original = ConversationEventAssembler.process
 
     def fail_processing(
@@ -666,25 +670,38 @@ def test_unexpected_processing_error_persists_stable_failure_without_assistant(
     )
 
 
-def test_prepare_cancellation_waits_for_worker_commit_then_cancels_generation(
+def test_prepare_cancellation_waits_for_transaction_commit_then_cancels_generation(
     migrated_lifecycle_engine: Engine,
+    conversation_async_engine: AsyncEngine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     organization_id, user_id, conversation = _seed_conversation(
-        migrated_lifecycle_engine
+        migrated_lifecycle_engine, conversation_async_session_factory
     )
     iterator = EventIterator([LLMStartedEvent()])
     gateway = TestGateway(iterator)
-    service = _service(migrated_lifecycle_engine, gateway)
-    transaction_ready = threading.Event()
-    release_transaction = threading.Event()
+    service = _service(conversation_async_session_factory, gateway)
+    transaction_ready = asyncio.Event()
+    release_transaction = asyncio.Event()
     original_history = queries.list_recent_messages
+    active_connections = 0
 
-    def block_before_commit(*args: object, **kwargs: object) -> list[Any]:
-        history = original_history(*args, **kwargs)  # type: ignore[arg-type]
+    def track_checkout(*_args: object) -> None:
+        nonlocal active_connections
+        active_connections += 1
+
+    def track_checkin(*_args: object) -> None:
+        nonlocal active_connections
+        active_connections -= 1
+
+    event.listen(conversation_async_engine.sync_engine, "checkout", track_checkout)
+    event.listen(conversation_async_engine.sync_engine, "checkin", track_checkin)
+
+    async def block_before_commit(*args: object, **kwargs: object) -> list[Any]:
+        history = await original_history(*args, **kwargs)  # type: ignore[arg-type]
         transaction_ready.set()
-        if not release_transaction.wait(timeout=5):
-            raise TimeoutError("test did not release the persistence transaction")
+        await asyncio.wait_for(release_transaction.wait(), timeout=5)
         return history
 
     monkeypatch.setattr(queries, "list_recent_messages", block_before_commit)
@@ -693,8 +710,7 @@ def test_prepare_cancellation_waits_for_worker_commit_then_cancels_generation(
         task = asyncio.create_task(
             service.prepare(_request(organization_id, user_id, conversation))
         )
-        worker_started = await asyncio.to_thread(transaction_ready.wait, 5)
-        assert worker_started
+        await asyncio.wait_for(transaction_ready.wait(), timeout=5)
         task.cancel()
         await asyncio.sleep(0)
         assert not task.done()
@@ -702,9 +718,14 @@ def test_prepare_cancellation_waits_for_worker_commit_then_cancels_generation(
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        event.remove(conversation_async_engine.sync_engine, "checkout", track_checkout)
+        event.remove(conversation_async_engine.sync_engine, "checkin", track_checkin)
 
     assert gateway.requests == []
+    assert active_connections == 0
     with Session(migrated_lifecycle_engine) as session:
         generation_id = session.scalar(select(GenerationModel.public_id))
     assert generation_id is not None

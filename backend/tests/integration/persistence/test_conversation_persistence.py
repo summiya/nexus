@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, event, func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.conversations.domain import (
@@ -52,8 +53,10 @@ def migrated_engine(
     return engine
 
 
-def _persistence(engine: Engine) -> SqlAlchemyConversationPersistence:
-    return SqlAlchemyConversationPersistence(lambda: Session(engine))
+def _persistence(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SqlAlchemyConversationPersistence:
+    return SqlAlchemyConversationPersistence(session_factory)
 
 
 def _seed_identity(engine: Engine) -> tuple[UUID, UUID]:
@@ -263,9 +266,10 @@ def _persist_turn(
 
 def test_persistence_preserves_conversation_scopes_and_tenant_identity(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversations = (
         _conversation(organization_public_id, user_public_id),
         _conversation(
@@ -307,9 +311,10 @@ def test_persistence_preserves_conversation_scopes_and_tenant_identity(
 
 def test_list_conversations_returns_the_requested_users_conversations(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
 
@@ -325,10 +330,11 @@ def test_list_conversations_returns_the_requested_users_conversations(
 
 def test_list_conversations_excludes_another_user_in_the_same_organization(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
     other_user_public_id = _seed_user(migrated_engine, organization_public_id)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     requested_user_conversation = _conversation(
         organization_public_id,
         user_public_id,
@@ -351,10 +357,11 @@ def test_list_conversations_excludes_another_user_in_the_same_organization(
 
 def test_list_conversations_excludes_another_organization(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
     other_organization_public_id, other_user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     requested_organization_conversation = _conversation(
         organization_public_id,
         user_public_id,
@@ -383,9 +390,12 @@ def test_list_conversations_excludes_another_organization(
     )
 
 
-def test_list_conversations_orders_newest_first(migrated_engine: Engine) -> None:
+def test_list_conversations_orders_newest_first(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     oldest = _conversation(
         organization_public_id,
         user_public_id,
@@ -415,9 +425,10 @@ def test_list_conversations_orders_newest_first(migrated_engine: Engine) -> None
 
 def test_list_conversations_orders_equal_timestamps_deterministically(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     first = _conversation(organization_public_id, user_public_id)
     second = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, first)
@@ -432,11 +443,14 @@ def test_list_conversations_orders_equal_timestamps_deterministically(
     assert listed == (second, first)
 
 
-def test_list_conversations_returns_empty_tuple(migrated_engine: Engine) -> None:
+def test_list_conversations_returns_empty_tuple(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
 
     listed = _list_conversations(
-        _persistence(migrated_engine),
+        _persistence(conversation_async_session_factory),
         organization_public_id,
         user_public_id,
     )
@@ -446,9 +460,10 @@ def test_list_conversations_returns_empty_tuple(migrated_engine: Engine) -> None
 
 def test_list_messages_returns_completed_assistant_generation_metadata(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     user_message, assistant_message, generation = _persist_turn(
@@ -493,9 +508,10 @@ def test_list_messages_returns_completed_assistant_generation_metadata(
 
 def test_list_messages_returns_none_for_unassociated_system_and_assistant_messages(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     system_message = _message(
@@ -509,18 +525,21 @@ def test_list_messages_returns_none_for_unassociated_system_and_assistant_messag
         role=ConversationMessageRole.ASSISTANT,
         created_at=TIMESTAMP + timedelta(seconds=1),
     )
-    with Session(migrated_engine) as session:
-        queries.insert_message(
-            session,
-            organization_public_id=organization_public_id,
-            message=system_message,
-        )
-        queries.insert_message(
-            session,
-            organization_public_id=organization_public_id,
-            message=assistant_message,
-        )
-        session.commit()
+
+    async def seed_messages() -> None:
+        async with conversation_async_session_factory.begin() as session:
+            await queries.insert_message(
+                session,
+                organization_public_id=organization_public_id,
+                message=system_message,
+            )
+            await queries.insert_message(
+                session,
+                organization_public_id=organization_public_id,
+                message=assistant_message,
+            )
+
+    asyncio.run(seed_messages())
 
     listed = _list_messages(
         persistence,
@@ -535,9 +554,12 @@ def test_list_messages_returns_none_for_unassociated_system_and_assistant_messag
     assert all(item.generation is None for item in listed)
 
 
-def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
+def test_list_messages_orders_oldest_to_newest(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     first_user, first_assistant, _first_generation = _persist_turn(
@@ -575,9 +597,10 @@ def test_list_messages_orders_oldest_to_newest(migrated_engine: Engine) -> None:
 
 def test_list_messages_orders_equal_timestamps_by_internal_id(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     first_turn = _persist_turn(
@@ -611,9 +634,10 @@ def test_list_messages_orders_equal_timestamps_by_internal_id(
 
 def test_list_messages_returns_empty_tuple_for_existing_empty_conversation(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
 
@@ -628,9 +652,10 @@ def test_list_messages_returns_empty_tuple_for_existing_empty_conversation(
 
 def test_list_messages_excludes_messages_from_another_conversation(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     requested = _conversation(organization_public_id, user_public_id)
     other = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, requested)
@@ -664,10 +689,11 @@ def test_list_messages_excludes_messages_from_another_conversation(
 
 def test_list_messages_does_not_expose_another_organization(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_a, _user_a = _seed_identity(migrated_engine)
     organization_b, user_b = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_b, user_b)
     _create_conversation(persistence, conversation)
     _persist_turn(
@@ -689,11 +715,12 @@ def test_list_messages_does_not_expose_another_organization(
 
 def test_list_messages_returns_empty_tuple_for_unknown_conversation(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, _user_public_id = _seed_identity(migrated_engine)
 
     listed = _list_messages(
-        _persistence(migrated_engine),
+        _persistence(conversation_async_session_factory),
         organization_public_id,
         uuid4(),
     )
@@ -703,9 +730,10 @@ def test_list_messages_returns_empty_tuple_for_unknown_conversation(
 
 def test_list_messages_returns_domain_records_without_internal_ids(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     _persist_turn(
@@ -734,9 +762,11 @@ def test_list_messages_returns_domain_records_without_internal_ids(
 
 def test_list_messages_uses_fixed_query_count_for_multiple_turns(
     migrated_engine: Engine,
+    conversation_async_engine: AsyncEngine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     _persist_turn(
@@ -759,7 +789,11 @@ def test_list_messages_uses_fixed_query_count_for_multiple_turns(
         nonlocal query_count
         query_count += 1
 
-    event.listen(migrated_engine, "before_cursor_execute", count_query)
+    event.listen(
+        conversation_async_engine.sync_engine,
+        "before_cursor_execute",
+        count_query,
+    )
     try:
         listed = _list_messages(
             persistence,
@@ -767,7 +801,11 @@ def test_list_messages_uses_fixed_query_count_for_multiple_turns(
             conversation.public_id,
         )
     finally:
-        event.remove(migrated_engine, "before_cursor_execute", count_query)
+        event.remove(
+            conversation_async_engine.sync_engine,
+            "before_cursor_execute",
+            count_query,
+        )
 
     assert len(listed) == 4
     assert query_count == 2
@@ -775,13 +813,17 @@ def test_list_messages_uses_fixed_query_count_for_multiple_turns(
 
 def test_persistence_rejects_creator_from_another_tenant(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_a, _user_a = _seed_identity(migrated_engine)
     _organization_b, user_b = _seed_identity(migrated_engine)
     conversation = _conversation(organization_a, user_b)
 
     with pytest.raises(ConversationReferenceError):
-        _create_conversation(_persistence(migrated_engine), conversation)
+        _create_conversation(
+            _persistence(conversation_async_session_factory),
+            conversation,
+        )
 
     with Session(migrated_engine) as session:
         assert (
@@ -797,10 +839,11 @@ def test_persistence_rejects_creator_from_another_tenant(
 @pytest.mark.parametrize("limit", [0, -1])
 def test_prepare_generation_rejects_non_positive_history_limit_atomically(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     limit: int,
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     message = _message(conversation.public_id, "request")
@@ -823,10 +866,11 @@ def test_prepare_generation_rejects_non_positive_history_limit_atomically(
 
 def test_prepare_generation_rejects_a_conversation_from_another_tenant(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_a, _user_a = _seed_identity(migrated_engine)
     organization_b, user_b = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_b, user_b)
     _create_conversation(persistence, conversation)
     message = _message(conversation.public_id, "other tenant")
@@ -854,9 +898,10 @@ def test_prepare_generation_rejects_a_conversation_from_another_tenant(
 
 def test_prepare_generation_rejects_a_cross_conversation_message_reference(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     first = _conversation(organization_public_id, user_public_id)
     second = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, first)
@@ -895,10 +940,11 @@ def test_prepare_generation_rejects_a_cross_conversation_message_reference(
 
 def test_prepare_generation_rejects_a_cross_tenant_message_reference(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_a, user_a = _seed_identity(migrated_engine)
     organization_b, user_b = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     first = _conversation(organization_a, user_a)
     second = _conversation(organization_b, user_b)
     _create_conversation(persistence, first)
@@ -937,9 +983,10 @@ def test_prepare_generation_rejects_a_cross_tenant_message_reference(
 
 def test_unexpected_integrity_failure_is_not_translated_to_a_conflict(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     first_message = _message(conversation.public_id, "first")
@@ -991,10 +1038,11 @@ def test_unexpected_integrity_failure_is_not_translated_to_a_conflict(
 
 def test_generation_update_rejects_another_tenant_without_leaking_state(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_a, user_a = _seed_identity(migrated_engine)
     organization_b, _user_b = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_a, user_a)
     _create_conversation(persistence, conversation)
     message = _message(conversation.public_id, "request")
@@ -1034,9 +1082,10 @@ def test_generation_update_rejects_another_tenant_without_leaking_state(
 
 def test_fail_generation_persists_terminal_lifecycle(
     migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_engine)
-    persistence = _persistence(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
     conversation = _conversation(organization_public_id, user_public_id)
     _create_conversation(persistence, conversation)
     message = _message(conversation.public_id, "request")

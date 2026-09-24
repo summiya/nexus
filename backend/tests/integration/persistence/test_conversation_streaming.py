@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -10,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from nexus.conversations.domain import (
@@ -60,7 +60,10 @@ def _seed_identity(engine: Engine) -> tuple[UUID, UUID]:
     return organization_public_id, user_public_id
 
 
-def _seed_conversation(engine: Engine) -> tuple[UUID, Conversation]:
+def _seed_conversation(
+    engine: Engine,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> tuple[UUID, Conversation]:
     organization_public_id, user_public_id = _seed_identity(engine)
     conversation = Conversation(
         public_id=uuid4(),
@@ -70,12 +73,14 @@ def _seed_conversation(engine: Engine) -> tuple[UUID, Conversation]:
         created_at=TIMESTAMP,
         updated_at=TIMESTAMP,
     )
-    asyncio.run(_persistence(engine).create_conversation(conversation))
+    asyncio.run(_persistence(session_factory).create_conversation(conversation))
     return organization_public_id, conversation
 
 
-def _persistence(engine: Engine) -> SqlAlchemyConversationPersistence:
-    return SqlAlchemyConversationPersistence(lambda: Session(engine))
+def _persistence(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> SqlAlchemyConversationPersistence:
+    return SqlAlchemyConversationPersistence(session_factory)
 
 
 def _generation(conversation: Conversation) -> tuple[Message, Generation]:
@@ -108,6 +113,7 @@ def migrated_streaming_engine(
 
 def test_create_and_get_conversation_preserve_tenant_scope(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, user_public_id = _seed_identity(migrated_streaming_engine)
     conversation = Conversation(
@@ -118,7 +124,7 @@ def test_create_and_get_conversation_preserve_tenant_scope(
         created_at=TIMESTAMP,
         updated_at=TIMESTAMP,
     )
-    persistence = _persistence(migrated_streaming_engine)
+    persistence = _persistence(conversation_async_session_factory)
 
     asyncio.run(persistence.create_conversation(conversation))
 
@@ -141,6 +147,7 @@ def test_create_and_get_conversation_preserve_tenant_scope(
 
 def test_create_conversation_rolls_back_an_invalid_creator(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     organization_public_id, _user_public_id = _seed_identity(migrated_streaming_engine)
     conversation = Conversation(
@@ -153,7 +160,9 @@ def test_create_conversation_rolls_back_an_invalid_creator(
 
     with pytest.raises(ConversationReferenceError):
         asyncio.run(
-            _persistence(migrated_streaming_engine).create_conversation(conversation)
+            _persistence(conversation_async_session_factory).create_conversation(
+                conversation
+            )
         )
 
     with Session(migrated_streaming_engine) as session:
@@ -169,12 +178,16 @@ def test_create_conversation_rolls_back_an_invalid_creator(
 
 def test_prepare_generation_commits_running_user_message_and_generation(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
     message, generation = _generation(conversation)
 
     prepared = asyncio.run(
-        _persistence(migrated_streaming_engine).prepare_generation(
+        _persistence(conversation_async_session_factory).prepare_generation(
             organization_public_id=organization_public_id,
             conversation=conversation,
             message=message,
@@ -204,9 +217,13 @@ def test_prepare_generation_commits_running_user_message_and_generation(
 
 def test_prepare_generation_returns_limited_history_in_chronological_order(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
-    persistence = _persistence(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
+    persistence = _persistence(conversation_async_session_factory)
     messages: list[Message] = []
 
     timestamps = (
@@ -263,14 +280,18 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
 
 def test_prepare_generation_rolls_back_message_when_generation_is_invalid(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
     message, generation = _generation(conversation)
     invalid_generation = replace(generation, user_message_public_id=uuid4())
 
     with pytest.raises(ConversationReferenceError):
         asyncio.run(
-            _persistence(migrated_streaming_engine).prepare_generation(
+            _persistence(conversation_async_session_factory).prepare_generation(
                 organization_public_id=organization_public_id,
                 conversation=conversation,
                 message=message,
@@ -300,11 +321,15 @@ def test_prepare_generation_rolls_back_message_when_generation_is_invalid(
 
 def test_complete_generation_commits_assistant_and_completion_state(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
     message, generation = _generation(conversation)
     asyncio.run(
-        _persistence(migrated_streaming_engine).prepare_generation(
+        _persistence(conversation_async_session_factory).prepare_generation(
             organization_public_id=organization_public_id,
             conversation=conversation,
             message=message,
@@ -331,7 +356,7 @@ def test_complete_generation_commits_assistant_and_completion_state(
     )
 
     asyncio.run(
-        _persistence(migrated_streaming_engine).complete_generation(
+        _persistence(conversation_async_session_factory).complete_generation(
             organization_public_id=organization_public_id,
             assistant_message=assistant,
             generation=completed,
@@ -368,13 +393,17 @@ def test_complete_generation_commits_assistant_and_completion_state(
 )
 def test_terminal_failure_operations_commit_generation_without_assistant(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     operation: str,
     status: GenerationStatus,
     error_kind: str | None,
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
     message, generation = _generation(conversation)
-    persistence = _persistence(migrated_streaming_engine)
+    persistence = _persistence(conversation_async_session_factory)
     asyncio.run(
         persistence.prepare_generation(
             organization_public_id=organization_public_id,
@@ -421,9 +450,13 @@ def test_terminal_failure_operations_commit_generation_without_assistant(
 
 def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
-    persistence = _persistence(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
+    persistence = _persistence(conversation_async_session_factory)
     other_conversation = replace(
         conversation,
         public_id=uuid4(),
@@ -487,10 +520,14 @@ def test_complete_generation_rolls_back_assistant_when_generation_update_fails(
 
 def test_concurrent_terminal_transitions_allow_exactly_one_winner(
     migrated_streaming_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    organization_public_id, conversation = _seed_conversation(migrated_streaming_engine)
-    persistence = _persistence(migrated_streaming_engine)
+    organization_public_id, conversation = _seed_conversation(
+        migrated_streaming_engine,
+        conversation_async_session_factory,
+    )
+    persistence = _persistence(conversation_async_session_factory)
     message, generation = _generation(conversation)
     asyncio.run(
         persistence.prepare_generation(
@@ -527,12 +564,15 @@ def test_concurrent_terminal_transitions_allow_exactly_one_winner(
         status=GenerationStatus.CANCELLED,
         completed_at=completed_at,
     )
-    barrier = threading.Barrier(3)
+    barrier = asyncio.Barrier(3)
     original_lock = queries.lock_generation_for_terminal_transition
 
-    def race_to_lock(*args: object, **kwargs: object) -> GenerationModel | None:
-        barrier.wait(timeout=5)
-        return original_lock(*args, **kwargs)  # type: ignore[arg-type]
+    async def race_to_lock(
+        *args: object,
+        **kwargs: object,
+    ) -> GenerationModel | None:
+        await barrier.wait()
+        return await original_lock(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(
         queries,

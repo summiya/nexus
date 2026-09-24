@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from collections.abc import Iterator
@@ -8,6 +9,13 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from nexus.config.settings import load_settings
 
@@ -57,3 +65,26 @@ def migrated_database() -> Iterator[tuple[Config, Engine]]:
             )
             connection.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
         admin_engine.dispose()
+
+
+@pytest.fixture
+def conversation_async_engine(
+    migrated_database: tuple[Config, Engine],
+) -> Iterator[AsyncEngine]:
+    _, engine = migrated_database
+    async_engine = create_async_engine(engine.url, poolclass=NullPool)
+    try:
+        yield async_engine
+    finally:
+        asyncio.run(async_engine.dispose())
+
+
+@pytest.fixture
+def conversation_async_session_factory(
+    conversation_async_engine: AsyncEngine,
+) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(
+        bind=conversation_async_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )

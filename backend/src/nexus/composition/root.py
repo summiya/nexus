@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.authentication.gateways import RateLimiter
 from nexus.composition.authentication import (
@@ -65,7 +64,7 @@ def build_conversation_composition(
     app_settings: Settings,
     llm_gateway: LLMGateway,
     model_policy: ModelPolicy,
-    session_factory: Callable[[], Session],
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> ConversationComposition:
     """Build the existing conversation use cases without changing their behavior."""
 
@@ -134,7 +133,7 @@ def build_app_container(
             app_settings,
             llm_gateway=llm.gateway,
             model_policy=llm.model_policy,
-            session_factory=resolved_database.session_factory,
+            session_factory=resolved_database.async_session_factory,
         )
         return AppContainer(
             settings=app_settings,

@@ -22,6 +22,20 @@ API_ROOT = (
 LLM_APPLICATION_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "llm" / "application"
 )
+CONVERSATION_PERSISTENCE_FILES = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "nexus"
+    / "infrastructure"
+    / "persistence"
+    / "conversation.py",
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "nexus"
+    / "infrastructure"
+    / "persistence"
+    / "_conversation_queries.py",
+)
 
 FORBIDDEN_IMPORTS = (
     "alembic",
@@ -182,3 +196,13 @@ def test_llm_application_does_not_restore_behaviorless_generation_wrappers() -> 
 
     for path in _llm_application_files():
         assert _defined_classes(path).isdisjoint(removed_wrappers), path
+
+
+def test_conversation_persistence_remains_native_async_sqlalchemy() -> None:
+    for path in CONVERSATION_PERSISTENCE_FILES:
+        source = path.read_text(encoding="utf-8")
+        imports = _imports(path)
+
+        assert "sqlalchemy.ext.asyncio" in imports, path
+        assert "sqlalchemy.orm" not in imports, path
+        assert "asyncio.to_thread" not in source, path

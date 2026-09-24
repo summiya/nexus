@@ -52,6 +52,7 @@ class TrackingDatabase:
         self.disposed = False
         self.async_disposed = False
         self.session_factory = lambda: None
+        self.async_session_factory = lambda: None
 
     def dispose(self) -> None:
         self.disposed = True
