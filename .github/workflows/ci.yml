@@ -18,6 +18,7 @@ jobs:
       POSTGRES_USER: nexus
       POSTGRES_PASSWORD: nexus
       DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus
+      NEXUS_REQUIRE_AZURITE_TESTS: "true"
       NEXUS_REQUIRE_POSTGRES_TESTS: "true"
 
     services:
@@ -34,6 +35,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      azurite:
+        image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+        ports:
+          - 10000:10000
 
     steps:
       - name: Check out code
@@ -46,6 +51,23 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Wait for Azurite
+        run: |
+          python - <<'PY'
+          import socket
+          import time
+
+          deadline = time.monotonic() + 30
+          while True:
+              try:
+                  with socket.create_connection(("127.0.0.1", 10000), timeout=1):
+                      break
+              except OSError:
+                  if time.monotonic() >= deadline:
+                      raise SystemExit("Azurite did not become ready within 30 seconds")
+                  time.sleep(1)
+          PY
 
       - name: Install backend dependencies
         working-directory: backend
@@ -149,4 +171,3 @@ jobs:
 
       - name: Build Docker images
         run: docker compose build
-        
