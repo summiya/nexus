@@ -89,6 +89,13 @@ The existing topic must already have a system-assigned Managed Identity. A
 missing topic or identity causes deployment to fail rather than silently
 creating or weakening infrastructure.
 
+The pipeline also resolves the configured existing storage account and fails
+closed unless the selected topic has `Microsoft.Storage.StorageAccounts` as its
+topic type and that exact account resource ID as its source. The Service Bus
+region must match the source storage-account region. These deployment guards
+prevent a different storage account or an accidental cross-region pipeline
+from receiving Nexus queue permissions.
+
 ### New-system-topic mode
 
 Only after confirming that the storage account has no system topic, deploy
@@ -138,6 +145,13 @@ The selected system-topic identity receives only:
 
 - Azure Service Bus Data Sender at the File queue;
 - Storage Blob Data Contributor at the Event Grid dead-letter container.
+
+Azure RBAC assignments can take several minutes to become effective after ARM
+reports the role-assignment resources as successful. In a new environment, the
+narrow queue/container assignments may therefore exist before Event Grid can
+use them. Do not add sleeps, broader roles, or local credentials. Wait for RBAC
+propagation and rerun the same idempotent Bicep deployment if event-subscription
+creation encounters a transient authorization failure.
 
 The Service Bus namespace disables local authentication, requires TLS 1.2 or
 later, denies ordinary public-network traffic through its firewall, and enables
@@ -194,10 +208,13 @@ deployment prerequisite.
 
 Phase 13 must dead-letter every Phase 11
 `AzureBlobCreatedEventMappingError` immediately using the bounded safe reason
-`INVALID_BLOB_CREATED_EVENT`. Alert on every occurrence. Do not copy raw event
-payloads, SAS data, protected UploadContext ciphertext, secrets, or provider
-details into the reason. Temporary Azure Storage, PostgreSQL, Key Vault, and
-network failures may follow retry/abandon semantics.
+`INVALID_BLOB_CREATED_EVENT`. Every occurrence must produce a structured log or
+metric with safe correlation and be sent immediately to the DLQ. Operational
+alerts must be rate/threshold based and follow the security/anomaly policy
+rather than paging once per event. Do not copy raw event payloads, SAS data,
+protected UploadContext ciphertext, secrets, or provider details into the
+reason. Temporary Azure Storage, PostgreSQL, Key Vault, and network failures
+may follow retry/abandon semantics.
 
 ## Orphan reconciliation and release gate
 
@@ -240,6 +257,9 @@ The validation run must prove:
 8. That dead-letter Blob does not create another File completion message.
 9. Queue, DLQ, Event Grid failure, CPU, memory, and throttling metrics are
    visible.
+10. First deployment behavior is recorded, including any transient Event Grid
+    authorization failure, RBAC propagation wait, and successful idempotent
+    redeployment.
 
 The production firewall posture must not be relaxed permanently for
 validation. If an operator needs queue read access, add both narrow temporary

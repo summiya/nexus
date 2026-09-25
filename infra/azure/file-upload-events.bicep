@@ -80,17 +80,36 @@ var validatedSystemTopicName = toLower(systemTopicResourceId) == toLower(expecte
   ? systemTopicName
   : fail('The explicit Event Grid system-topic resource ID is inconsistent.')
 
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+}
+
 resource systemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' existing = {
   name: validatedSystemTopicName
   scope: resourceGroup(systemTopicSubscriptionId, systemTopicResourceGroupName)
 }
 
+var systemTopicHasTrustedSource = toLower(systemTopic.properties.source) == toLower(storageAccount.id)
+var systemTopicHasTrustedType = systemTopic.properties.topicType == 'Microsoft.Storage.StorageAccounts'
+var trustedSystemTopicName = systemTopicHasTrustedSource
+  ? systemTopicHasTrustedType
+    ? validatedSystemTopicName
+    : fail('The Event Grid system-topic type is invalid.')
+  : fail('The Event Grid system-topic source is invalid.')
+var trustedEventGridPrincipalId = trustedSystemTopicName == validatedSystemTopicName
+  ? systemTopic.identity.principalId
+  : fail('The Event Grid system-topic identity is invalid.')
+var validatedServiceBusLocation = toLower(location) == toLower(storageAccount.location)
+  ? location
+  : fail('The Service Bus region must match the Nexus storage account region.')
+
 module serviceBus './modules/file-upload-service-bus.bicep' = {
   name: 'nexus-file-upload-service-bus'
   scope: resourceGroup(serviceBusResourceGroupName)
   params: {
-    eventGridPrincipalId: systemTopic.identity.principalId
-    location: location
+    eventGridPrincipalId: trustedEventGridPrincipalId
+    location: validatedServiceBusLocation
     messagingUnits: messagingUnits
     namespaceName: serviceBusNamespaceName
     premiumMessagingPartitions: premiumMessagingPartitions
@@ -105,7 +124,7 @@ module deadLetterStorage './modules/file-upload-dead-letter-storage.bicep' = {
   scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
   params: {
     containerName: deadLetterContainerName
-    eventGridPrincipalId: systemTopic.identity.principalId
+    eventGridPrincipalId: trustedEventGridPrincipalId
     storageAccountName: storageAccountName
   }
 }
@@ -119,7 +138,7 @@ module eventSubscription './modules/file-upload-event-subscription.bicep' = {
     eventSubscriptionName: eventSubscriptionName
     fileContainerName: fileContainerName
     queueResourceId: serviceBus.outputs.queueResourceId
-    systemTopicName: validatedSystemTopicName
+    systemTopicName: trustedSystemTopicName
   }
 }
 

@@ -834,6 +834,13 @@ are security-sensitive and must be limited to audited deployment/operations
 identities: a subscription can deliver using the topic's Managed Identity into
 an authorized destination.
 
+Deployment resolves the configured Nexus storage account and fails closed
+unless the selected system topic has that exact account resource ID as its
+source and `Microsoft.Storage.StorageAccounts` as its topic type. The Service
+Bus namespace region must equal the source storage-account region. The topic's
+Managed Identity is not granted queue or dead-letter access until those trusted
+source and regional invariants pass.
+
 The File event subscription delivers CloudEvents 1.0, includes only
 `Microsoft.Storage.BlobCreated`, and applies the case-sensitive subject prefix
 `/blobServices/default/containers/<file-container>/blobs/files/`. It does not
@@ -876,10 +883,13 @@ abuse review.
 
 `AzureBlobCreatedEventMappingError` is a permanent semantic message failure.
 Phase 13 must immediately dead-letter it with the fixed bounded reason
-`INVALID_BLOB_CREATED_EVENT` and alert on every occurrence. It must not expose
-the unrestricted provider payload, SAS data, protected UploadContext, secrets,
-or internal details in DLQ reason text. Temporary storage, database, Key Vault,
-and network failures may use retry/abandon behavior.
+`INVALID_BLOB_CREATED_EVENT`. Every occurrence must emit a structured log or
+metric with safe correlation. Alerting must be rate/threshold based and follow
+the security/anomaly policy instead of paging once per event. The worker must
+not expose the unrestricted provider payload, SAS data, protected
+UploadContext, secrets, or internal details in DLQ reason text. Temporary
+storage, database, Key Vault, and network failures may use retry/abandon
+behavior.
 
 Service Bus DLQ messages do not observe TTL and are not automatically removed.
 Phase 13 operations must therefore define inspection, safe replay, and explicit
