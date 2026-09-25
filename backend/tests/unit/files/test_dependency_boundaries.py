@@ -31,6 +31,7 @@ FORBIDDEN_PORT_IMPORTS = (
     "botocore",
     "fastapi",
     "nexus.infrastructure",
+    "pydantic",
     "sqlalchemy",
     "starlette",
 )
