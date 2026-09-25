@@ -38,10 +38,12 @@ class Settings(BaseSettings):
     conversation_history_max_chars: int = Field(default=120_000, ge=1, le=1_000_000)
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
     file_upload_max_size_bytes: int = Field(default=52_428_800, gt=0)
+    file_upload_grant_ttl_seconds: int = Field(default=600, gt=0, le=3600)
     storage_provider: str = Field(default="azure_blob", min_length=1)
     azure_storage_container: str | None = None
     azure_storage_connection_string: SecretStr | None = None
     azure_storage_account_url: HttpUrl | None = None
+    azure_storage_account_name: str | None = None
     azure_storage_managed_identity_client_id: UUID | None = None
 
     model_config = SettingsConfigDict(

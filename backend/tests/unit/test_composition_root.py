@@ -78,10 +78,12 @@ def test_runtime_uses_one_application_state_container() -> None:
         "rate_limiter",
         "email_provider",
         "object_storage",
+        "upload_grant_issuer",
         "bootstrap_dependencies",
         "llm",
         "conversations",
         "storage",
+        "files",
     ):
         assert f"app.state.{legacy_name}" not in source
 

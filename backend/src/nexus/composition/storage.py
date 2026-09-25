@@ -5,13 +5,22 @@ from __future__ import annotations
 from asyncio import CancelledError
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from azure.identity.aio import ManagedIdentityCredential
 from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.settings import Settings
-from nexus.files.ports import ObjectStorage
-from nexus.infrastructure.storage import AzureBlobObjectStorage
+from nexus.files.ports import (
+    ObjectStorage,
+    UploadGrant,
+    UploadGrantError,
+    UploadGrantIssuer,
+)
+from nexus.infrastructure.storage import (
+    AzureBlobObjectStorage,
+    AzureUserDelegationUploadGrantIssuer,
+)
 
 _LOCAL_CONNECTION_STRING_ENVIRONMENTS = frozenset({"development", "test"})
 _INVALID_ACCOUNT_URL_MESSAGE = (
@@ -23,6 +32,19 @@ type AsyncCloseCallback = Callable[[], Awaitable[None]]
 
 class StorageConfigurationError(ValueError):
     """Raised when object storage configuration is invalid or unsupported."""
+
+
+class _UnavailableUploadGrantIssuer:
+    """Fail safely where the configured storage auth cannot issue upload grants."""
+
+    async def issue_upload_grant(
+        self,
+        *,
+        storage_key: str,
+        expires_at: datetime,
+    ) -> UploadGrant:
+        del storage_key, expires_at
+        raise UploadGrantError("Upload grants are unavailable")
 
 
 async def _noop_close() -> None:
@@ -47,9 +69,10 @@ async def _close_azure_resources(
 
 @dataclass(frozen=True)
 class StorageComposition:
-    """Application-owned storage port and provider-resource cleanup."""
+    """Application-owned storage ports and provider-resource cleanup."""
 
     object_storage: ObjectStorage
+    upload_grant_issuer: UploadGrantIssuer
     _close_callback: AsyncCloseCallback = field(
         default=_noop_close,
         repr=False,
@@ -130,13 +153,29 @@ async def build_storage_composition(
     settings: Settings,
     *,
     object_storage: ObjectStorage | None = None,
+    upload_grant_issuer: UploadGrantIssuer | None = None,
 ) -> StorageComposition:
-    """Build one provider-neutral storage dependency and own its resources."""
+    """Build provider-neutral storage dependencies and own their resources."""
 
     if object_storage is not None:
-        return StorageComposition(object_storage=object_storage)
+        return StorageComposition(
+            object_storage=object_storage,
+            upload_grant_issuer=(
+                upload_grant_issuer
+                if upload_grant_issuer is not None
+                else _UnavailableUploadGrantIssuer()
+            ),
+        )
 
     container_name, connection_string, account_url = _azure_configuration(settings)
+    account_name: str | None = None
+    if upload_grant_issuer is None and account_url is not None:
+        account_name = (settings.azure_storage_account_name or "").strip()
+        if not account_name:
+            raise StorageConfigurationError(
+                "Azure storage account name is not configured"
+            )
+
     credential: ManagedIdentityCredential | None = None
     service_client: BlobServiceClient | None = None
     try:
@@ -156,6 +195,17 @@ async def build_storage_composition(
             )
         container_client = service_client.get_container_client(container_name)
         resolved_storage = AzureBlobObjectStorage(container_client)
+        if upload_grant_issuer is not None:
+            resolved_upload_grant_issuer = upload_grant_issuer
+        elif connection_string is not None:
+            resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
+        else:
+            assert account_name is not None
+            resolved_upload_grant_issuer = AzureUserDelegationUploadGrantIssuer(
+                service_client,
+                account_name=account_name,
+                container_name=container_name,
+            )
     except (Exception, CancelledError) as construction_error:
         try:
             await _close_azure_resources(service_client, credential)
@@ -171,5 +221,6 @@ async def build_storage_composition(
 
     return StorageComposition(
         object_storage=resolved_storage,
+        upload_grant_issuer=resolved_upload_grant_issuer,
         _close_callback=close_resources,
     )

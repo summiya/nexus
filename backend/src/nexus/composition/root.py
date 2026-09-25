@@ -12,6 +12,7 @@ from nexus.composition.authentication import (
     AuthenticationComposition,
     build_authentication_composition,
 )
+from nexus.composition.files import FileComposition, build_file_composition
 from nexus.composition.storage import (
     StorageComposition,
     build_storage_composition,
@@ -24,7 +25,7 @@ from nexus.conversations.application import (
     StreamConversationMessage,
 )
 from nexus.events import EventPublisher, InProcessEventPublisher
-from nexus.files.ports import ObjectStorage
+from nexus.files.ports import ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -99,6 +100,7 @@ class AppContainer:
     authentication: AuthenticationComposition
     llm: LLMComposition
     conversations: ConversationComposition
+    files: FileComposition
     event_publisher: EventPublisher
     storage: StorageComposition
 
@@ -123,6 +125,7 @@ async def build_app_container(
     rate_limiter: RateLimiter | None = None,
     email_provider: EmailProvider | None = None,
     object_storage: ObjectStorage | None = None,
+    upload_grant_issuer: UploadGrantIssuer | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
@@ -151,6 +154,7 @@ async def build_app_container(
             )
         raise
 
+    storage: StorageComposition | None = None
     try:
         conversations = build_conversation_composition(
             app_settings,
@@ -161,6 +165,12 @@ async def build_app_container(
         storage = await build_storage_composition(
             app_settings,
             object_storage=object_storage,
+            upload_grant_issuer=upload_grant_issuer,
+        )
+        files = build_file_composition(
+            app_settings,
+            session_factory=resolved_database.session_factory,
+            upload_grant_issuer=storage.upload_grant_issuer,
         )
     except (Exception, CancelledError) as construction_error:
         try:
@@ -170,6 +180,14 @@ async def build_app_container(
                 "An authentication resource also failed during startup cleanup: "
                 f"{type(cleanup_error).__name__}"
             )
+        if storage is not None:
+            try:
+                await storage.close()
+            except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
+                construction_error.add_note(
+                    "A storage resource also failed during startup cleanup: "
+                    f"{type(cleanup_error).__name__}"
+                )
         try:
             await resolved_database.dispose()
         except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
@@ -185,6 +203,7 @@ async def build_app_container(
         authentication=authentication,
         llm=llm,
         conversations=conversations,
+        files=files,
         event_publisher=resolved_event_publisher,
         storage=storage,
     )

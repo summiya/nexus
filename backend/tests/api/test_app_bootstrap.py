@@ -13,7 +13,7 @@ from nexus.composition import root as composition_root
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
-from nexus.files.ports import ObjectStorage
+from nexus.files.ports import ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -71,6 +71,7 @@ class TrackingDatabase:
 class TrackingStorageComposition:
     def __init__(self) -> None:
         self.object_storage = Mock(spec=ObjectStorage)
+        self.upload_grant_issuer = Mock(spec=UploadGrantIssuer)
         self.close_calls = 0
 
     async def close(self) -> None:
@@ -203,6 +204,27 @@ def test_conversation_composition_receives_database_session_factory() -> None:
         assert persistence._session_factory is database.session_factory
 
 
+def test_file_composition_receives_shared_runtime_dependencies() -> None:
+    database = TrackingDatabase()
+    issuer = Mock(spec=UploadGrantIssuer)
+    app = create_test_app(
+        build_settings(
+            file_upload_max_size_bytes=123_456,
+            file_upload_grant_ttl_seconds=900,
+        ),
+        database=database,
+        upload_grant_issuer=issuer,
+    )
+
+    with TestClient(app):
+        service = app.state.container.files.initiate_upload
+        assert service.intent_policy.max_size_bytes == 123_456
+        assert service.permission_checker._session_factory is database.session_factory
+        assert service.persistence._session_factory is database.session_factory
+        assert service.upload_grant_issuer is issuer
+        assert service.grant_ttl.total_seconds() == 900
+
+
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
     app = create_test_app(build_settings(llm_gateway="unsupported"))
 
@@ -306,10 +328,12 @@ def test_application_state_exposes_only_the_root_container() -> None:
             "rate_limiter",
             "email_provider",
             "object_storage",
+            "upload_grant_issuer",
             "bootstrap_dependencies",
             "llm",
             "conversations",
             "storage",
+            "files",
         ):
             assert not hasattr(app.state, legacy_name)
 
@@ -319,6 +343,7 @@ def test_lifespan_forwards_storage_override_to_async_composition(
 ) -> None:
     database = TrackingDatabase()
     injected_storage = Mock(spec=ObjectStorage)
+    injected_issuer = Mock(spec=UploadGrantIssuer)
     tracking_composition = TrackingStorageComposition()
     captured: dict[str, object] = {}
 
@@ -326,10 +351,13 @@ def test_lifespan_forwards_storage_override_to_async_composition(
         settings: Settings,
         *,
         object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         captured["settings"] = settings
         captured["object_storage"] = object_storage
+        captured["upload_grant_issuer"] = upload_grant_issuer
         tracking_composition.object_storage = object_storage
+        tracking_composition.upload_grant_issuer = upload_grant_issuer
         return tracking_composition
 
     monkeypatch.setattr(
@@ -344,6 +372,7 @@ def test_lifespan_forwards_storage_override_to_async_composition(
         rate_limiter=AllowAllRateLimiter(),
         email_provider=StubEmailProvider(),
         object_storage=injected_storage,
+        upload_grant_issuer=injected_issuer,
     )
 
     assert not hasattr(app.state, "container")
@@ -351,8 +380,10 @@ def test_lifespan_forwards_storage_override_to_async_composition(
         assert captured == {
             "settings": settings,
             "object_storage": injected_storage,
+            "upload_grant_issuer": injected_issuer,
         }
         assert app.state.container.storage.object_storage is injected_storage
+        assert app.state.container.storage.upload_grant_issuer is injected_issuer
 
     assert tracking_composition.close_calls == 1
     assert database.dispose_calls == 1
@@ -369,8 +400,9 @@ def test_lifespan_closes_application_owned_resources(
         settings: Settings,
         *,
         object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage
+        del settings, object_storage, upload_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -405,8 +437,9 @@ def test_lifespan_closes_storage_and_database_when_authentication_cleanup_fails(
         settings: Settings,
         *,
         object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage
+        del settings, object_storage, upload_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -442,8 +475,9 @@ def test_lifespan_disposes_database_when_storage_cleanup_fails(
         settings: Settings,
         *,
         object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> FailingTrackingStorageComposition:
-        del settings, object_storage
+        del settings, object_storage, upload_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -478,8 +512,9 @@ def test_storage_composition_failure_cleans_earlier_owned_resources(
         settings: Settings,
         *,
         object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage
+        del settings, object_storage, upload_grant_issuer
         raise RuntimeError("storage composition failed")
 
     monkeypatch.setattr(
@@ -501,6 +536,60 @@ def test_storage_composition_failure_cleans_earlier_owned_resources(
         pass
 
     assert rate_limiter.closed is True
+    assert database.dispose_calls == 1
+    assert not hasattr(app.state, "container")
+
+
+def test_file_composition_failure_closes_all_earlier_owned_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = TrackingDatabase()
+    rate_limiter = TrackingRateLimiter()
+    storage = TrackingStorageComposition()
+
+    async def build_tracking_storage(
+        settings: Settings,
+        *,
+        object_storage: ObjectStorage | None = None,
+        upload_grant_issuer: UploadGrantIssuer | None = None,
+    ) -> TrackingStorageComposition:
+        del settings, object_storage, upload_grant_issuer
+        return storage
+
+    def fail_file_composition(
+        settings: Settings,
+        *,
+        session_factory: object,
+        upload_grant_issuer: UploadGrantIssuer,
+    ) -> None:
+        del settings, session_factory, upload_grant_issuer
+        raise RuntimeError("file composition failed")
+
+    monkeypatch.setattr(
+        composition_root,
+        "build_storage_composition",
+        build_tracking_storage,
+    )
+    monkeypatch.setattr(
+        composition_root,
+        "build_file_composition",
+        fail_file_composition,
+    )
+    app = create_app(
+        build_settings(),
+        database=database,  # type: ignore[arg-type]
+        rate_limiter=rate_limiter,
+        email_provider=StubEmailProvider(),
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="file composition failed"),
+        TestClient(app),
+    ):
+        pass
+
+    assert rate_limiter.closed is True
+    assert storage.close_calls == 1
     assert database.dispose_calls == 1
     assert not hasattr(app.state, "container")
 
