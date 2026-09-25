@@ -44,10 +44,12 @@ SETTINGS_ENV_KEYS = [
     "CONVERSATION_HISTORY_MAX_CHARS",
     "CONVERSATION_MESSAGE_MAX_LENGTH",
     "FILE_UPLOAD_MAX_SIZE_BYTES",
+    "FILE_UPLOAD_GRANT_TTL_SECONDS",
     "STORAGE_PROVIDER",
     "AZURE_STORAGE_CONTAINER",
     "AZURE_STORAGE_CONNECTION_STRING",
     "AZURE_STORAGE_ACCOUNT_URL",
+    "AZURE_STORAGE_ACCOUNT_NAME",
     "AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID",
 ]
 
@@ -112,10 +114,12 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.conversation_history_max_chars == 120_000
     assert settings.conversation_message_max_length == 32_000
     assert settings.file_upload_max_size_bytes == 52_428_800
+    assert settings.file_upload_grant_ttl_seconds == 600
     assert settings.storage_provider == "azure_blob"
     assert settings.azure_storage_container is None
     assert settings.azure_storage_connection_string is None
     assert settings.azure_storage_account_url is None
+    assert settings.azure_storage_account_name is None
     assert settings.azure_storage_managed_identity_client_id is None
 
 
@@ -167,8 +171,10 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("REFRESH_TOKEN_EXPIRES_SECONDS", "456")
     monkeypatch.setenv("AUTH_TOKEN_ISSUER", "nexus-test")
     monkeypatch.setenv("FILE_UPLOAD_MAX_SIZE_BYTES", "104857600")
+    monkeypatch.setenv("FILE_UPLOAD_GRANT_TTL_SECONDS", "900")
     monkeypatch.setenv("STORAGE_PROVIDER", "azure_blob")
     monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "nexus-test-files")
+    monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "nexustest")
     monkeypatch.setenv(
         "AZURE_STORAGE_CONNECTION_STRING",
         "UseDevelopmentStorage=true",
@@ -199,8 +205,10 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.refresh_token_expires_seconds == 456
     assert reloaded.auth_token_issuer == "nexus-test"
     assert reloaded.file_upload_max_size_bytes == 104_857_600
+    assert reloaded.file_upload_grant_ttl_seconds == 900
     assert reloaded.storage_provider == "azure_blob"
     assert reloaded.azure_storage_container == "nexus-test-files"
+    assert reloaded.azure_storage_account_name == "nexustest"
     assert reloaded.azure_storage_connection_string is not None
     assert (
         reloaded.azure_storage_connection_string.get_secret_value()
@@ -243,6 +251,15 @@ def test_non_positive_file_upload_max_size_fails_validation(
 ) -> None:
     with pytest.raises(ValidationError):
         build_settings(file_upload_max_size_bytes=value)
+
+
+@pytest.mark.parametrize("value", [0, -1, 3601])
+def test_invalid_file_upload_grant_ttl_fails_validation(
+    clean_environment,
+    value: int,
+) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(file_upload_grant_ttl_seconds=value)
 
 
 def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:

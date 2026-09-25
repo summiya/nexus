@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 8 authorized upload initiation and trusted upload state
+**Status:** Implemented Phase 9 upload-initiation API and composition
 
 ## Purpose
 
@@ -18,8 +18,10 @@ provider signer or compose that capability into the application. Phase 7 adds
 the Azure User Delegation SAS implementation of that boundary without changing
 application composition or exposing Azure types outside infrastructure. Phase 8
 adds runtime RBAC enforcement, application orchestration, and atomic persistence
-of a pending File plus its trusted upload-attempt metadata. It still exposes no
-HTTP API.
+of a pending File plus its trusted upload-attempt metadata. Phase 9 composes the
+File use case and Azure grant issuer, then exposes authenticated upload
+initiation through a provider-neutral HTTP contract. File bytes still bypass
+Nexus and upload directly to object storage in a later frontend phase.
 
 ## Boundary
 
@@ -289,10 +291,10 @@ also available in the local development Docker Compose stack.
 ## Storage configuration and composition
 
 `StorageComposition` selects the configured provider with one explicit branch,
-constructs its resources, exposes only `ObjectStorage`, and owns asynchronous
-cleanup. The root `AppContainer` owns this composition for the FastAPI
-application lifetime. Azure SDK clients and credentials remain inside
-infrastructure and composition.
+constructs its resources, exposes only `ObjectStorage` and `UploadGrantIssuer`,
+and owns asynchronous cleanup. The root `AppContainer` owns this composition
+for the FastAPI application lifetime. Azure SDK clients and credentials remain
+inside infrastructure and composition.
 
 Connection-string authentication is restricted to the explicit `development`
 and `test` environments and is intended only for Azurite. Every other
@@ -308,6 +310,7 @@ The relevant runtime settings are:
 - `AZURE_STORAGE_CONTAINER` for the externally provisioned container;
 - `AZURE_STORAGE_CONNECTION_STRING` only for `development` and `test`;
 - `AZURE_STORAGE_ACCOUNT_URL` for Managed Identity environments;
+- `AZURE_STORAGE_ACCOUNT_NAME` for the production User Delegation signer;
 - optional `AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID` for a user-assigned
   identity.
 
@@ -345,12 +348,15 @@ or credential. The adapter is responsible for:
   `x-ms-blob-type: BlockBlob` header;
 - provider clock-skew handling and Azure exception translation.
 
-The configured account and container are explicit inputs. The opaque
+The configured account and container are explicit inputs. Phase 9 requires an
+explicit nonblank account name when constructing the default production issuer;
+it is never inferred from an Azure, sovereign-cloud, private, or custom endpoint
+hostname. The opaque
 `storage_key` is passed unchanged to `BlobServiceClient.get_blob_client()`, and
 the adapter uses the returned `BlobClient.url` rather than constructing a Blob
-URL manually. Concrete issuer wiring remains a later composition concern; it
-can be built beside `AzureBlobObjectStorage` from the same composition-owned
-resources. Resource shutdown remains owned by `StorageComposition`. The
+URL manually. Composition builds it beside `AzureBlobObjectStorage` using the
+same application-owned `BlobServiceClient`; it does not create a second client
+or credential. Resource shutdown remains owned by `StorageComposition`. The
 adapter owns no provider resource.
 
 The issuer requests a delegation key whose start time includes a small
@@ -500,6 +506,58 @@ using OAuth and HTTPS that supports the required delegation behavior. Existing
 connection-string Azurite tests must not be presented as proof of the Managed
 Identity and User Delegation path. Nexus must never add a production Shared
 Key, account-key SAS, or service SAS fallback to make local testing easier.
+
+## Upload-initiation HTTP API
+
+Phase 9 exposes the Phase 8 use case as:
+
+```text
+POST /api/v1/files/uploads
+        ↓
+CurrentAuthContextDep
+        ↓
+InitiateFileUpload
+        ↓
+201 Created
+```
+
+The JSON request contains only `original_name`, nullable `mime_type`, and
+`size_bytes`. Organization and user identity always come from the trusted
+authentication context. The transport maps `size_bytes` to the application's
+`declared_size_bytes`; it never populates `File.size_bytes` from this untrusted
+declaration. The controller delegates authorization, semantic validation,
+storage-key generation, grant issuance, and persistence to the application
+service.
+
+The response contains a minimal pending File representation and generic upload
+instructions: URL, method, required headers, and expiration. It excludes the
+storage key, tenant and creator identities, upload-attempt data, declared size,
+provider, and container. Signed URLs and required headers are opaque provider
+instructions and are returned without parsing or normalization. Successful
+responses use `Cache-Control: no-store` because the URL is a short-lived bearer
+capability.
+
+`POST /files/uploads` is not idempotent in Phase 9 and defines no
+`Idempotency-Key` contract. A retry may create another pending File. Correct
+retry support must be designed together with grant reissuance, asynchronous
+attempt correlation, and abandoned-pending cleanup; Nexus does not persist SAS
+URLs or other credential material merely to replay a response.
+
+`FILE_UPLOAD_GRANT_TTL_SECONDS` is an application security policy with a
+default of 600 seconds and a maximum of 3600 seconds. It remains separate from
+Azure User Delegation Key caching and lifetime limits.
+
+In Managed Identity mode, composition supplies the production User Delegation
+issuer. The existing local/test connection-string path deliberately supplies an
+unavailable issuer unless a controlled issuer is explicitly injected, so upload
+initiation safely returns service unavailable rather than generating an
+account-key SAS. This keeps local application startup usable without weakening
+the production authentication model.
+
+The endpoint handles metadata only. It does not accept multipart data or proxy
+the binary body. Direct browser upload also requires Azure Storage CORS for the
+frontend origin, `PUT`, and the required provider headers; FastAPI CORS does not
+configure that provider boundary, and Nexus runtime does not provision it.
 
 ## Upload-intent policy
 
@@ -658,16 +716,13 @@ Phase 8
     authorized upload initiation and trusted upload state (implemented)
 
 Phase 9
-    upload-initiation HTTP API, configuration, and composition (future)
+    upload-initiation HTTP API, configuration, and composition (implemented)
 ```
 
 ## Deferred work
 
 Later phases own:
 
-- upload-initiation HTTP schemas, controller, authentication-context mapping,
-  grant-TTL configuration, composition wiring, and API idempotency decision;
-- Azure upload-grant composition wiring;
 - actual size, type, checksum, and security verification;
 - File lifecycle transitions after storage verification;
 - upload and management APIs;

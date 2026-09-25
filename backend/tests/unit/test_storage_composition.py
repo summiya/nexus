@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
+from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 from uuid import UUID
 
@@ -13,7 +14,11 @@ from nexus.composition.storage import (
     build_storage_composition,
 )
 from nexus.config.settings import Settings
+from nexus.files.ports import UploadGrant, UploadGrantError
 from nexus.infrastructure.storage import AzureBlobObjectStorage
+from nexus.infrastructure.storage.azure_upload_grant import (
+    AzureUserDelegationUploadGrantIssuer,
+)
 
 
 class StubObjectStorage:
@@ -35,6 +40,21 @@ class StubObjectStorage:
     async def _empty_stream(self) -> AsyncIterator[bytes]:
         if False:
             yield b""
+
+
+class StubUploadGrantIssuer:
+    async def issue_upload_grant(
+        self,
+        *,
+        storage_key: str,
+        expires_at: datetime,
+    ) -> UploadGrant:
+        return UploadGrant(
+            url=f"https://storage.example/{storage_key}?sig=value",
+            method="PUT",
+            headers={"x-test": "value"},
+            expires_at=expires_at,
+        )
 
 
 class FakeManagedIdentityCredential:
@@ -124,6 +144,7 @@ def build_settings(**overrides: object) -> Settings:
         "azure_storage_container": "nexus-files",
         "azure_storage_connection_string": None,
         "azure_storage_account_url": None,
+        "azure_storage_account_name": "nexus",
         "azure_storage_managed_identity_client_id": None,
         **overrides,
     }
@@ -141,6 +162,11 @@ def test_injected_storage_bypasses_azure_configuration_and_construction() -> Non
         await composition.close()
 
         assert composition.object_storage is injected
+        with pytest.raises(UploadGrantError, match="Upload grants are unavailable"):
+            await composition.upload_grant_issuer.issue_upload_grant(
+                storage_key="files/key",
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
         assert FakeBlobServiceClient.instances == []
         assert FakeManagedIdentityCredential.instances == []
 
@@ -165,6 +191,11 @@ def test_development_connection_string_builds_azurite_storage() -> None:
         assert composition.object_storage._container_client is (
             service_client.container_client
         )
+        with pytest.raises(UploadGrantError, match="Upload grants are unavailable"):
+            await composition.upload_grant_issuer.issue_upload_grant(
+                storage_key="files/key",
+                expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            )
         assert FakeManagedIdentityCredential.instances == []
 
         await composition.close()
@@ -234,6 +265,11 @@ def test_root_https_account_url_uses_system_assigned_managed_identity(
         assert credential.client_id is None
         assert service_client.account_url == ("https://account.blob.core.windows.net/")
         assert service_client.credential is credential
+        assert isinstance(
+            composition.upload_grant_issuer,
+            AzureUserDelegationUploadGrantIssuer,
+        )
+        assert composition.upload_grant_issuer._service_client is service_client
 
         await composition.close()
         assert service_client.close_calls == 1
@@ -254,6 +290,68 @@ def test_account_url_uses_configured_user_assigned_identity() -> None:
         )
 
         assert FakeManagedIdentityCredential.instances[0].client_id == str(client_id)
+        await composition.close()
+
+    asyncio.run(scenario())
+
+
+def test_account_url_requires_explicit_account_name_for_default_issuer() -> None:
+    async def scenario() -> None:
+        with pytest.raises(
+            StorageConfigurationError,
+            match="Azure storage account name is not configured",
+        ):
+            await build_storage_composition(
+                build_settings(
+                    app_env="production",
+                    azure_storage_account_url=("https://account.blob.core.windows.net"),
+                    azure_storage_account_name=None,
+                )
+            )
+
+        assert FakeBlobServiceClient.instances == []
+        assert FakeManagedIdentityCredential.instances == []
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("account_name", [None, "", "  "])
+def test_explicit_issuer_does_not_require_account_name(
+    account_name: str | None,
+) -> None:
+    async def scenario() -> None:
+        issuer = StubUploadGrantIssuer()
+        composition = await build_storage_composition(
+            build_settings(
+                app_env="production",
+                azure_storage_account_url="https://account.blob.core.windows.net",
+                azure_storage_account_name=account_name,
+            ),
+            upload_grant_issuer=issuer,
+        )
+
+        assert composition.upload_grant_issuer is issuer
+        assert len(FakeBlobServiceClient.instances) == 1
+        await composition.close()
+
+    asyncio.run(scenario())
+
+
+def test_full_override_uses_both_ports_without_azure_construction() -> None:
+    async def scenario() -> None:
+        storage = StubObjectStorage()
+        issuer = StubUploadGrantIssuer()
+
+        composition = await build_storage_composition(
+            build_settings(storage_provider="unsupported"),
+            object_storage=storage,
+            upload_grant_issuer=issuer,
+        )
+
+        assert composition.object_storage is storage
+        assert composition.upload_grant_issuer is issuer
+        assert FakeBlobServiceClient.instances == []
+        assert FakeManagedIdentityCredential.instances == []
         await composition.close()
 
     asyncio.run(scenario())
@@ -424,7 +522,11 @@ def test_composition_exposes_only_port_and_private_cleanup_callback() -> None:
         )
 
         assert isinstance(composition.object_storage, AzureBlobObjectStorage)
-        assert set(vars(composition)) == {"object_storage", "_close_callback"}
+        assert set(vars(composition)) == {
+            "object_storage",
+            "upload_grant_issuer",
+            "_close_callback",
+        }
         await composition.close()
 
     asyncio.run(scenario())
