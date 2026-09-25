@@ -15,7 +15,7 @@ vi.mock("@azure/storage-blob", () => ({
   },
 }));
 
-import type { UploadGrant } from "./types";
+import { MAX_UPLOAD_CONTEXT_LENGTH, type UploadGrant } from "./types";
 import {
   FILE_UPLOAD_BLOCK_SIZE_BYTES,
   FILE_UPLOAD_CONCURRENCY,
@@ -31,6 +31,7 @@ function grant(overrides: Partial<UploadGrant> = {}): UploadGrant {
     url: signedUrl,
     method: "PUT",
     headers: { "x-ms-blob-type": "BlockBlob" },
+    metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
     expiresAt: "2026-09-25T10:10:00Z",
     ...overrides,
   };
@@ -61,6 +62,7 @@ describe("Azure File upload transport", () => {
         blockSize: FILE_UPLOAD_BLOCK_SIZE_BYTES,
         concurrency: FILE_UPLOAD_CONCURRENCY,
         maxSingleShotSize: FILE_UPLOAD_SINGLE_SHOT_SIZE_BYTES,
+        metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
       }),
     );
     expect(FILE_UPLOAD_BLOCK_SIZE_BYTES).toBe(8 * 1024 * 1024);
@@ -120,6 +122,20 @@ describe("Azure File upload transport", () => {
         },
       }),
     ],
+    ["missing upload context", grant({ metadata: {} as never })],
+    [
+      "blank upload context",
+      grant({ metadata: { nexus_upload_context: " " } }),
+    ],
+    [
+      "unexpected metadata",
+      grant({
+        metadata: {
+          nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT",
+          extra: "unsupported",
+        } as never,
+      }),
+    ],
   ])("fails closed for an %s", async (_description, incompatibleGrant) => {
     await expect(
       uploadGrantedFile({
@@ -143,6 +159,42 @@ describe("Azure File upload transport", () => {
     });
 
     expect(azureMocks.uploadData).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an upload context at the transport length limit", async () => {
+    const context = "x".repeat(MAX_UPLOAD_CONTEXT_LENGTH);
+
+    await uploadGrantedFile({
+      file: new File(["value"], "file.bin"),
+      grant: grant({ metadata: { nexus_upload_context: context } }),
+      signal: new AbortController().signal,
+      onProgress: vi.fn(),
+    });
+
+    expect(azureMocks.uploadData).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({
+        metadata: { nexus_upload_context: context },
+      }),
+    );
+  });
+
+  it("rejects an upload context over the transport length limit", async () => {
+    await expect(
+      uploadGrantedFile({
+        file: new File(["value"], "file.bin"),
+        grant: grant({
+          metadata: {
+            nexus_upload_context: "x".repeat(MAX_UPLOAD_CONTEXT_LENGTH + 1),
+          },
+        }),
+        signal: new AbortController().signal,
+        onProgress: vi.fn(),
+      }),
+    ).rejects.toThrow("The file could not be uploaded.");
+
+    expect(azureMocks.constructor).not.toHaveBeenCalled();
+    expect(azureMocks.uploadData).not.toHaveBeenCalled();
   });
 
   it("sanitizes provider errors without exposing the signed URL", async () => {

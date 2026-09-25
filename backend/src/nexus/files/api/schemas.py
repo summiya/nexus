@@ -1,15 +1,11 @@
 """File HTTP request and response schemas."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from nexus.files.domain import (
-    MAX_MIME_TYPE_LENGTH,
-    MAX_ORIGINAL_NAME_LENGTH,
-    FileStorageStatus,
-)
+from nexus.files.domain import MAX_MIME_TYPE_LENGTH, MAX_ORIGINAL_NAME_LENGTH
+from nexus.files.ports import UPLOAD_CONTEXT_MAX_LENGTH
 
 
 class InitiateFileUploadRequestBody(BaseModel):
@@ -20,21 +16,23 @@ class InitiateFileUploadRequestBody(BaseModel):
     size_bytes: int = Field(strict=True, ge=0)
 
 
-class InitiatedFileResponseBody(BaseModel):
-    public_id: UUID
-    original_name: str
-    mime_type: str
-    storage_status: FileStorageStatus
-    created_at: datetime
+class UploadMetadataResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    nexus_upload_context: str = Field(
+        min_length=1,
+        max_length=UPLOAD_CONTEXT_MAX_LENGTH,
+        repr=False,
+    )
 
 
 class UploadInstructionsResponseBody(BaseModel):
     url: str = Field(repr=False)
     method: str
     headers: dict[str, str] = Field(repr=False)
+    metadata: UploadMetadataResponseBody = Field(repr=False)
     expires_at: datetime
 
 
 class InitiateFileUploadResponseBody(BaseModel):
-    file: InitiatedFileResponseBody
     upload: UploadInstructionsResponseBody

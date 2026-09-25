@@ -14,7 +14,6 @@ from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.files.api.dependencies import get_initiate_file_upload
 from nexus.files.application import InitiatedFileUpload
-from nexus.files.domain import File, FileStorageStatus
 from nexus.files.ports import ObjectStorage, UploadGrant
 from nexus.main import create_app
 
@@ -64,24 +63,12 @@ def _settings() -> Settings:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key=("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
     )
 
 
 def _result() -> InitiatedFileUpload:
     return InitiatedFileUpload(
-        file=File(
-            public_id=uuid4(),
-            organization_public_id=uuid4(),
-            created_by_user_public_id=uuid4(),
-            original_name="report.pdf",
-            mime_type="application/pdf",
-            size_bytes=None,
-            storage_key="files/internal-key",
-            storage_status=FileStorageStatus.PENDING,
-            checksum_sha256=None,
-            created_at=CREATED_AT,
-            updated_at=CREATED_AT,
-        ),
         grant=UploadGrant(
             url=SIGNED_URL,
             method="PUT",
@@ -91,6 +78,7 @@ def _result() -> InitiatedFileUpload:
             },
             expires_at=EXPIRES_AT,
         ),
+        protected_context="nuc1.primary.opaque-context",
     )
 
 
@@ -130,7 +118,7 @@ def test_upload_initiation_uses_trusted_scope_and_returns_exact_safe_response() 
             },
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert service.calls == [
         {
@@ -142,19 +130,15 @@ def test_upload_initiation_uses_trusted_scope_and_returns_exact_safe_response() 
         }
     ]
     assert response.json() == {
-        "file": {
-            "public_id": str(result.file.public_id),
-            "original_name": "report.pdf",
-            "mime_type": "application/pdf",
-            "storage_status": "pending",
-            "created_at": "2026-09-25T12:00:00Z",
-        },
         "upload": {
             "url": SIGNED_URL,
             "method": "PUT",
             "headers": {
                 "x-ms-blob-type": "BlockBlob",
                 "X-Signed-Header": " value-preserved ",
+            },
+            "metadata": {
+                "nexus_upload_context": "nuc1.primary.opaque-context",
             },
             "expires_at": "2026-09-25T12:10:00Z",
         },
@@ -172,15 +156,19 @@ def test_upload_response_exposes_no_internal_file_or_provider_fields() -> None:
         )
 
     body = response.json()
-    assert set(body) == {"file", "upload"}
-    assert set(body["file"]) == {
-        "public_id",
-        "original_name",
-        "mime_type",
-        "storage_status",
-        "created_at",
+    assert set(body) == {"upload"}
+    assert set(body["upload"]) == {
+        "url",
+        "method",
+        "headers",
+        "metadata",
+        "expires_at",
     }
-    assert set(body["upload"]) == {"url", "method", "headers", "expires_at"}
+    assert set(body["upload"]["metadata"]) == {"nexus_upload_context"}
+    serialized = response.text
+    assert "organization_public_id" not in serialized
+    assert "created_by_user_public_id" not in serialized
+    assert "storage_key" not in serialized
 
 
 def test_upload_initiation_requires_authentication() -> None:
@@ -299,7 +287,7 @@ def test_openapi_describes_provider_neutral_authenticated_upload_initiation() ->
 
     assert operation["security"] == [{"HTTPBearer": []}]
     assert "application/json" in operation["requestBody"]["content"]
-    assert "201" in operation["responses"]
+    assert "200" in operation["responses"]
     assert "422" in operation["responses"]
     schema_names = schema["components"]["schemas"]
     assert not any(

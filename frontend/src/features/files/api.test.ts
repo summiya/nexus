@@ -4,13 +4,13 @@ import { configureApiAuthentication } from "../../services/api/client";
 import { NexusApiError } from "../../services/api/error";
 import { initiateFileUpload } from "./api";
 
-const fileId = "11111111-1111-4111-8111-111111111111";
-const createdAt = "2026-09-25T10:00:00Z";
 const expiresAt = "2026-09-25T10:10:00Z";
 const signedUrl =
   "https://account.blob.core.windows.net/files/blob?sv=2026-04-06&sig=SENSITIVE";
 
-function jsonResponse(body: unknown, status = 201): Response {
+const protectedContext = "nuc1.primary.OPAQUE_CONTEXT";
+
+function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -19,17 +19,11 @@ function jsonResponse(body: unknown, status = 201): Response {
 
 function validResponse() {
   return {
-    file: {
-      public_id: fileId,
-      original_name: "report.pdf",
-      mime_type: "application/pdf",
-      storage_status: "pending",
-      created_at: createdAt,
-    },
     upload: {
       url: signedUrl,
       method: "PUT",
       headers: { "X-MS-Blob-Type": "BlockBlob" },
+      metadata: { nexus_upload_context: protectedContext },
       expires_at: expiresAt,
     },
   };
@@ -59,17 +53,11 @@ describe("File upload initiation API", () => {
     const file = browserFile();
 
     await expect(initiateFileUpload(file)).resolves.toEqual({
-      file: {
-        publicId: fileId,
-        originalName: "report.pdf",
-        mimeType: "application/pdf",
-        storageStatus: "pending",
-        createdAt,
-      },
       upload: {
         url: signedUrl,
         method: "PUT",
         headers: { "X-MS-Blob-Type": "BlockBlob" },
+        metadata: { nexus_upload_context: protectedContext },
         expiresAt,
       },
     });
@@ -119,19 +107,34 @@ describe("File upload initiation API", () => {
     expect(Object.keys(result.upload.headers)).toEqual(["X-MS-Blob-Type"]);
     expect(result.upload.headers["X-MS-Blob-Type"]).toBe("BlockBlob");
     expect(Object.isFrozen(result.upload.headers)).toBe(true);
+    expect(result.upload.metadata.nexus_upload_context).toBe(protectedContext);
+    expect(Object.isFrozen(result.upload.metadata)).toBe(true);
   });
 
   it.each([
     { ...validResponse(), unexpected: true },
-    { ...validResponse(), file: { ...validResponse().file, public_id: "bad" } },
     {
       ...validResponse(),
-      file: { ...validResponse().file, storage_status: "available" },
+      file: { public_id: "unexpected-persisted-file" },
     },
     { ...validResponse(), upload: { ...validResponse().upload, url: "   " } },
     {
       ...validResponse(),
       upload: { ...validResponse().upload, headers: { authorization: 123 } },
+    },
+    {
+      ...validResponse(),
+      upload: { ...validResponse().upload, metadata: {} },
+    },
+    {
+      ...validResponse(),
+      upload: {
+        ...validResponse().upload,
+        metadata: {
+          nexus_upload_context: protectedContext,
+          extra: "unsupported",
+        },
+      },
     },
   ])("rejects a malformed successful response safely", async (body) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(body));

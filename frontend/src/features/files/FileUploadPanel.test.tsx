@@ -8,7 +8,6 @@ const hookMocks = vi.hoisted(() => ({
   startUpload: vi.fn(),
   state: {
     feedback: null as { kind: "transfer_failure" } | null,
-    file: null,
     phase: "idle" as
       | "idle"
       | "initiating"
@@ -61,6 +60,11 @@ describe("FileUploadPanel", () => {
       "multiple",
     );
     expect(screen.getByText("Maximum file size: 512 MB.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Upload one file directly to secure storage. Nexus will verify it after the transfer completes.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Upload" })).toBeDisabled();
   });
 

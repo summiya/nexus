@@ -11,6 +11,11 @@ from nexus.files.ports.storage import (
     ObjectStorageError,
     ObjectStorageNotFoundError,
 )
+from nexus.files.ports.upload_context import (
+    UPLOAD_CONTEXT_MAX_LENGTH,
+    UploadContextProtectionError,
+    UploadContextProtector,
+)
 from nexus.files.ports.upload_grant import (
     UploadGrant,
     UploadGrantError,
@@ -18,6 +23,7 @@ from nexus.files.ports.upload_grant import (
 )
 
 __all__ = [
+    "UPLOAD_CONTEXT_MAX_LENGTH",
     "FilePersistence",
     "FilePersistenceError",
     "FileReferenceError",
@@ -25,6 +31,8 @@ __all__ = [
     "ObjectStorageAlreadyExistsError",
     "ObjectStorageError",
     "ObjectStorageNotFoundError",
+    "UploadContextProtectionError",
+    "UploadContextProtector",
     "UploadGrant",
     "UploadGrantError",
     "UploadGrantIssuer",

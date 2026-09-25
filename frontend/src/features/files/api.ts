@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { apiRequest } from "../../services/api/client";
-import type { InitiatedFileUpload } from "./types";
+import { MAX_UPLOAD_CONTEXT_LENGTH, type InitiatedFileUpload } from "./types";
 
 const timestampSchema = z.string().datetime({ offset: true });
 const nonblankStringSchema = z
@@ -10,20 +10,18 @@ const nonblankStringSchema = z
 
 const initiatedFileUploadSchema = z
   .object({
-    file: z
-      .object({
-        public_id: z.string().uuid(),
-        original_name: z.string(),
-        mime_type: z.string(),
-        storage_status: z.literal("pending"),
-        created_at: timestampSchema,
-      })
-      .strict(),
     upload: z
       .object({
         url: nonblankStringSchema,
         method: nonblankStringSchema,
         headers: z.record(z.string()),
+        metadata: z
+          .object({
+            nexus_upload_context: nonblankStringSchema.pipe(
+              z.string().max(MAX_UPLOAD_CONTEXT_LENGTH),
+            ),
+          })
+          .strict(),
         expires_at: timestampSchema,
       })
       .strict(),
@@ -53,17 +51,11 @@ export async function initiateFileUpload(
   }
 
   return {
-    file: {
-      publicId: parsed.data.file.public_id,
-      originalName: parsed.data.file.original_name,
-      mimeType: parsed.data.file.mime_type,
-      storageStatus: parsed.data.file.storage_status,
-      createdAt: parsed.data.file.created_at,
-    },
     upload: {
       url: parsed.data.upload.url,
       method: parsed.data.upload.method,
       headers: Object.freeze({ ...parsed.data.upload.headers }),
+      metadata: Object.freeze({ ...parsed.data.upload.metadata }),
       expiresAt: parsed.data.upload.expires_at,
     },
   };

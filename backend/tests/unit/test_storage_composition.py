@@ -20,6 +20,8 @@ from nexus.infrastructure.storage.azure_upload_grant import (
     AzureUserDelegationUploadGrantIssuer,
 )
 
+PRODUCTION_FILE_UPLOAD_CONTEXT_KEY = "ZW52LWZpbGUtdXBsb2FkLWNvbnRleHQta2V5LTAwMDE"
+
 
 class StubObjectStorage:
     async def create_object(
@@ -140,6 +142,7 @@ def build_settings(**overrides: object) -> Settings:
         "otp_hmac_secret": "test-secret-value-with-enough-length",
         "auth_token_secret": "test-auth-token-secret-with-enough-length",
         "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
+        "file_upload_context_key": PRODUCTION_FILE_UPLOAD_CONTEXT_KEY,
         "storage_provider": "azure_blob",
         "azure_storage_container": "nexus-files",
         "azure_storage_connection_string": None,

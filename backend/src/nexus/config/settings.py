@@ -1,11 +1,14 @@
+import base64
+import binascii
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field, HttpUrl, SecretStr
+from pydantic import Field, HttpUrl, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 ROOT_ENV_FILE = REPOSITORY_ROOT / ".env"
+_DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY = b"nexus-development-upload-key-001"
 
 
 class Settings(BaseSettings):
@@ -39,6 +42,7 @@ class Settings(BaseSettings):
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
     file_upload_max_size_bytes: int = Field(default=536_870_912, gt=0)
     file_upload_grant_ttl_seconds: int = Field(default=600, gt=0, le=3600)
+    file_upload_context_key: SecretStr
     storage_provider: str = Field(default="azure_blob", min_length=1)
     azure_storage_container: str | None = None
     azure_storage_connection_string: SecretStr | None = None
@@ -46,9 +50,36 @@ class Settings(BaseSettings):
     azure_storage_account_name: str | None = None
     azure_storage_managed_identity_client_id: UUID | None = None
 
+    @field_validator("file_upload_context_key")
+    @classmethod
+    def validate_file_upload_context_key(
+        cls,
+        value: SecretStr,
+        info: ValidationInfo,
+    ) -> SecretStr:
+        encoded = value.get_secret_value()
+        try:
+            padding = "=" * (-len(encoded) % 4)
+            decoded = base64.b64decode(
+                encoded + padding,
+                altchars=b"-_",
+                validate=True,
+            )
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("File upload context key is invalid") from exc
+        if len(decoded) != 32:
+            raise ValueError("File upload context key is invalid")
+        if (
+            info.data.get("app_env") == "production"
+            and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
+        ):
+            raise ValueError("Production File upload context key must be overridden.")
+        return value
+
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 

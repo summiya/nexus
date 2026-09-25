@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from nexus.files.domain import File, FileUploadAttempt
+from nexus.files.domain import File
 
 
 class FilePersistenceError(Exception):
@@ -20,13 +20,6 @@ class FilePersistence(Protocol):
     """Short transaction operations used by future File application code."""
 
     async def create_file(self, file: File) -> None: ...
-
-    async def create_pending_upload(
-        self,
-        *,
-        file: File,
-        upload_attempt: FileUploadAttempt,
-    ) -> None: ...
 
     async def get_file(
         self,

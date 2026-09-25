@@ -156,6 +156,7 @@ def _settings() -> Settings:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key="bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
     )
 
 
@@ -720,6 +721,7 @@ def test_message_endpoint_uses_native_sse_and_maps_application_events() -> None:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key="bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
     )
     app = _create_test_app(settings)
     organization_id = uuid4()
@@ -758,6 +760,7 @@ def test_message_endpoint_rejects_an_invalid_idempotency_key() -> None:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key="bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
     )
     app = _create_test_app(settings)
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
@@ -788,6 +791,7 @@ def test_message_endpoint_returns_http_error_when_preflight_fails() -> None:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key="bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
     )
     app = _create_test_app(settings)
     organization_id = uuid4()
@@ -822,6 +826,7 @@ def test_message_endpoint_returns_safe_conflict_before_streaming() -> None:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key="bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
     )
     app = _create_test_app(settings)
     app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(

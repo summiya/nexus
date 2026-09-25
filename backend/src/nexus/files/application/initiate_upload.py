@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -13,11 +13,10 @@ from nexus.files.application.upload_intent import (
     UploadIntentPolicy,
     UploadIntentValidationError,
 )
-from nexus.files.domain import File, FileStorageStatus, FileUploadAttempt
+from nexus.files.domain import UPLOAD_CONTEXT_VERSION, UploadContext
 from nexus.files.ports import (
-    FilePersistence,
-    FilePersistenceError,
-    FileReferenceError,
+    UploadContextProtectionError,
+    UploadContextProtector,
     UploadGrant,
     UploadGrantError,
     UploadGrantIssuer,
@@ -35,20 +34,20 @@ def _utc_now() -> datetime:
 
 @dataclass(frozen=True)
 class InitiatedFileUpload:
-    """The pending File and ephemeral provider instructions returned to a caller."""
+    """Ephemeral provider instructions and protected trusted upload context."""
 
-    file: File
     grant: UploadGrant
+    protected_context: str = field(repr=False)
 
 
 @dataclass(frozen=True)
 class InitiateFileUpload:
-    """Authorize, prepare, delegate, and persist one new File upload."""
+    """Authorize and prepare one direct upload without creating a File row."""
 
     intent_policy: UploadIntentPolicy
     permission_checker: PermissionChecker
-    persistence: FilePersistence
     upload_grant_issuer: UploadGrantIssuer
+    context_protector: UploadContextProtector
     grant_ttl: timedelta
     clock: Callable[[], datetime] = _utc_now
 
@@ -83,8 +82,9 @@ class InitiateFileUpload:
         except UploadIntentValidationError as exc:
             raise NexusError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
 
-        requested_at = self._current_time()
-        requested_expiration = requested_at + self.grant_ttl
+        issued_at = self._current_time()
+        requested_expiration = issued_at + self.grant_ttl
+        file_public_id = uuid4()
         try:
             grant = await self.upload_grant_issuer.issue_upload_grant(
                 storage_key=intent.storage_key,
@@ -93,44 +93,35 @@ class InitiateFileUpload:
         except UploadGrantError as exc:
             raise _upload_unavailable() from exc
 
-        created_at = self._current_time()
+        validated_at = self._current_time()
         if (
             not _is_timezone_aware(grant.expires_at)
-            or grant.expires_at <= created_at
+            or grant.expires_at <= validated_at
             or grant.expires_at > requested_expiration
         ):
             raise _upload_unavailable()
 
-        file = File(
-            public_id=uuid4(),
+        context = UploadContext(
+            version=UPLOAD_CONTEXT_VERSION,
+            file_public_id=file_public_id,
             organization_public_id=organization_public_id,
             created_by_user_public_id=user_public_id,
             original_name=intent.original_name,
             mime_type=intent.mime_type,
-            size_bytes=None,
-            storage_key=intent.storage_key,
-            storage_status=FileStorageStatus.PENDING,
-            checksum_sha256=None,
-            created_at=created_at,
-            updated_at=created_at,
-        )
-        upload_attempt = FileUploadAttempt(
-            file_public_id=file.public_id,
-            organization_public_id=file.organization_public_id,
             declared_size_bytes=intent.declared_size_bytes,
+            storage_key=intent.storage_key,
+            issued_at=issued_at,
             grant_expires_at=grant.expires_at,
-            created_at=created_at,
         )
-
         try:
-            await self.persistence.create_pending_upload(
-                file=file,
-                upload_attempt=upload_attempt,
-            )
-        except (FilePersistenceError, FileReferenceError) as exc:
+            protected_context = self.context_protector.protect(context)
+        except UploadContextProtectionError as exc:
             raise _upload_unavailable() from exc
 
-        return InitiatedFileUpload(file=file, grant=grant)
+        return InitiatedFileUpload(
+            grant=grant,
+            protected_context=protected_context,
+        )
 
     async def _authorize(
         self,
