@@ -45,6 +45,7 @@ SETTINGS_ENV_KEYS = [
     "CONVERSATION_MESSAGE_MAX_LENGTH",
     "FILE_UPLOAD_MAX_SIZE_BYTES",
     "FILE_UPLOAD_GRANT_TTL_SECONDS",
+    "FILE_UPLOAD_CONTEXT_KEY",
     "STORAGE_PROVIDER",
     "AZURE_STORAGE_CONTAINER",
     "AZURE_STORAGE_CONNECTION_STRING",
@@ -73,6 +74,10 @@ def set_required_settings_env(monkeypatch) -> None:
         "REFRESH_TOKEN_SECRET",
         "test-refresh-token-secret-with-enough-length",
     )
+    monkeypatch.setenv(
+        "FILE_UPLOAD_CONTEXT_KEY",
+        "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
+    )
 
 
 def build_settings(**overrides: object) -> Settings:
@@ -83,6 +88,7 @@ def build_settings(**overrides: object) -> Settings:
         "otp_hmac_secret": "test-secret-value-with-enough-length",
         "auth_token_secret": "test-auth-token-secret-with-enough-length",
         "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
+        "file_upload_context_key": ("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
         **overrides,
     }
     return Settings(_env_file=None, **values)
@@ -115,6 +121,10 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.conversation_message_max_length == 32_000
     assert settings.file_upload_max_size_bytes == 536_870_912
     assert settings.file_upload_grant_ttl_seconds == 600
+    assert (
+        settings.file_upload_context_key.get_secret_value()
+        == "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
+    )
     assert settings.storage_provider == "azure_blob"
     assert settings.azure_storage_container is None
     assert settings.azure_storage_connection_string is None
@@ -147,6 +157,14 @@ def test_cors_allowed_origins_is_required(clean_environment) -> None:
         Settings(_env_file=None, **values)
 
 
+def test_file_upload_context_key_is_required(clean_environment) -> None:
+    values = build_settings().model_dump()
+    values.pop("file_upload_context_key")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **values)
+
+
 def test_settings_reads_environment_variables(monkeypatch, clean_environment) -> None:
     monkeypatch.setenv("APP_NAME", "NEXUS Test")
     monkeypatch.setenv("APP_ENV", "staging")
@@ -172,6 +190,10 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     monkeypatch.setenv("AUTH_TOKEN_ISSUER", "nexus-test")
     monkeypatch.setenv("FILE_UPLOAD_MAX_SIZE_BYTES", "104857600")
     monkeypatch.setenv("FILE_UPLOAD_GRANT_TTL_SECONDS", "900")
+    monkeypatch.setenv(
+        "FILE_UPLOAD_CONTEXT_KEY",
+        "ZW52LWZpbGUtdXBsb2FkLWNvbnRleHQta2V5LTAwMDE",
+    )
     monkeypatch.setenv("STORAGE_PROVIDER", "azure_blob")
     monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "nexus-test-files")
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "nexustest")
@@ -206,6 +228,10 @@ def test_settings_reads_environment_variables(monkeypatch, clean_environment) ->
     assert reloaded.auth_token_issuer == "nexus-test"
     assert reloaded.file_upload_max_size_bytes == 104_857_600
     assert reloaded.file_upload_grant_ttl_seconds == 900
+    assert (
+        reloaded.file_upload_context_key.get_secret_value()
+        == "ZW52LWZpbGUtdXBsb2FkLWNvbnRleHQta2V5LTAwMDE"
+    )
     assert reloaded.storage_provider == "azure_blob"
     assert reloaded.azure_storage_container == "nexus-test-files"
     assert reloaded.azure_storage_account_name == "nexustest"
@@ -262,6 +288,18 @@ def test_invalid_file_upload_grant_ttl_fails_validation(
         build_settings(file_upload_grant_ttl_seconds=value)
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["", "not-base64!", "dG9vLXNob3J0"],
+)
+def test_invalid_file_upload_context_key_fails_validation(
+    clean_environment,
+    value: str,
+) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(file_upload_context_key=value)
+
+
 def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:
     set_required_settings_env(monkeypatch)
     monkeypatch.setenv(
@@ -297,7 +335,9 @@ def test_load_settings_uses_explicit_env_file(
         'CORS_ALLOWED_ORIGINS=["http://localhost:5173"]\n'
         "OTP_HMAC_SECRET=file-secret-value-with-enough-length\n"
         "AUTH_TOKEN_SECRET=file-auth-token-secret-with-enough-length\n"
-        "REFRESH_TOKEN_SECRET=file-refresh-token-secret-with-enough-length",
+        "REFRESH_TOKEN_SECRET=file-refresh-token-secret-with-enough-length\n"
+        "FILE_UPLOAD_CONTEXT_KEY="
+        "ZmlsZS11cGxvYWQtY29udGV4dC1rZXktMDAwMDAwMDA",
         encoding="utf-8",
     )
 
@@ -347,3 +387,12 @@ def test_storage_connection_string_is_redacted_from_settings_representation() ->
 
     assert connection_string not in repr(settings)
     assert connection_string not in str(settings)
+
+
+def test_file_upload_context_key_is_redacted_from_settings_representation() -> None:
+    key = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
+
+    settings = build_settings(file_upload_context_key=key)
+
+    assert key not in repr(settings)
+    assert key not in str(settings)

@@ -56,8 +56,8 @@ export function FileUploadPanel() {
         <p className="eyebrow">Files</p>
         <h1 id="file-upload-heading">Upload a file</h1>
         <p>
-          Upload one file directly to secure storage. It will remain pending
-          until Nexus verifies it.
+          Upload one file directly to secure storage. Nexus will verify it after
+          the transfer completes.
         </p>
       </div>
 

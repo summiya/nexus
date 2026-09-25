@@ -1,7 +1,9 @@
+import base64
+import binascii
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field, HttpUrl, SecretStr
+from pydantic import Field, HttpUrl, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -39,12 +41,30 @@ class Settings(BaseSettings):
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
     file_upload_max_size_bytes: int = Field(default=536_870_912, gt=0)
     file_upload_grant_ttl_seconds: int = Field(default=600, gt=0, le=3600)
+    file_upload_context_key: SecretStr
     storage_provider: str = Field(default="azure_blob", min_length=1)
     azure_storage_container: str | None = None
     azure_storage_connection_string: SecretStr | None = None
     azure_storage_account_url: HttpUrl | None = None
     azure_storage_account_name: str | None = None
     azure_storage_managed_identity_client_id: UUID | None = None
+
+    @field_validator("file_upload_context_key")
+    @classmethod
+    def validate_file_upload_context_key(cls, value: SecretStr) -> SecretStr:
+        encoded = value.get_secret_value()
+        try:
+            padding = "=" * (-len(encoded) % 4)
+            decoded = base64.b64decode(
+                encoded + padding,
+                altchars=b"-_",
+                validate=True,
+            )
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("File upload context key is invalid") from exc
+        if len(decoded) != 32:
+            raise ValueError("File upload context key is invalid")
+        return value
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

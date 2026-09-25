@@ -10,7 +10,7 @@ from nexus.files.ports import UploadGrant
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
-from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
+from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 
 
 class StubUploadGrantIssuer:
@@ -37,6 +37,7 @@ def _settings() -> Settings:
         otp_hmac_secret="test-secret-value-with-enough-length",
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
+        file_upload_context_key=("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
         file_upload_max_size_bytes=123_456,
         file_upload_grant_ttl_seconds=900,
     )
@@ -56,7 +57,6 @@ def test_file_composition_builds_upload_service_from_shared_dependencies() -> No
     assert service.intent_policy.max_size_bytes == 123_456
     assert isinstance(service.permission_checker, SqlAlchemyPermissionChecker)
     assert service.permission_checker._session_factory is session_factory
-    assert isinstance(service.persistence, SqlAlchemyFilePersistence)
-    assert service.persistence._session_factory is session_factory
     assert service.upload_grant_issuer is issuer
+    assert isinstance(service.context_protector, AesGcmUploadContextProtector)
     assert service.grant_ttl == timedelta(seconds=900)

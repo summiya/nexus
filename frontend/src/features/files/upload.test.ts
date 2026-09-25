@@ -31,6 +31,7 @@ function grant(overrides: Partial<UploadGrant> = {}): UploadGrant {
     url: signedUrl,
     method: "PUT",
     headers: { "x-ms-blob-type": "BlockBlob" },
+    metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
     expiresAt: "2026-09-25T10:10:00Z",
     ...overrides,
   };
@@ -61,6 +62,7 @@ describe("Azure File upload transport", () => {
         blockSize: FILE_UPLOAD_BLOCK_SIZE_BYTES,
         concurrency: FILE_UPLOAD_CONCURRENCY,
         maxSingleShotSize: FILE_UPLOAD_SINGLE_SHOT_SIZE_BYTES,
+        metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
       }),
     );
     expect(FILE_UPLOAD_BLOCK_SIZE_BYTES).toBe(8 * 1024 * 1024);
@@ -118,6 +120,20 @@ describe("Azure File upload transport", () => {
           "x-ms-blob-type": "BlockBlob",
           "x-ms-meta-private": "unexpected-value",
         },
+      }),
+    ],
+    ["missing upload context", grant({ metadata: {} as never })],
+    [
+      "blank upload context",
+      grant({ metadata: { nexus_upload_context: " " } }),
+    ],
+    [
+      "unexpected metadata",
+      grant({
+        metadata: {
+          nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT",
+          extra: "unsupported",
+        } as never,
       }),
     ],
   ])("fails closed for an %s", async (_description, incompatibleGrant) => {

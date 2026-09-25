@@ -26,14 +26,30 @@ describe("Azure browser SDK compatibility", () => {
     );
 
     await client.uploadData(new Uint8Array([1, 2, 3, 4]), {
-      maxSingleShotSize: 64 * 1024 * 1024,
+      blockSize: 2,
+      maxSingleShotSize: 1,
+      metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
     });
 
-    const request = requests[0];
-    const serviceVersion = request.headers.get("x-ms-version");
-    expect(serviceVersion).not.toBeNull();
-    expect(serviceVersion).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(serviceVersion! >= "2026-04-06").toBe(true);
-    expect(request.headers.get("Authorization")).toBeUndefined();
+    const blockRequests = requests.filter(
+      (request) => new URL(request.url).searchParams.get("comp") === "block",
+    );
+    const blockListRequests = requests.filter(
+      (request) =>
+        new URL(request.url).searchParams.get("comp") === "blocklist",
+    );
+    expect(blockRequests).not.toHaveLength(0);
+    expect(blockListRequests).toHaveLength(1);
+
+    for (const request of requests) {
+      const serviceVersion = request.headers.get("x-ms-version");
+      expect(serviceVersion).not.toBeNull();
+      expect(serviceVersion).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(serviceVersion! >= "2026-04-06").toBe(true);
+      expect(request.headers.get("Authorization")).toBeUndefined();
+    }
+    expect(
+      blockListRequests[0].headers.get("x-ms-meta-nexus_upload_context"),
+    ).toBe("nuc1.primary.OPAQUE_CONTEXT");
   });
 });

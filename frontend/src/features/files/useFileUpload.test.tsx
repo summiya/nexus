@@ -17,17 +17,11 @@ import { MAX_FILE_SIZE_BYTES, type InitiatedFileUpload } from "./types";
 import { useFileUpload } from "./useFileUpload";
 
 const initiatedUpload: InitiatedFileUpload = {
-  file: {
-    publicId: "11111111-1111-4111-8111-111111111111",
-    originalName: "report.pdf",
-    mimeType: "application/pdf",
-    storageStatus: "pending",
-    createdAt: "2026-09-25T10:00:00Z",
-  },
   upload: {
     url: "https://account.blob.core.windows.net/file?sig=SENSITIVE",
     method: "PUT",
     headers: { "x-ms-blob-type": "BlockBlob" },
+    metadata: { nexus_upload_context: "nuc1.primary.OPAQUE_CONTEXT" },
     expiresAt: "2026-09-25T10:10:00Z",
   },
 };
@@ -77,9 +71,10 @@ describe("useFileUpload", () => {
     );
     expect(result.current.phase).toBe("transferred");
     expect(result.current.progress).toBe(100);
-    expect(result.current.file).toEqual(initiatedUpload.file);
+    expect(result.current).not.toHaveProperty("file");
     expect(result.current).not.toHaveProperty("upload");
     expect(result.current).not.toHaveProperty("grant");
+    expect(JSON.stringify(result.current)).not.toContain("OPAQUE_CONTEXT");
   });
 
   it("rejects one byte over the limit before any API or storage call", async () => {

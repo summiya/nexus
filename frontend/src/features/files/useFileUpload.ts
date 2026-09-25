@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { initiateFileUpload } from "./api";
-import { MAX_FILE_SIZE_BYTES, type PendingFileSummary } from "./types";
+import { MAX_FILE_SIZE_BYTES } from "./types";
 import { uploadGrantedFile } from "./upload";
 
 export type FileUploadPhase =
@@ -16,7 +16,6 @@ interface FileUploadState {
   phase: FileUploadPhase;
   feedback: FileUploadFeedback | null;
   progress: number;
-  file: PendingFileSummary | null;
 }
 
 interface ActiveUpload {
@@ -28,7 +27,6 @@ const idleState: FileUploadState = {
   phase: "idle",
   feedback: null,
   progress: 0,
-  file: null,
 };
 
 export function useFileUpload() {
@@ -55,7 +53,6 @@ export function useFileUpload() {
           phase: "failed",
           feedback: { kind: "file_too_large" },
           progress: 0,
-          file: null,
         });
         return;
       }
@@ -70,26 +67,24 @@ export function useFileUpload() {
         phase: "initiating",
         feedback: null,
         progress: 0,
-        file: null,
       });
 
-      let initiatedFile: PendingFileSummary | null = null;
+      let transferStarted = false;
 
       try {
         const initiation = await initiateFileUpload(
           file,
           operation.controller.signal,
         );
-        initiatedFile = initiation.file;
         if (!operationIsCurrent(operation)) {
           return;
         }
+        transferStarted = true;
 
         setState({
           phase: "uploading",
           feedback: null,
           progress: 0,
-          file: initiatedFile,
         });
 
         await uploadGrantedFile({
@@ -113,7 +108,6 @@ export function useFileUpload() {
             phase: "transferred",
             feedback: null,
             progress: 100,
-            file: initiatedFile,
           });
         }
       } catch {
@@ -126,19 +120,16 @@ export function useFileUpload() {
             phase: "cancelled",
             feedback: null,
             progress: 0,
-            file: initiatedFile,
           });
         } else {
           setState({
             phase: "failed",
             feedback: {
-              kind:
-                initiatedFile === null
-                  ? "initiation_failure"
-                  : "transfer_failure",
+              kind: !transferStarted
+                ? "initiation_failure"
+                : "transfer_failure",
             },
             progress: 0,
-            file: initiatedFile,
           });
         }
       } finally {

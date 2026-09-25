@@ -19,6 +19,7 @@ from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
 from nexus.infrastructure.rate_limit import RedisRateLimiter
+from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
 from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
 from nexus.main import create_app
@@ -97,6 +98,7 @@ def build_settings(**overrides: object) -> Settings:
         "otp_hmac_secret": "test-secret-value-with-enough-length",
         "auth_token_secret": "test-auth-token-secret-with-enough-length",
         "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
+        "file_upload_context_key": ("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
         **overrides,
     }
     if "debug" in values:
@@ -220,8 +222,8 @@ def test_file_composition_receives_shared_runtime_dependencies() -> None:
         service = app.state.container.files.initiate_upload
         assert service.intent_policy.max_size_bytes == 123_456
         assert service.permission_checker._session_factory is database.session_factory
-        assert service.persistence._session_factory is database.session_factory
         assert service.upload_grant_issuer is issuer
+        assert isinstance(service.context_protector, AesGcmUploadContextProtector)
         assert service.grant_ttl.total_seconds() == 900
 
 

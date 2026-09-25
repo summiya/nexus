@@ -3,9 +3,6 @@
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.conversation import Conversation
 from nexus.infrastructure.persistence.models.file import File
-from nexus.infrastructure.persistence.models.file_upload_attempt import (
-    FileUploadAttempt,
-)
 from nexus.infrastructure.persistence.models.generation import Generation
 from nexus.infrastructure.persistence.models.message import Message
 from nexus.infrastructure.persistence.models.organization import Organization
@@ -20,7 +17,6 @@ __all__ = [
     "AuthSession",
     "Conversation",
     "File",
-    "FileUploadAttempt",
     "Generation",
     "Message",
     "Organization",

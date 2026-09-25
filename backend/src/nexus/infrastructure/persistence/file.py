@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from nexus.files.domain import File, FileUploadAttempt
+from nexus.files.domain import File
 from nexus.files.ports import FilePersistence, FilePersistenceError
 from nexus.infrastructure.persistence import _file_queries as queries
 
@@ -28,20 +28,6 @@ class SqlAlchemyFilePersistence(FilePersistence):
 
     async def create_file(self, file: File) -> None:
         await self._run_transaction(lambda session: queries.insert_file(session, file))
-
-    async def create_pending_upload(
-        self,
-        *,
-        file: File,
-        upload_attempt: FileUploadAttempt,
-    ) -> None:
-        await self._run_transaction(
-            lambda session: queries.insert_pending_upload(
-                session,
-                file=file,
-                upload_attempt=upload_attempt,
-            )
-        )
 
     async def get_file(
         self,

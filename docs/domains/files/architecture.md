@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 10 direct browser upload
+**Status:** Implemented event-first direct browser upload initiation
 
 ## Purpose
 
@@ -17,13 +17,14 @@ short-lived, exact-object browser upload capability. It does not implement a
 provider signer or compose that capability into the application. Phase 7 adds
 the Azure User Delegation SAS implementation of that boundary without changing
 application composition or exposing Azure types outside infrastructure. Phase 8
-adds runtime RBAC enforcement, application orchestration, and atomic persistence
-of a pending File plus its trusted upload-attempt metadata. Phase 9 composes the
-File use case and Azure grant issuer, then exposes authenticated upload
-initiation through a provider-neutral HTTP contract. File bytes still bypass
-Nexus. Phase 10 adds the protected Files screen and transfers one selected
-browser File directly to Azure Blob Storage while preserving the pending File
-lifecycle.
+originally added runtime RBAC enforcement and pre-upload persistence; the
+event-first refactor removes that persistence because requesting a grant does
+not prove that a Blob exists. Phase 9 exposes authenticated upload initiation
+through a provider-neutral HTTP contract. File bytes still bypass Nexus. Phase
+10 adds the protected Files screen and transfers one selected browser File
+directly to Azure Blob Storage. A future BlobCreated worker, not upload
+initiation, will create the pending File after accepting the committed Blob and
+its protected Nexus context.
 
 ## Boundary
 
@@ -37,17 +38,15 @@ InitiateFileUpload
         │       ↓
         │   ValidatedUploadIntent
         │
-        ├── FilePersistence
+        ├── UploadGrantIssuer
+        │       ↑
+        │   AzureUserDelegationUploadGrantIssuer
         │       ↓
-        │   SqlAlchemyFilePersistence
-        │       ↓
-        │   AsyncSession / PostgreSQL
+        │   Borrowed async BlobServiceClient
         │
-        └── UploadGrantIssuer
+        └── UploadContextProtector
                 ↑
-        AzureUserDelegationUploadGrantIssuer
-                ↓
-        Borrowed async BlobServiceClient
+        AesGcmUploadContextProtector
 
 File binary storage operations
         ↓
@@ -67,6 +66,14 @@ Browser direct upload
             BlockBlobClient.uploadData(File)
                 ↓
             Azure Blob Storage
+
+Future committed-Blob persistence
+        ↓
+BlobCreated worker
+        ├── UploadContextProtector.unprotect()
+        └── FilePersistence.create_file()
+                ↓
+        AsyncSession / PostgreSQL
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -118,12 +125,12 @@ File(AVAILABLE).size_bytes
     actual verified object size
 ```
 
-During Phase 5, `ValidatedUploadIntent.declared_size_bytes` exists only in
-request/application memory. Phase 8 copies the accepted declaration into a
-separate trusted `FileUploadAttempt`; `File(PENDING).size_bytes` remains `None`.
-Do not overload `File.size_bytes` with untrusted request metadata. Later
-asynchronous verification can compare the actual Blob size with the accepted
-declaration without treating the declaration as verified storage truth.
+During upload initiation, `ValidatedUploadIntent.declared_size_bytes` is copied
+into the encrypted, authenticated `UploadContext` carried with the Blob. No File
+row exists yet. When a future worker accepts a committed Blob and its context,
+it can retain the declaration as trusted authorization context while keeping
+`File(PENDING).size_bytes` as `None`. Do not overload `File.size_bytes` with
+untrusted request metadata.
 
 A later verification phase must measure the stored object before making the
 File available.
@@ -447,71 +454,68 @@ persisted, or emitted to telemetry. Azure acquisition and signing failures are
 translated to a fixed safe `UploadGrantError`; task cancellation remains
 cancellation.
 
-## Authorized upload initiation and trusted upload state
+## Authorized upload initiation and protected upload context
 
-`InitiateFileUpload` is the provider-neutral Phase 8 application use case. It
-accepts trusted organization and user public IDs plus untrusted upload metadata;
-the client never supplies a storage key, creator identity, or tenant identity.
-Its ordering is deliberate:
+`InitiateFileUpload` accepts trusted organization and user public IDs plus
+untrusted upload metadata; the client never supplies a storage key, creator
+identity, or tenant identity. Its ordering is deliberate:
 
 ```text
 check files.upload
         ↓
 validate upload intent and generate storage_key
         ↓
-calculate requested grant expiration
+generate reserved File public UUID
         ↓
 issue and validate the effective upload grant
         ↓
-construct File(PENDING) + FileUploadAttempt
+construct and protect UploadContext
         ↓
-atomically persist both
-        ↓
-return File + ephemeral grant
+return ephemeral upload instructions
 ```
 
 The runtime permission check resolves the exact organization/user pair through
 tenant-safe User, UserRole, Role, RolePermission, and Permission joins. The
 Organization and User must be active and not deleted, the Role must not be
 deleted, and the requested permission must be assigned. Missing or mismatched
-state is a denial. The check is performed on every initiation and is not cached,
-so RBAC changes affect the next request. It is a point-in-time decision: Nexus
-does not hold a database transaction or row lock across the later provider call.
+state is a denial. The check is performed on every initiation and is not cached.
+It may use a short PostgreSQL read, but initiation opens no File write
+transaction and creates neither a File nor an upload-attempt row.
 
-Provider I/O occurs before the short File write transaction. If grant issuance
-fails, no permanent File state is created. If persistence fails, the signed
-grant is never returned and expires naturally. The write transaction inserts
-exactly one new pending File and one upload attempt atomically. The pending File
-has `size_bytes=None` and `checksum_sha256=None`.
+The immutable `UploadContext` contains its schema version, reserved File public
+UUID, organization and creator public UUIDs, exact opaque storage key,
+normalized filename and MIME metadata, declared size, issue time, and the
+provider's effective grant expiration. It contains no Azure account, container,
+URL, SAS, event ID, request ID, or provider credential. The browser treats it as
+opaque.
 
-`FileUploadAttempt` stores only:
+`UploadContextProtector` is the narrow application-facing protection boundary.
+The infrastructure implementation uses AES-256-GCM with a fresh 96-bit nonce.
+Its compact Base64URL envelope contains a format version, the non-secret key ID
+`primary`, nonce, and ciphertext with authentication tag. Format version and key
+ID are authenticated as associated data. The encrypted payload also carries its
+schema version. Unknown versions or key IDs, malformed envelopes, wrong keys,
+and tampering all produce the same fixed safe error.
 
-- the File and organization relationship;
-- `declared_size_bytes` accepted by the upload-intent policy;
-- the provider's effective `grant_expires_at`;
-- the trusted creation timestamp.
+`FILE_UPLOAD_CONTEXT_KEY` is required, represented as `SecretStr`, and must be a
+Base64URL encoding of exactly 32 bytes. The repository example contains only an
+explicitly labelled deterministic development key; production must override it
+through secret injection or Key Vault. The key is never logged, returned, or
+included in error text. This phase uses one key only: the envelope key ID avoids
+a future format migration, but no key ring or automatic rotation exists yet.
 
-The table never stores the signed URL, SAS query, required grant headers, User
-Delegation Key, provider name, container, credential, actual size, checksum, or
-security result. Its composite `(file_id, organization_id)` foreign key targets
-the owning File and cascades when that File is deleted.
+The protected context is capped at 4 KiB and stored as the single Blob metadata
+entry `nexus_upload_context`, comfortably inside Azure's 8 KiB total metadata
+limit. Decoding validates authenticity, schema, versions, and field invariants.
+It deliberately does not reject a context because worker processing occurs
+after `grant_expires_at`: a Blob may commit before grant expiry and its event may
+arrive later. A future worker must evaluate trusted Blob/event timing against
+the authorization window.
 
-The schema deliberately allows more than one upload attempt for a File so it
-does not block a future, explicitly designed grant-reissuance flow. Phase 8 does
-not implement reissuance: every initiation creates one new File and exactly one
-attempt. If reissuance is added later, asynchronous storage events must be
-correlated deliberately with the responsible attempt. A worker must not assume
-that the latest attempt caused a `BlobCreated` event because cloud events may be
-delayed or delivered out of order. Reissuance must also preserve the trusted
-declared metadata associated with the existing File. Attempt identifiers,
-event identifiers, attempt statuses, and correlation fields remain deferred to
-that later event/verification design.
-
-File write transactions retain the existing cancellation-settlement guarantee.
-If a commit completes while the awaiting request is cancelled, the pending File
-and attempt may remain even though the caller did not receive the grant. Later
-abandoned-pending cleanup owns that lifecycle; Phase 8 does not abandon an
-in-progress commit or rollback.
+If grant issuance or protection fails, no permanent File state exists. A grant
+created before a later protection or response failure is never returned and
+simply expires. Cancellation or abandonment before upload likewise leaves no
+File row.
 
 The current local Azurite path uses HTTP plus a Shared Key connection string.
 That path cannot exercise the production security chain:
@@ -534,7 +538,7 @@ Key, account-key SAS, or service SAS fallback to make local testing easier.
 
 ## Upload-initiation HTTP API
 
-Phase 9 exposes the Phase 8 use case as:
+The API exposes the use case as:
 
 ```text
 POST /api/v1/files/uploads
@@ -543,7 +547,7 @@ CurrentAuthContextDep
         ↓
 InitiateFileUpload
         ↓
-201 Created
+200 OK
 ```
 
 The JSON request contains only `original_name`, nullable `mime_type`, and
@@ -551,22 +555,20 @@ The JSON request contains only `original_name`, nullable `mime_type`, and
 authentication context. The transport maps `size_bytes` to the application's
 `declared_size_bytes`; it never populates `File.size_bytes` from this untrusted
 declaration. The controller delegates authorization, semantic validation,
-storage-key generation, grant issuance, and persistence to the application
-service.
+storage-key generation, grant issuance, and context protection to the
+application service.
 
-The response contains a minimal pending File representation and generic upload
-instructions: URL, method, required headers, and expiration. It excludes the
-storage key, tenant and creator identities, upload-attempt data, declared size,
-provider, and container. Signed URLs and required headers are opaque provider
-instructions and are returned without parsing or normalization. Successful
-responses use `Cache-Control: no-store` because the URL is a short-lived bearer
-capability.
+The response contains only generic upload instructions: URL, method, required
+headers, the one protected metadata value, and expiration. It contains no File
+representation because no File exists yet. It also excludes the raw storage
+key, tenant and creator identities, declared size, provider, and container.
+Signed URLs, required headers, and protected context remain opaque and are
+returned without normalization. Successful responses use `Cache-Control:
+no-store` because they contain short-lived bearer capability material.
 
-`POST /files/uploads` is not idempotent in Phase 9 and defines no
-`Idempotency-Key` contract. A retry may create another pending File. Correct
-retry support must be designed together with grant reissuance, asynchronous
-attempt correlation, and abandoned-pending cleanup; Nexus does not persist SAS
-URLs or other credential material merely to replay a response.
+`POST /files/uploads` defines no `Idempotency-Key` contract. A retry creates a
+new storage key, reserved File UUID, context, and grant, but still no database
+row. Unused grants expire without abandoned PostgreSQL state.
 
 `FILE_UPLOAD_GRANT_TTL_SECONDS` is an application security policy with a
 default of 600 seconds and a maximum of 3600 seconds. It remains separate from
@@ -596,13 +598,13 @@ client UX check: declared size <= 536,870,912 bytes
         ↓
 authenticated POST /api/v1/files/uploads
         ↓
-pending File + ephemeral upload instructions
+ephemeral upload instructions + protected context
         ↓
 BlockBlobClient(signed URL).uploadData(File)
         ↓
 Put Blob OR Put Block × N + Put Block List
         ↓
-transfer complete; File remains PENDING
+committed Blob contains nexus_upload_context metadata
 ```
 
 The browser uses an 8 MiB block size, concurrency of four, and a 64 MiB
@@ -614,7 +616,8 @@ upload initiation.
 
 The current upload grant is accepted only when its method is exactly `PUT` and
 its only upload-control instruction is `x-ms-blob-type: BlockBlob` (header-name
-matching follows HTTP case-insensitivity). The Azure SDK owns the headers for
+matching follows HTTP case-insensitivity). It also requires exactly one nonblank
+`nexus_upload_context` metadata value. The Azure SDK owns the headers for
 `Put Blob`, `Put Block`, and `Put Block List`; provider instructions are not
 blindly attached to every block request. New required upload-control headers
 must be deliberately implemented rather than silently ignored.
@@ -622,13 +625,15 @@ must be deliberately implemented rather than silently ignored.
 The upload grant is an ephemeral bearer capability. It moves directly from the
 validated initiation response to the Azure transport and is never placed in
 React Query, Zustand, browser storage, route state, telemetry, error text, or
-the UI. The Nexus Bearer token is used only for the Nexus control-plane request;
-Azure receives only the SAS URL. Raw Azure errors are replaced with fixed safe
-frontend feedback.
+the UI. The protected context is likewise kept out of UI/global state/logging
+and passed opaquely to the Azure SDK. The Nexus Bearer token is used only for
+the Nexus control-plane request; Azure receives only the SAS URL and protected
+metadata. Raw Azure errors are replaced with fixed safe frontend feedback.
 
 One active transfer owns one `AbortController`. Cancellation and component
-unmount abort the request and suppress stale UI callbacks, but they do not
-delete the pending File or promise immediate removal of uncommitted blocks.
+unmount abort the request and suppress stale UI callbacks. No File row exists to
+delete, and cancellation does not promise immediate removal of uncommitted
+blocks.
 There is no automatic retry system, resumability, multi-file queue, or global
 upload store in this phase.
 
@@ -637,7 +642,7 @@ Successful browser transfer means only:
 ```text
 browser transfer complete
         ↓
-File remains PENDING and awaits verification
+Nexus awaits BlobCreated processing and verification
 ```
 
 It never means that the File is verified, safe, or available.
@@ -649,7 +654,8 @@ runtime. Each environment must allow the exact authorized frontend origin and
 `PUT`. Production must not use a wildcard origin. Allowed request headers must
 cover `content-type` and the Azure SDK's required `x-ms-*` headers, including
 `x-ms-version`, `x-ms-client-request-id`, `x-ms-blob-type`, and
-`x-ms-blob-content-type`. Exposed response headers should be limited to those
+`x-ms-blob-content-type`, plus `x-ms-meta-nexus_upload_context`. Exposed response
+headers should be limited to those
 operationally required, such as `etag`, `x-ms-request-id`, `x-ms-version`, and
 `x-ms-client-request-id`, with a sensible preflight cache duration.
 
@@ -658,7 +664,7 @@ Identity, User Delegation SAS, HTTPS, or exact-origin CORS path. Release
 validation must use a controlled Azure environment to exercise both a small
 single-shot upload and a File larger than 64 MiB, reject an unauthorized
 origin, confirm that no Nexus Authorization header reaches Azure, and confirm
-that the resulting File remains pending.
+that the committed Blob carries the protected context metadata.
 
 ### Production-hardening release gate
 
@@ -672,7 +678,8 @@ not authoritative security controls. Later phases must add:
 - content and MIME verification;
 - security and malware checks where applicable;
 - cleanup of oversized or otherwise invalid stored objects;
-- abandoned-pending cleanup;
+- cleanup/reconciliation for committed objects whose events cannot be processed;
+- provider lifecycle handling for abandoned uncommitted blocks;
 - upload-initiation abuse protection, rate limiting, or equivalent quota
   controls.
 
@@ -680,8 +687,9 @@ Those controls are intentionally not implemented in Phase 10. The release
 invariant remains:
 
 ```text
-browser transfer complete  -> File PENDING
-verification complete      -> File AVAILABLE
+browser transfer complete  -> committed Blob; File row may not exist yet
+future worker acceptance   -> File PENDING
+verification complete      -> File AVAILABLE or FAILED
 ```
 
 Only verified `AVAILABLE` Files may enter later Document processing or RAG
@@ -740,9 +748,9 @@ File API phase.
 
 ## Future upload and verification lifecycle
 
-Phases 5 and 6 define the provider-neutral preparation boundaries. Phase 8
-composes them into authorized upload initiation without changing either
-boundary. Phase 10 implements the direct client transfer; verification remains
+Phases 5 and 6 define the provider-neutral preparation boundaries. The current
+application composes them into authorized, event-first upload initiation. Phase
+10 implements direct client transfer; event consumption and verification remain
 future work:
 
 ```text
@@ -752,10 +760,15 @@ UploadIntentPolicy
         ↓
 issue short-lived exact-object upload grant
         ↓
-atomically persist File(PENDING) with size_bytes=None
-and FileUploadAttempt with declared_size_bytes
+protect Nexus UploadContext; no PostgreSQL File write
         ↓
-client uploads directly to object storage
+client commits Blob with protected context metadata
+        ↓
+future BlobCreated → Event Grid → Service Bus → worker
+        ↓
+validate source/blob/context and storage-key binding
+        ↓
+create File(PENDING) with size_bytes=None
         ↓
 verify actual object size, type, checksum, and security state
         ↓
@@ -764,14 +777,21 @@ transition File to AVAILABLE or FAILED
 
 The client never chooses the storage key. A successful object upload or a
 provider event alone does not establish tenant ownership, authorization, or
-File availability. Later verification must measure the actual object size and
-enforce the configured maximum. Because Phase 8 preserves `declared_size_bytes`
-in trusted persistent upload state, asynchronous verification must also compare
-the actual size with that declaration. It must not use `File.size_bytes` for
-the untrusted declaration; that field remains `None` while pending and records
-only the verified final size when the File becomes available. Verification must
-also inspect actual content type where required, compute integrity metadata,
-and apply future malware/security policy.
+File availability. Later processing must verify the event source, account,
+container and event type, fetch Blob properties, unprotect the context, compare
+the actual Blob key with `context.storage_key`, and re-check organization/user
+validity. Verification must measure actual object size, enforce the configured
+maximum, and compare it with the protected declaration. `File.size_bytes`
+remains `None` while pending and records only the verified final size. Duplicate
+events will use `file_public_id` and `storage_key` plus existing uniqueness as
+stable idempotency identities; exact worker/DLQ/reconciliation behavior remains
+future work.
+
+Abandoned initiation needs no PostgreSQL cleanup. A partial uncommitted upload
+has no File row. A committed Blob whose event cannot be processed is a future
+dead-letter/reconciliation concern. Historical pending rows created by the old
+pre-event lifecycle are preserved by the removal migration and require an
+explicit deployment audit rather than guessed or destructive conversion.
 
 ## File and Document separation
 
@@ -852,6 +872,10 @@ Phase 9
 
 Phase 10
     direct browser upload, progress, cancellation, and Files route (implemented)
+
+Pre-event persistence refactor
+    protected upload context and File creation deferred until BlobCreated
+    processing (implemented)
 ```
 
 ## Deferred work
@@ -860,7 +884,8 @@ Later phases own:
 
 - actual size, type, checksum, and security verification;
 - File lifecycle transitions after storage verification;
-- oversized, invalid-object, and abandoned-pending cleanup;
+- oversized and invalid-object cleanup;
+- committed-Blob event dead-letter handling and reconciliation;
 - upload-initiation abuse protection, rate limiting, or quota enforcement;
 - upload and management APIs;
 - list, download, and delete use cases and APIs;

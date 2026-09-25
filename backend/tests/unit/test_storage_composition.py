@@ -140,6 +140,7 @@ def build_settings(**overrides: object) -> Settings:
         "otp_hmac_secret": "test-secret-value-with-enough-length",
         "auth_token_secret": "test-auth-token-secret-with-enough-length",
         "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
+        "file_upload_context_key": ("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
         "storage_provider": "azure_blob",
         "azure_storage_container": "nexus-files",
         "azure_storage_connection_string": None,
