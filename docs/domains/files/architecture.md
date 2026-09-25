@@ -802,6 +802,103 @@ The mapper performs no network, database, queue, or Azure SDK operation. It is
 not wired into application composition in Phase 11; the worker phase will own
 delivery integration and composition.
 
+## Durable Azure upload-completion routing
+
+Phase 12 routes committed File objects through shared Azure source
+infrastructure without adding an application queue abstraction:
+
+```text
+canonical File Blob container
+        ↓ Microsoft.Storage.BlobCreated
+shared Event Grid system topic
+        ↓ Nexus-owned File event subscription
+regional Service Bus Premium queue
+        ↓
+Phase 13 worker
+```
+
+Nexus launches with one Premium namespace partition and one Messaging Unit.
+The queue is shared across organizations, has an 80-GiB capacity, and buffers
+upload bursts independently of future worker throughput. Partition count is an
+explicit immutable namespace-creation choice; changing it requires a new
+namespace and controlled infrastructure migration. MU capacity is adjusted
+from measured CPU, memory, queue depth, processing lag, and message throughput,
+not from registered-user count.
+
+The storage-account system topic is shared source infrastructure because Azure
+permits one system topic per source. Deployment must explicitly reference an
+existing topic or separately create a new shared topic; it must never discover
+and adopt infrastructure implicitly. The File capability owns only its event
+subscription. Permissions to create or alter subscriptions on the shared topic
+are security-sensitive and must be limited to audited deployment/operations
+identities: a subscription can deliver using the topic's Managed Identity into
+an authorized destination.
+
+Deployment resolves the configured Nexus storage account and fails closed
+unless the selected system topic has that exact account resource ID as its
+source and `Microsoft.Storage.StorageAccounts` as its topic type. It also
+requires a usable system-assigned Managed Identity principal. The Service Bus
+resource location is derived directly from the source storage-account region,
+not supplied independently. The topic's Managed Identity is not granted queue
+or dead-letter access until those trusted source and identity invariants pass.
+
+The File event subscription delivers CloudEvents 1.0, includes only
+`Microsoft.Storage.BlobCreated`, and applies the case-sensitive subject prefix
+`/blobServices/default/containers/<file-container>/blobs/files/`. It does not
+filter `data.api` or `data.blobType`; the Phase 11 mapper remains the strict
+semantic boundary. The system-topic identity receives only queue sender access
+and dead-letter-container write access. Service Bus local authentication is
+disabled, TLS 1.2 or later is required, and the firewall permits Event Grid
+through trusted Microsoft service delivery while still requiring Managed
+Identity authorization.
+
+The queue enables a ten-minute duplicate-detection window. Event Grid's
+Service Bus internal `MessageId` is expected to remain stable across redelivery,
+and `aeg-output-event-id` carries the Event Grid event ID. Controlled Azure
+validation must verify that behavior before it is relied on operationally.
+Duplicate detection is only load reduction; Phase 13 remains responsible for
+delivery and business idempotency.
+
+Event Grid retries for at most 30 attempts or 24 hours and then uses the private
+`event-grid-deadletter` container. That container is outside the configured
+File-container subject prefix. A dead-letter Blob must never feed back into the
+File completion queue.
+
+### Orphan reconciliation release gate
+
+Nexus keeps one canonical File container. It does not move every successful
+upload through incoming and permanent containers. Before unrestricted public
+upload traffic is enabled, a reviewed reconciliation process must exist for
+sufficiently old committed Blobs that have no legitimate File state. It must
+classify candidates for recovery, quarantine, or deletion and, at scale, use an
+inventory or change-driven approach rather than frequent full-container scans.
+
+Abandoned block uploads may leave uncommitted blocks. Azure ordinarily garbage
+collects them about seven days after the last successful block operation, but
+the staged bytes occupy storage during that period and associated operations
+and capacity can incur cost. Phase 12 adds no custom uncommitted-block cleanup;
+the retention and billing exposure remain part of the production capacity and
+abuse review.
+
+### Phase 13 settlement and DLQ requirements
+
+`AzureBlobCreatedEventMappingError` is a permanent semantic message failure.
+Phase 13 must immediately dead-letter it with the fixed bounded reason
+`INVALID_BLOB_CREATED_EVENT`. Its normal expected baseline is zero. Every
+occurrence must emit a structured log or metric with safe correlation.
+Monitoring must raise one grouped operational/security alert when the count is
+at least one during a short monitoring window; additional occurrences in that
+window increment logs and metrics without paging once per message. The worker
+must not expose the unrestricted provider payload, SAS data, protected
+UploadContext, secrets, or internal details in DLQ reason text. Temporary
+storage, database, Key Vault, and network failures may use retry/abandon
+behavior.
+
+Service Bus DLQ messages do not observe TTL and are not automatically removed.
+Phase 13 operations must therefore define inspection, safe replay, and explicit
+purge procedures and alert on DLQ size. Phase 12 implements none of that worker
+or settlement behavior; it records the non-negotiable operational boundary.
+
 Event delivery is assumed to be at least once and unordered. Redelivery,
 worker restart, and concurrent workers are normal. Correctness cannot depend on
 one worker, process memory, arrival order, exactly-once delivery, or Service Bus

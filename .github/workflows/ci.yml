@@ -158,6 +158,17 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
+  infrastructure-quality:
+    name: Infrastructure Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Compile Azure Bicep
+        run: make infra-check
+
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
