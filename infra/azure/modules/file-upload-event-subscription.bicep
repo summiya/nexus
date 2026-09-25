@@ -9,11 +9,11 @@ param fileContainerName string
 
 var fileSubjectPrefix = '/blobServices/default/containers/${fileContainerName}/blobs/files/'
 
-resource systemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' existing = {
+resource systemTopic 'Microsoft.EventGrid/systemTopics@2025-02-15' existing = {
   name: systemTopicName
 }
 
-resource eventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2022-06-15' = {
+resource eventSubscription 'Microsoft.EventGrid/systemTopics/eventSubscriptions@2025-02-15' = {
   name: eventSubscriptionName
   parent: systemTopic
   properties: {

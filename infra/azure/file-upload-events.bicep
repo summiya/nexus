@@ -77,12 +77,12 @@ var validatedSystemTopicName = toLower(systemTopicResourceId) == toLower(expecte
   ? systemTopicName
   : fail('The explicit Event Grid system-topic resource ID is inconsistent.')
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2026-04-01' existing = {
   name: storageAccountName
   scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
 }
 
-resource systemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' existing = {
+resource systemTopic 'Microsoft.EventGrid/systemTopics@2025-02-15' existing = {
   name: validatedSystemTopicName
   scope: resourceGroup(systemTopicSubscriptionId, systemTopicResourceGroupName)
 }

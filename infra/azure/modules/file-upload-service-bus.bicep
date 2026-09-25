@@ -46,7 +46,7 @@ var validatedMessagingUnits = messagingUnitsAreCompatible
   ? messagingUnits
   : fail('Messaging Units are incompatible with the Premium partition count.')
 
-resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
+resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2026-01-01' = {
   name: namespaceName
   location: location
   sku: {
@@ -62,7 +62,7 @@ resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' = {
   }
 }
 
-resource networkRules 'Microsoft.ServiceBus/namespaces/networkRuleSets@2024-01-01' = {
+resource networkRules 'Microsoft.ServiceBus/namespaces/networkRuleSets@2026-01-01' = {
   name: 'default'
   parent: serviceBusNamespace
   properties: {
@@ -74,7 +74,7 @@ resource networkRules 'Microsoft.ServiceBus/namespaces/networkRuleSets@2024-01-0
   }
 }
 
-resource queue 'Microsoft.ServiceBus/namespaces/queues@2024-01-01' = {
+resource queue 'Microsoft.ServiceBus/namespaces/queues@2026-01-01' = {
   name: queueName
   parent: serviceBusNamespace
   properties: {

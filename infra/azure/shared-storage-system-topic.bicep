@@ -12,7 +12,7 @@ param storageAccountResourceId string
 @description('Optional ownership and environment tags applied to shared source infrastructure.')
 param tags object = {}
 
-resource systemTopic 'Microsoft.EventGrid/systemTopics@2022-06-15' = {
+resource systemTopic 'Microsoft.EventGrid/systemTopics@2025-02-15' = {
   name: systemTopicName
   location: location
   tags: tags
