@@ -369,7 +369,9 @@ Filename handling is intentionally metadata-focused rather than filesystem or
 cloud-path policy:
 
 - surrounding whitespace is removed;
-- blank names, `/`, `\`, and Unicode `Cc` control characters are rejected;
+- blank names, `/`, `\`, Unicode `Cc` control characters, and the explicit
+  bidirectional controls `LRE`, `RLE`, `LRO`, `RLO`, `PDF`, `LRI`, `RLI`,
+  `FSI`, and `PDI` are rejected without rejecting all Unicode `Cf` characters;
 - names are bounded by the File domain's 255-character limit;
 - Unicode, internal spaces, ordinary extensions, multiple dots, and leading
   dots remain valid.
