@@ -12,7 +12,7 @@ from nexus.files.application import (
 )
 from nexus.files.domain import MAX_MIME_TYPE_LENGTH, MAX_ORIGINAL_NAME_LENGTH
 
-MAX_SIZE_BYTES = 52_428_800
+MAX_SIZE_BYTES = 536_870_912
 STORAGE_KEY_PATTERN = re.compile(r"^files/[0-9a-f]{32}$", re.ASCII)
 
 

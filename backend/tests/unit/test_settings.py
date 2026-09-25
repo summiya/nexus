@@ -113,7 +113,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.conversation_history_limit == 50
     assert settings.conversation_history_max_chars == 120_000
     assert settings.conversation_message_max_length == 32_000
-    assert settings.file_upload_max_size_bytes == 52_428_800
+    assert settings.file_upload_max_size_bytes == 536_870_912
     assert settings.file_upload_grant_ttl_seconds == 600
     assert settings.storage_provider == "azure_blob"
     assert settings.azure_storage_container is None
