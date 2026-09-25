@@ -174,6 +174,12 @@ Operations documented as idempotent MUST remain idempotent.
 
 Partial failures MUST NOT leave persistent state in an invalid state where the architecture requires atomicity or transactional consistency.
 
+### INV-REL-004 — File Upload Completion Identity
+
+A File upload completion may be treated as an idempotent duplicate only when `file_public_id` and `storage_key` identify the same File and immutable ownership is consistent.
+
+A partial identity match, divergent identity match, ownership mismatch, or unique-constraint violation alone MUST NOT be treated as successful prior processing.
+
 ---
 
 # 8. Engineering Invariants

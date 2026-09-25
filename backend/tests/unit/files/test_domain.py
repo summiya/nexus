@@ -6,7 +6,11 @@ from uuid import uuid4
 
 import pytest
 
-from nexus.files.domain import File, FileStorageStatus
+from nexus.files.domain import (
+    File,
+    FileStorageStatus,
+    is_canonical_file_storage_key,
+)
 
 TIMESTAMP = datetime(2026, 9, 24, tzinfo=UTC)
 
@@ -109,3 +113,35 @@ def test_file_accepts_valid_optional_checksum() -> None:
 def test_file_requires_timezone_aware_timestamps(field_name: str) -> None:
     with pytest.raises(ValueError, match=f"{field_name} must be timezone-aware"):
         _file(**{field_name: TIMESTAMP.replace(tzinfo=None)})
+
+
+@pytest.mark.parametrize(
+    "storage_key",
+    [
+        "files/0123456789abcdef0123456789abcdef",
+        "files/ffffffffffffffffffffffffffffffff",
+    ],
+)
+def test_canonical_file_storage_key_accepts_current_syntax(
+    storage_key: str,
+) -> None:
+    assert is_canonical_file_storage_key(storage_key)
+
+
+@pytest.mark.parametrize(
+    "storage_key",
+    [
+        "files/0123456789abcdef0123456789abcde",
+        "files/0123456789abcdef0123456789abcdef0",
+        "files/0123456789ABCDEF0123456789ABCDEF",
+        "files/0123456789abcdef0123456789abcdef\n",
+        "orgs/0123456789abcdef0123456789abcdef/files/key",
+        "files/not-hexadecimal",
+        "",
+        None,
+    ],
+)
+def test_canonical_file_storage_key_rejects_noncanonical_values(
+    storage_key: object,
+) -> None:
+    assert not is_canonical_file_storage_key(storage_key)

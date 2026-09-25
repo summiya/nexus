@@ -24,7 +24,9 @@ through a provider-neutral HTTP contract. File bytes still bypass Nexus. Phase
 10 adds the protected Files screen and transfers one selected browser File
 directly to Azure Blob Storage. A future BlobCreated worker, not upload
 initiation, will create the pending File after accepting the committed Blob and
-its protected Nexus context.
+its protected Nexus context. Phase 11 defines the provider-neutral upload
+completion event and a strict, SDK-free Azure BlobCreated CloudEvent mapper. It
+does not wire event delivery or a worker into the application.
 
 ## Boundary
 
@@ -74,6 +76,13 @@ BlobCreated worker
         └── FilePersistence.create_file()
                 ↓
         AsyncSession / PostgreSQL
+
+Phase 11 event boundary (not composed until the worker phase)
+        Azure BlobCreated CloudEvent
+                ↓
+        AzureBlobCreatedEventMapper
+                ↓
+        UploadCompletionEvent
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -741,10 +750,101 @@ using lowercase hexadecimal plus `/`. Nexus performs no database or storage
 existence preflight and no deduplication. The database uniqueness constraint
 and create-only object storage semantics remain the final collision defenses.
 
+Generation uses UUID4 randomness, but canonical syntax validation deliberately
+checks only `files/<32 lowercase hexadecimal characters>`. Consumers do not
+parse the suffix or infer UUID version semantics. Storage-key structure is
+object identity, not tenant authorization.
+
 Validation failures use one application error contract with fixed,
 non-sensitive messages. Invalid filenames, MIME values, and sizes are never
 echoed into an error. Transport-specific error mapping belongs to the later
 File API phase.
+
+## Upload completion event boundary
+
+`UploadCompletionEvent` is the provider-neutral boundary between a trusted
+storage-provider delivery and future File processing. It contains exactly:
+
+```text
+event_id
+source
+storage_key
+occurred_at
+entity_tag
+reported_size_bytes
+```
+
+Delivery identity is `(source, event_id)`. `source` is a stable Nexus namespace
+such as `azure-primary` or `reconciliation`, not an Azure resource identifier
+that application code interprets. `entity_tag` is an opaque object-version
+identity. `reported_size_bytes` is provider-reported information and is never a
+substitute for later measurement of the current object.
+
+`occurred_at` is diagnostic, audit, and secondary consistency information. It
+is not a primary authorization control. The provider enforces SAS validity when
+the object commit occurs, and delayed event delivery must not be confused with
+a post-expiration commit.
+
+The pure `AzureBlobCreatedEventMapper` accepts an already-decoded CloudEvents
+1.0 mapping. It validates the exact configured Azure event source and container,
+`Microsoft.Storage.BlobCreated`, Block Blob type, supported `PutBlob` or
+`PutBlockList` APIs, bounded identifiers, aware occurrence time, nonnegative
+reported size, and the canonical `files/<32 lowercase hex>` namespace. It
+derives the storage key only from the validated CloudEvent subject. It never
+uses `data.url` as object identity or as network input. JSON property order has
+no meaning.
+
+The mapper performs no network, database, queue, or Azure SDK operation. It is
+not wired into application composition in Phase 11; the worker phase will own
+delivery integration and composition.
+
+Event delivery is assumed to be at least once and unordered. Redelivery,
+worker restart, and concurrent workers are normal. Correctness cannot depend on
+one worker, process memory, arrival order, exactly-once delivery, or Service Bus
+duplicate detection.
+
+For Azure Event Grid, a future producer uses its configured Nexus source and
+the provider CloudEvent ID. A reconciliation producer should derive a stable,
+deterministic ID from a versioned canonical representation of `storage_key` and
+`entity_tag`. Replaying the same original DLQ message preserves its original
+source and event ID; reconstructing an event from storage is a new
+reconciliation source. The same object version may therefore have different
+delivery identities across sources. Only business identity deduplicates across
+those sources.
+
+After a future worker authenticates the protected `UploadContext`, it must
+classify File business identity using both `file_public_id` and `storage_key`
+plus immutable ownership:
+
+| Existing identity state | Required outcome |
+|---|---|
+| Neither identity exists | New File candidate |
+| Both identify the same File and ownership is consistent | Idempotent duplicate success |
+| Only `file_public_id` exists | Anomaly: reject and alert |
+| Only `storage_key` exists | Anomaly: reject and alert |
+| The identities identify different Files | Severe anomaly: reject and alert |
+| Both identify the same File but ownership differs | Security/data anomaly: reject and alert |
+
+Ownership comparison includes at least `organization_public_id` and
+`created_by_user_public_id`. No existing File may be overwritten, reassigned,
+or adopted to resolve an anomaly. A unique-constraint violation alone is never
+proof of a duplicate. After such a race, the failed transaction must be rolled
+back, a fresh transaction started, and both identities plus ownership re-read
+before classification.
+
+The UploadContext protection key is the cryptographic trust anchor for tenant
+and creator ownership claims carried in protected object metadata. If the key
+is compromised, an attacker who can also create a Nexus-controlled storage
+object could forge otherwise-authentic UploadContext ownership claims.
+
+That trust anchor does not replace the additional future controls: trusted
+event source and container validation, `event.storage_key ==
+UploadContext.storage_key`, organization and user database revalidation,
+current-object/ETag verification, and actual object verification. Production
+readiness also requires Key Vault or equivalent secret injection, key-ID-based
+rotation with old-key decryption overlap, handling for objects created under
+retiring keys, and a documented compromise response. Phase 11 adds none of
+that key-management infrastructure.
 
 ## Future upload and verification lifecycle
 
@@ -782,10 +882,9 @@ container and event type, fetch Blob properties, unprotect the context, compare
 the actual Blob key with `context.storage_key`, and re-check organization/user
 validity. Verification must measure actual object size, enforce the configured
 maximum, and compare it with the protected declaration. `File.size_bytes`
-remains `None` while pending and records only the verified final size. Duplicate
-events will use `file_public_id` and `storage_key` plus existing uniqueness as
-stable idempotency identities; exact worker/DLQ/reconciliation behavior remains
-future work.
+remains `None` while pending and records only the verified final size. Business
+deduplication follows the complete identity and ownership classification above;
+delivery deduplication alone cannot establish successful prior processing.
 
 Abandoned initiation needs no PostgreSQL cleanup. A partial uncommitted upload
 has no File row. A committed Blob whose event cannot be processed is a future
