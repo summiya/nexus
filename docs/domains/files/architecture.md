@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 6 provider-neutral upload-grant contract
+**Status:** Implemented Phase 7 Azure User Delegation upload-grant adapter
 
 ## Purpose
 
@@ -14,7 +14,9 @@ Phase 5 adds a pure application policy for validating untrusted upload metadata
 and generating opaque Nexus storage keys. It performs no persistence, storage,
 or network I/O. Phase 6 adds the provider-neutral boundary for issuing a
 short-lived, exact-object browser upload capability. It does not implement a
-provider signer or compose that capability into the application.
+provider signer or compose that capability into the application. Phase 7 adds
+the Azure User Delegation SAS implementation of that boundary without changing
+application composition or exposing Azure types outside infrastructure.
 
 ## Boundary
 
@@ -38,7 +40,9 @@ Future File upload application service
         │
         └── UploadGrantIssuer
                 ↑
-        Future provider-specific issuer
+        AzureUserDelegationUploadGrantIssuer
+                ↓
+        Borrowed async BlobServiceClient
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -47,6 +51,8 @@ remain infrastructure details. `UploadIntentPolicy` is an application policy,
 but it is provider-neutral and has no dependency on persistence or storage
 ports. `UploadGrantIssuer` is a separate application-facing capability from
 `ObjectStorage`; Phase 6 adds only its provider-neutral contract.
+`AzureUserDelegationUploadGrantIssuer` implements that contract inside
+infrastructure and borrows the application-owned Azure service client.
 
 ## File semantics
 
@@ -312,30 +318,96 @@ create, read, and delete operations. `Storage Blob Data Contributor` is the
 normal built-in role; assign it at the configured container scope where
 practical. Nexus does not provision RBAC at runtime.
 
-Future User Delegation SAS work is separate. It will additionally require the
+Azure User Delegation SAS issuance additionally requires the
 `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`
 permission at storage-account scope or higher, for example through the
 `Storage Blob Delegator` role. Phase 4 neither grants that permission nor
-implements upload grants.
+provisions any role. The Phase 7 adapter assumes deployment has assigned it.
 
-## Future Azure User Delegation implementation
+## Azure User Delegation upload-grant adapter
 
-Phase 7 will implement `UploadGrantIssuer` with Azure User Delegation SAS. The
-Azure issuer should borrow the same application-owned `BlobServiceClient` that
-Phase 4 composition already creates. It must neither construct nor close a
-second service client or credential. Phase 7 owns:
+`AzureUserDelegationUploadGrantIssuer` implements `UploadGrantIssuer` with
+Azure User Delegation SAS. It borrows the application-owned
+`BlobServiceClient` and neither constructs nor closes a second service client
+or credential. The adapter is responsible for:
 
 - acquiring a User Delegation Key through the service client;
 - generating a SAS scoped to the one exact Blob identified by `storage_key`;
-- selecting the least privileges that preserve create-only behavior;
+- granting only the permission needed for create-only behavior;
 - returning the complete signed Blob URL and required
   `x-ms-blob-type: BlockBlob` header;
 - provider clock-skew handling and Azure exception translation.
 
-When concrete issuer wiring is added in Phase 7 or Phase 8, it can be built
-beside `AzureBlobObjectStorage` from the same composition-owned resources.
-Resource shutdown must remain owned by `StorageComposition`. Phase 6 does not
-change `StorageComposition` or `AppContainer` and owns no provider resource.
+The configured account and container are explicit inputs. The opaque
+`storage_key` is passed unchanged to `BlobServiceClient.get_blob_client()`, and
+the adapter uses the returned `BlobClient.url` rather than constructing a Blob
+URL manually. Concrete issuer wiring remains a later composition concern; it
+can be built beside `AzureBlobObjectStorage` from the same composition-owned
+resources. Resource shutdown remains owned by `StorageComposition`. The
+adapter owns no provider resource.
+
+The issuer requests a delegation key whose start time includes a small
+backward clock-skew allowance and whose preferred lifetime is approximately
+one hour. It keeps one process-local cached key behind an `asyncio.Lock`, using
+double-checked refresh so concurrent requests do not request duplicate keys.
+A cached key is preferred for reuse only when it covers the requested grant
+expiration plus the approximately five-minute refresh margin.
+
+The cache margin is an optimization, not a provider validity requirement. A
+grant is rejected for lifetime only when its requested expiration cannot fit
+within Azure's maximum delegation-key interval of seven days from the requested
+key start. The requested key expiration is capped approximately as follows:
+
+```text
+preferred key expiration
+    max(now + target key lifetime, grant expiration + refresh margin)
+
+requested key expiration
+    min(preferred key expiration, maximum Azure key expiration)
+```
+
+A freshly returned key may issue the current grant when it covers the exact
+requested grant expiration even if it lacks the preferred future refresh
+margin. Such a key is simply not ideal for later cache reuse.
+
+Azure's returned `UserDelegationKey.signed_start` and `signed_expiry` values,
+not the requested key interval, are authoritative. Both values must be present,
+parse as timezone-aware timestamps, and satisfy:
+
+```text
+signed_start <= current injected clock time
+signed_expiry > signed_start
+signed_expiry >= requested UploadGrant expiration
+```
+
+Missing, malformed, timezone-naive, or unusable returned lifetime data causes
+the safe provider-neutral `UploadGrantError`. A generated SAS is never allowed
+to expire after the authoritative `signed_expiry`; under normal conditions its
+`UploadGrant.expires_at` remains the exact application-requested expiration.
+
+The Blob SAS is scoped to one exact Blob, uses `protocol="https"`, omits a SAS
+start time, and grants `BlobSasPermissions(create=True)` only. It does not grant
+write, read, delete, add, tag, list, container, or prefix-wide access. The
+resulting browser instructions are exactly:
+
+```text
+method:  PUT
+header:  x-ms-blob-type: BlockBlob
+target:  exact signed Blob URL
+```
+
+This contract intentionally assumes one direct HTTP `PUT` using Azure `Put
+Blob`. Nexus's current 50 MiB upload maximum is appropriate for that single
+request design. If a future browser uploader uses staged or chunked Azure
+operations such as `Put Block` and `Put Block List`, the least-privilege
+create-only permissions and Azure service-version behavior must be explicitly
+revalidated. Nexus must not grant `write` now merely to anticipate that future
+algorithm.
+
+The SAS URL and delegation key are bearer credentials. They must not be logged,
+persisted, or emitted to telemetry. Azure acquisition and signing failures are
+translated to a fixed safe `UploadGrantError`; task cancellation remains
+cancellation.
 
 The current local Azurite path uses HTTP plus a Shared Key connection string.
 That path cannot exercise the production security chain:
@@ -348,10 +420,10 @@ Get User Delegation Key
 User Delegation SAS
 ```
 
-Phase 7 must therefore validate the Azure implementation with focused unit
-tests and may add integration coverage against either a real Azure Storage
-account or a separately verified, dedicated Azurite configuration using OAuth
-and HTTPS that supports the required delegation behavior. Existing
+Phase 7 validates the Azure implementation with focused unit tests. Controlled
+deployment validation may add integration coverage against either a real Azure
+Storage account or a separately verified, dedicated Azurite configuration
+using OAuth and HTTPS that supports the required delegation behavior. Existing
 connection-string Azurite tests must not be presented as proof of the Managed
 Identity and User Delegation path. Nexus must never add a production Shared
 Key, account-key SAS, or service SAS fallback to make local testing easier.
@@ -508,7 +580,7 @@ Phase 6
     provider-neutral upload-grant contract (implemented)
 
 Phase 7
-    Azure User Delegation upload-grant adapter (future)
+    Azure User Delegation upload-grant adapter (implemented)
 
 Phase 8
     authorized upload initiation and trusted upload state (future)
@@ -519,7 +591,7 @@ Phase 8
 Later phases own:
 
 - authorization, File(PENDING) creation, and upload application orchestration;
-- Azure User Delegation upload-grant implementation and provider wiring;
+- Azure upload-grant composition wiring;
 - trusted upload-initiation state, including declared-size persistence where
   required for later verification;
 - actual size, type, checksum, and security verification;
