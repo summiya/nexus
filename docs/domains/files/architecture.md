@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 9 upload-initiation API and composition
+**Status:** Implemented Phase 10 direct browser upload
 
 ## Purpose
 
@@ -21,7 +21,9 @@ adds runtime RBAC enforcement, application orchestration, and atomic persistence
 of a pending File plus its trusted upload-attempt metadata. Phase 9 composes the
 File use case and Azure grant issuer, then exposes authenticated upload
 initiation through a provider-neutral HTTP contract. File bytes still bypass
-Nexus and upload directly to object storage in a later frontend phase.
+Nexus. Phase 10 adds the protected Files screen and transfers one selected
+browser File directly to Azure Blob Storage while preserving the pending File
+lifecycle.
 
 ## Boundary
 
@@ -54,6 +56,17 @@ ObjectStorage
 AzureBlobObjectStorage
         ↓
 Async Azure ContainerClient
+
+Browser direct upload
+        ├── initiateFileUpload()
+        │       ↓ authenticated Nexus request
+        │   POST /api/v1/files/uploads
+        │
+        └── Azure browser upload transport
+                ↓ SAS only
+            BlockBlobClient.uploadData(File)
+                ↓
+            Azure Blob Storage
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -409,13 +422,25 @@ header:  x-ms-blob-type: BlockBlob
 target:  exact signed Blob URL
 ```
 
-This contract intentionally assumes one direct HTTP `PUT` using Azure `Put
-Blob`. Nexus's current 512 MiB upload maximum is appropriate for that single
-request design. If a future browser uploader uses staged or chunked Azure
-operations such as `Put Block` and `Put Block List`, the least-privilege
-create-only permissions and Azure service-version behavior must be explicitly
-revalidated. Nexus must not grant `write` now merely to anticipate that future
-algorithm.
+Phase 10 uses `@azure/storage-blob` `BlockBlobClient.uploadData(File)`. Files at
+or below the configured single-shot threshold use `Put Blob`; larger Files use
+SDK-managed `Put Block` requests followed by `Put Block List`. The adapter does
+not manually generate block IDs, buffer the entire File, or implement its own
+request scheduler.
+
+Create-only `c` permission supports the new-Blob `Put Block` and `Put Block
+List` flow only with Azure Storage service version `2026-04-06` or later.
+Compatibility is enforced on both sides of the direct transfer:
+
+```text
+backend-generated SAS:  sv >= 2026-04-06
+browser SDK requests:   x-ms-version >= 2026-04-06
+```
+
+The backend continues to grant create only. It does not grant write, read,
+delete, or list access. Focused no-network contract tests exercise the real
+Python SAS signer and real browser SDK version header so dependency changes
+cannot silently weaken this requirement.
 
 The SAS URL and delegation key are bearer credentials. They must not be logged,
 persisted, or emitted to telemetry. Azure acquisition and signing failures are
@@ -559,6 +584,109 @@ the binary body. Direct browser upload also requires Azure Storage CORS for the
 frontend origin, `PUT`, and the required provider headers; FastAPI CORS does not
 configure that provider boundary, and Nexus runtime does not provision it.
 
+## Direct browser upload
+
+Phase 10 exposes the protected `/files` route and uploads one browser `File` at
+a time:
+
+```text
+select File
+        ↓
+client UX check: declared size <= 536,870,912 bytes
+        ↓
+authenticated POST /api/v1/files/uploads
+        ↓
+pending File + ephemeral upload instructions
+        ↓
+BlockBlobClient(signed URL).uploadData(File)
+        ↓
+Put Blob OR Put Block × N + Put Block List
+        ↓
+transfer complete; File remains PENDING
+```
+
+The browser uses an 8 MiB block size, concurrency of four, and a 64 MiB
+single-shot threshold. The original `File` is handed directly to the Azure SDK;
+Nexus does not call `arrayBuffer()`, encode it as base64, or otherwise hold a
+second whole-file representation in memory. SDK chunking is a transfer
+strategy, not resumability: a page reload or explicit retry starts a new Nexus
+upload initiation.
+
+The current upload grant is accepted only when its method is exactly `PUT` and
+its only upload-control instruction is `x-ms-blob-type: BlockBlob` (header-name
+matching follows HTTP case-insensitivity). The Azure SDK owns the headers for
+`Put Blob`, `Put Block`, and `Put Block List`; provider instructions are not
+blindly attached to every block request. New required upload-control headers
+must be deliberately implemented rather than silently ignored.
+
+The upload grant is an ephemeral bearer capability. It moves directly from the
+validated initiation response to the Azure transport and is never placed in
+React Query, Zustand, browser storage, route state, telemetry, error text, or
+the UI. The Nexus Bearer token is used only for the Nexus control-plane request;
+Azure receives only the SAS URL. Raw Azure errors are replaced with fixed safe
+frontend feedback.
+
+One active transfer owns one `AbortController`. Cancellation and component
+unmount abort the request and suppress stale UI callbacks, but they do not
+delete the pending File or promise immediate removal of uncommitted blocks.
+There is no automatic retry system, resumability, multi-file queue, or global
+upload store in this phase.
+
+Successful browser transfer means only:
+
+```text
+browser transfer complete
+        ↓
+File remains PENDING and awaits verification
+```
+
+It never means that the File is verified, safe, or available.
+
+### Azure Blob CORS deployment requirement
+
+Blob-service CORS is deployment configuration and is not provisioned by Nexus
+runtime. Each environment must allow the exact authorized frontend origin and
+`PUT`. Production must not use a wildcard origin. Allowed request headers must
+cover `content-type` and the Azure SDK's required `x-ms-*` headers, including
+`x-ms-version`, `x-ms-client-request-id`, `x-ms-blob-type`, and
+`x-ms-blob-content-type`. Exposed response headers should be limited to those
+operationally required, such as `etag`, `x-ms-request-id`, `x-ms-version`, and
+`x-ms-client-request-id`, with a sensible preflight cache duration.
+
+The local Shared Key and HTTP Azurite path does not prove the production Managed
+Identity, User Delegation SAS, HTTPS, or exact-origin CORS path. Release
+validation must use a controlled Azure environment to exercise both a small
+single-shot upload and a File larger than 64 MiB, reject an unauthorized
+origin, confirm that no Nexus Authorization header reaches Azure, and confirm
+that the resulting File remains pending.
+
+### Production-hardening release gate
+
+Phase 10 completes direct browser transfer capability, but the complete File
+upload feature is not yet hardened for unrestricted or public production
+traffic. Frontend size validation and server-side declared-size validation are
+not authoritative security controls. Later phases must add:
+
+- actual stored-object size verification;
+- enforcement that actual size is at most 536,870,912 bytes;
+- content and MIME verification;
+- security and malware checks where applicable;
+- cleanup of oversized or otherwise invalid stored objects;
+- abandoned-pending cleanup;
+- upload-initiation abuse protection, rate limiting, or equivalent quota
+  controls.
+
+Those controls are intentionally not implemented in Phase 10. The release
+invariant remains:
+
+```text
+browser transfer complete  -> File PENDING
+verification complete      -> File AVAILABLE
+```
+
+Only verified `AVAILABLE` Files may enter later Document processing or RAG
+ingestion.
+
 ## Upload-intent policy
 
 `UploadIntentPolicy` is the Phase 5 pure application boundary for preparing an
@@ -614,7 +742,8 @@ File API phase.
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. Phase 8
 composes them into authorized upload initiation without changing either
-boundary; the client upload and verification steps remain future work:
+boundary. Phase 10 implements the direct client transfer; verification remains
+future work:
 
 ```text
 authenticate and authorize upload
@@ -720,6 +849,9 @@ Phase 8
 
 Phase 9
     upload-initiation HTTP API, configuration, and composition (implemented)
+
+Phase 10
+    direct browser upload, progress, cancellation, and Files route (implemented)
 ```
 
 ## Deferred work
@@ -728,8 +860,11 @@ Later phases own:
 
 - actual size, type, checksum, and security verification;
 - File lifecycle transitions after storage verification;
+- oversized, invalid-object, and abandoned-pending cleanup;
+- upload-initiation abuse protection, rate limiting, or quota enforcement;
 - upload and management APIs;
 - list, download, and delete use cases and APIs;
 - retention and object cleanup;
 - Document processing, chunks, embeddings, and RAG;
-- frontend File workflows.
+- richer frontend File workflows such as listing, multi-file upload,
+  drag-and-drop, and resumability.

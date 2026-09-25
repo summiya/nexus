@@ -531,6 +531,105 @@ p {
   color: #fca5a5;
 }
 
+.file-upload-card {
+  display: grid;
+  gap: 1.5rem;
+  width: min(42rem, 100%);
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 1rem;
+  background: rgba(8, 14, 23, 0.58);
+}
+.file-upload-copy,
+.file-upload-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.file-upload-copy h1 {
+  font-size: clamp(1.7rem, 4vw, 2.4rem);
+}
+.file-upload-form {
+  gap: 1rem;
+}
+.file-upload-form input[type="file"] {
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px dashed rgba(125, 211, 252, 0.45);
+  border-radius: 0.7rem;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+}
+.file-upload-limit {
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+.selected-file-summary {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.65);
+}
+.selected-file-summary div {
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.selected-file-summary dt {
+  color: #7dd3fc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.selected-file-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.file-upload-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem 0.75rem;
+  align-items: center;
+}
+.file-upload-progress label {
+  grid-column: 1 / -1;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.file-upload-progress progress {
+  width: 100%;
+  accent-color: #38bdf8;
+}
+.file-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.file-upload-actions .primary-button {
+  width: auto;
+  min-width: 8rem;
+}
+.file-upload-feedback,
+.file-upload-status {
+  font-size: 0.9rem;
+}
+.file-upload-feedback,
+.file-upload-status-cancelled {
+  color: #fca5a5;
+}
+.file-upload-status-transferred {
+  color: #bae6fd;
+}
+.file-upload-status-initiating,
+.file-upload-status-uploading {
+  color: #cbd5e1;
+}
+
 @media (max-width: 640px) {
   .top-bar {
     align-items: flex-start;
@@ -571,6 +670,13 @@ p {
     flex-direction: column;
   }
   .conversation-send-button {
+    width: 100%;
+  }
+  .file-upload-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .file-upload-actions .primary-button {
     width: 100%;
   }
 }

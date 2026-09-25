@@ -96,6 +96,36 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the Files route inside the authenticated application shell", () => {
+    window.history.replaceState({}, "", "/files");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: "Upload a file" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Maximum file size: 512 MB.")).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("link", { name: "Files" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("keeps the Files route behind the existing authentication gate", async () => {
+    setAuthStatus("unauthenticated");
+    window.history.replaceState({}, "", "/files");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign in" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Upload a file" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the new Conversation shell inside the authenticated layout", async () => {
     window.history.replaceState({}, "", "/conversations");
     vi.mocked(globalThis.fetch).mockResolvedValue(conversationListResponse());
