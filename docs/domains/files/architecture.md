@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 5 upload-intent validation and storage-key policy
+**Status:** Implemented Phase 6 provider-neutral upload-grant contract
 
 ## Purpose
 
@@ -12,7 +12,9 @@ not process Files or expose Files through an API. Phase 4 composes the adapter
 as an application-owned dependency for local Azurite and Azure Managed Identity.
 Phase 5 adds a pure application policy for validating untrusted upload metadata
 and generating opaque Nexus storage keys. It performs no persistence, storage,
-or network I/O.
+or network I/O. Phase 6 adds the provider-neutral boundary for issuing a
+short-lived, exact-object browser upload capability. It does not implement a
+provider signer or compose that capability into the application.
 
 ## Boundary
 
@@ -28,18 +30,23 @@ Future File upload application service
         │       ↓
         │   AsyncSession / PostgreSQL
         │
-        └── ObjectStorage
+        ├── ObjectStorage
+        │       ↑
+        │   AzureBlobObjectStorage
+        │       ↓
+        │   Async Azure ContainerClient
+        │
+        └── UploadGrantIssuer
                 ↑
-        AzureBlobObjectStorage
-                ↓
-        Async Azure ContainerClient
+        Future provider-specific issuer
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
 provider. SQLAlchemy remains inside infrastructure. Binary storage adapters
 remain infrastructure details. `UploadIntentPolicy` is an application policy,
 but it is provider-neutral and has no dependency on persistence or storage
-ports.
+ports. `UploadGrantIssuer` is a separate application-facing capability from
+`ObjectStorage`; Phase 6 adds only its provider-neutral contract.
 
 ## File semantics
 
@@ -156,6 +163,75 @@ PostgreSQL stores File ownership and metadata. Object storage holds binary
 content addressed by the opaque `storage_key`; neither side exposes
 provider-specific location details through the File boundary.
 
+## Upload grant contract
+
+`UploadGrantIssuer` is the provider-neutral boundary for delegating one direct
+browser upload. It is intentionally separate from `ObjectStorage`:
+
+- `ObjectStorage` performs trusted backend binary operations;
+- `UploadGrantIssuer` issues an ephemeral capability to an already-authorized
+  caller.
+
+The issuer receives only an already-generated opaque `storage_key` and an
+application-selected, timezone-aware expiration timestamp. Authorization and
+tenant, user, workspace, or project decisions must occur before it is called.
+The issuer does not receive a filename, MIME type, declared size, container,
+bucket, provider, credential, or client-selected object key.
+
+`UploadGrant` returns the complete instructions a browser will eventually
+execute:
+
+- an opaque upload URL, which may contain provider signing query parameters;
+- the HTTP method;
+- an immutable mapping of required request headers;
+- the actual timezone-aware expiration timestamp.
+
+The application supplies the maximum requested expiration to the issuer. A
+provider adapter may shorten that lifetime for provider clock-skew or signing
+constraints, but the effective `UploadGrant.expires_at` must never be later
+than the application-requested expiration.
+
+The URL, method, and required headers are provider-issued instructions. Nexus
+application code must preserve the signed URL and header names and values
+without parsing provider credentials out of them or reconstructing
+provider-specific behavior in the frontend. The neutral contract does not
+require HTTPS because a local emulator may legitimately use HTTP; deployment
+and provider configuration remain responsible for secure production transport.
+
+Every issuer implementation must preserve the same security semantics:
+
+```text
+one exact canonical storage key
+        +
+create-only upload capability
+        +
+short expiration
+```
+
+A grant must not confer read, list, delete, container, bucket, prefix-wide, or
+intentional overwrite access. Provider-specific adapters are responsible for
+enforcing those semantics atomically. The contract does not promise a signed
+URL is cryptographically single-use and does not introduce a token registry;
+short lifetime, exact-object scope, and create-only behavior are the controls.
+
+The grant URL and any sensitive required headers are temporary bearer
+capabilities. They must not be logged, sent to telemetry, persisted in File
+metadata, or exposed beyond the authorized caller. The provider-neutral port
+does not depend on Pydantic or wrap these values in provider/configuration
+types. Provider failures are translated into the single safe
+`UploadGrantError`; cancellation remains cancellation.
+
+The grant contains the instructions a future browser client needs, but Phase 6
+does not configure Azure Storage, FastAPI, or frontend CORS. A deployment that
+enables direct upload must separately allow its authorized frontend origin,
+the issued method, and the required provider headers.
+
+A future S3 or other provider adapter must return the same four grant fields
+and preserve the same exact-object, create-only semantics. Provider signing
+data and any provider-specific conditional headers remain inside that adapter;
+no bucket, region, signature, or provider name enters the File application
+contract.
+
 ## Azure Blob infrastructure adapter
 
 `AzureBlobObjectStorage` lives under `nexus.infrastructure.storage` and is the
@@ -242,6 +318,44 @@ permission at storage-account scope or higher, for example through the
 `Storage Blob Delegator` role. Phase 4 neither grants that permission nor
 implements upload grants.
 
+## Future Azure User Delegation implementation
+
+Phase 7 will implement `UploadGrantIssuer` with Azure User Delegation SAS. The
+Azure issuer should borrow the same application-owned `BlobServiceClient` that
+Phase 4 composition already creates. It must neither construct nor close a
+second service client or credential. Phase 7 owns:
+
+- acquiring a User Delegation Key through the service client;
+- generating a SAS scoped to the one exact Blob identified by `storage_key`;
+- selecting the least privileges that preserve create-only behavior;
+- returning the complete signed Blob URL and required
+  `x-ms-blob-type: BlockBlob` header;
+- provider clock-skew handling and Azure exception translation.
+
+When concrete issuer wiring is added in Phase 7 or Phase 8, it can be built
+beside `AzureBlobObjectStorage` from the same composition-owned resources.
+Resource shutdown must remain owned by `StorageComposition`. Phase 6 does not
+change `StorageComposition` or `AppContainer` and owns no provider resource.
+
+The current local Azurite path uses HTTP plus a Shared Key connection string.
+That path cannot exercise the production security chain:
+
+```text
+ManagedIdentityCredential
+        ↓
+Get User Delegation Key
+        ↓
+User Delegation SAS
+```
+
+Phase 7 must therefore validate the Azure implementation with focused unit
+tests and may add integration coverage against either a real Azure Storage
+account or a separately verified, dedicated Azurite configuration using OAuth
+and HTTPS that supports the required delegation behavior. Existing
+connection-string Azurite tests must not be presented as proof of the Managed
+Identity and User Delegation path. Nexus must never add a production Shared
+Key, account-key SAS, or service SAS fallback to make local testing easier.
+
 ## Upload-intent policy
 
 `UploadIntentPolicy` is the Phase 5 pure application boundary for preparing an
@@ -255,7 +369,9 @@ Filename handling is intentionally metadata-focused rather than filesystem or
 cloud-path policy:
 
 - surrounding whitespace is removed;
-- blank names, `/`, `\`, and Unicode `Cc` control characters are rejected;
+- blank names, `/`, `\`, Unicode `Cc` control characters, and the explicit
+  bidirectional controls `LRE`, `RLE`, `LRO`, `RLO`, `PDF`, `LRI`, `RLI`,
+  `FSI`, and `PDI` are rejected without rejecting all Unicode `Cf` characters;
 - names are bounded by the File domain's 255-character limit;
 - Unicode, internal spaces, ordinary extensions, multiple dots, and leading
   dots remain valid.
@@ -290,8 +406,9 @@ File API phase.
 
 ## Future upload and verification lifecycle
 
-Phase 5 prepares but does not execute a direct upload. Later phases can compose
-the policy without changing its boundary:
+Phases 5 and 6 define the provider-neutral preparation boundaries but do not
+execute a direct upload. Later phases can compose them without changing either
+boundary:
 
 ```text
 authenticate and authorize upload
@@ -386,6 +503,15 @@ Phase 4
 
 Phase 5
     upload-intent validation and storage-key generation (implemented)
+
+Phase 6
+    provider-neutral upload-grant contract (implemented)
+
+Phase 7
+    Azure User Delegation upload-grant adapter (future)
+
+Phase 8
+    authorized upload initiation and trusted upload state (future)
 ```
 
 ## Deferred work
@@ -393,7 +519,9 @@ Phase 5
 Later phases own:
 
 - authorization, File(PENDING) creation, and upload application orchestration;
-- upload grants and provider-specific direct-upload credentials;
+- Azure User Delegation upload-grant implementation and provider wiring;
+- trusted upload-initiation state, including declared-size persistence where
+  required for later verification;
 - actual size, type, checksum, and security verification;
 - File lifecycle transitions after storage verification;
 - upload and management APIs;

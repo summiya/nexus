@@ -11,6 +11,11 @@ from nexus.files.ports.storage import (
     ObjectStorageError,
     ObjectStorageNotFoundError,
 )
+from nexus.files.ports.upload_grant import (
+    UploadGrant,
+    UploadGrantError,
+    UploadGrantIssuer,
+)
 
 __all__ = [
     "FilePersistence",
@@ -20,4 +25,7 @@ __all__ = [
     "ObjectStorageAlreadyExistsError",
     "ObjectStorageError",
     "ObjectStorageNotFoundError",
+    "UploadGrant",
+    "UploadGrantError",
+    "UploadGrantIssuer",
 ]
