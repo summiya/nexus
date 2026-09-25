@@ -12,6 +12,10 @@ MAX_ORIGINAL_NAME_LENGTH = 255
 MAX_MIME_TYPE_LENGTH = 255
 _MAX_STORAGE_KEY_LENGTH = 1024
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_FILE_STORAGE_KEY_PATTERN = re.compile(
+    r"files/[0-9a-f]{32}",
+    re.ASCII,
+)
 
 
 class FileStorageStatus(StrEnum):
@@ -20,6 +24,14 @@ class FileStorageStatus(StrEnum):
     PENDING = "pending"
     AVAILABLE = "available"
     FAILED = "failed"
+
+
+def is_canonical_file_storage_key(value: object) -> bool:
+    """Return whether a value uses Nexus's canonical File object-key syntax."""
+    return (
+        isinstance(value, str)
+        and _CANONICAL_FILE_STORAGE_KEY_PATTERN.fullmatch(value) is not None
+    )
 
 
 def _require_nonblank_bounded(value: str, field_name: str, maximum: int) -> None:

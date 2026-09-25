@@ -5,6 +5,7 @@ from nexus.files.domain.file import (
     MAX_ORIGINAL_NAME_LENGTH,
     File,
     FileStorageStatus,
+    is_canonical_file_storage_key,
 )
 from nexus.files.domain.upload_context import (
     UPLOAD_CONTEXT_VERSION,
@@ -18,4 +19,5 @@ __all__ = [
     "File",
     "FileStorageStatus",
     "UploadContext",
+    "is_canonical_file_storage_key",
 ]
