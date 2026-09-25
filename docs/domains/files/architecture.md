@@ -794,6 +794,10 @@ derives the storage key only from the validated CloudEvent subject. It never
 uses `data.url` as object identity or as network input. JSON property order has
 no meaning.
 
+The Azure CloudEvent source comparison is exact. Azure resource IDs are
+case-insensitive, so Phase 12 must take `expected_source` from a captured real
+event or deliberately switch the comparison to case-insensitive semantics.
+
 The mapper performs no network, database, queue, or Azure SDK operation. It is
 not wired into application composition in Phase 11; the worker phase will own
 delivery integration and composition.

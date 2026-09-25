@@ -1,3 +1,5 @@
+"""Tests use sanitized documentation-derived, not production-captured, fixtures."""
+
 from __future__ import annotations
 
 import ast
@@ -12,6 +14,7 @@ import pytest
 from nexus.infrastructure.storage import (
     AzureBlobCreatedEventMapper,
     AzureBlobCreatedEventMappingError,
+    azure_blob_created,
 )
 
 TESTS_ROOT = Path(__file__).resolve().parents[3]
@@ -164,8 +167,12 @@ def test_rejects_invalid_cloud_event_fields(field: str, value: object) -> None:
     [
         ("api", "PutBlock"),
         ("api", "DeleteBlob"),
+        ("api", []),
+        ("api", {}),
         ("blobType", "AppendBlob"),
         ("blobType", "PageBlob"),
+        ("blobType", []),
+        ("blobType", {}),
         ("eTag", ""),
         ("eTag", "a" * 1025),
         ("contentLength", -1),
@@ -208,6 +215,23 @@ def test_mapping_error_does_not_expose_payload_value() -> None:
 
     assert str(caught.value) == SAFE_ERROR
     assert sensitive_value not in str(caught.value)
+
+
+@pytest.mark.parametrize("domain_error", [TypeError("unsafe"), ValueError("unsafe")])
+def test_domain_construction_errors_use_single_safe_mapper_error(
+    monkeypatch: pytest.MonkeyPatch,
+    domain_error: Exception,
+) -> None:
+    def reject_event(**_values: object) -> None:
+        raise domain_error
+
+    monkeypatch.setattr(azure_blob_created, "UploadCompletionEvent", reject_event)
+
+    with pytest.raises(AzureBlobCreatedEventMappingError) as caught:
+        _mapper().map_event(_event())
+
+    assert str(caught.value) == SAFE_ERROR
+    assert caught.value.__cause__ is None
 
 
 def test_mapper_contains_no_azure_sdk_or_duplicate_key_regex() -> None:

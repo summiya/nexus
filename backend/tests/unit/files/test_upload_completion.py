@@ -51,6 +51,30 @@ def test_upload_completion_event_is_immutable_and_hides_values_from_repr() -> No
     assert "0x8D123" not in representation
 
 
+def test_upload_completion_event_accepts_canonical_storage_key() -> None:
+    storage_key = "files/0123456789abcdef0123456789abcdef"
+
+    assert _event(storage_key=storage_key).storage_key == storage_key
+
+
+@pytest.mark.parametrize(
+    "storage_key",
+    [
+        "files/0123456789abcdef0123456789abcde",
+        "files/0123456789abcdef0123456789abcdef0",
+        "files/0123456789ABCDEF0123456789ABCDEF",
+        "files/0123456789abcdef0123456789abcdef\n",
+        "uploads/0123456789abcdef0123456789abcdef",
+        "arbitrary/path",
+    ],
+)
+def test_upload_completion_event_rejects_noncanonical_storage_key(
+    storage_key: str,
+) -> None:
+    with pytest.raises(ValueError, match="^storage_key is invalid$"):
+        _event(storage_key=storage_key)
+
+
 @pytest.mark.parametrize(
     ("field_name", "value", "error_type"),
     [

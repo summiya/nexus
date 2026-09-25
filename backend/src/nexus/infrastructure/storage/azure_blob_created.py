@@ -56,9 +56,11 @@ class AzureBlobCreatedEventMapper:
         occurred_at = _parse_timestamp(event.get("time"))
         data = _require_mapping(event.get("data"))
 
-        if data.get("api") not in _SUPPORTED_APIS:
+        api = data.get("api")
+        if not isinstance(api, str) or api not in _SUPPORTED_APIS:
             raise AzureBlobCreatedEventMappingError(_INVALID_EVENT_MESSAGE)
-        if data.get("blobType") != "BlockBlob":
+        blob_type = data.get("blobType")
+        if not isinstance(blob_type, str) or blob_type != "BlockBlob":
             raise AzureBlobCreatedEventMappingError(_INVALID_EVENT_MESSAGE)
 
         entity_tag = _require_text(data.get("eTag"), _MAX_ENTITY_TAG_LENGTH)
@@ -72,14 +74,17 @@ class AzureBlobCreatedEventMapper:
             raise AzureBlobCreatedEventMappingError(_INVALID_EVENT_MESSAGE)
 
         storage_key = self._storage_key_from_subject(subject)
-        return UploadCompletionEvent(
-            event_id=event_id,
-            source=self.nexus_source,
-            storage_key=storage_key,
-            occurred_at=occurred_at,
-            entity_tag=entity_tag,
-            reported_size_bytes=reported_size_bytes,
-        )
+        try:
+            return UploadCompletionEvent(
+                event_id=event_id,
+                source=self.nexus_source,
+                storage_key=storage_key,
+                occurred_at=occurred_at,
+                entity_tag=entity_tag,
+                reported_size_bytes=reported_size_bytes,
+            )
+        except (TypeError, ValueError):
+            raise AzureBlobCreatedEventMappingError(_INVALID_EVENT_MESSAGE) from None
 
     def _storage_key_from_subject(self, subject: str) -> str:
         prefix = f"/blobServices/default/containers/{self.expected_container}/blobs/"

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from nexus.files.domain import is_canonical_file_storage_key
+
 _MAX_EVENT_ID_LENGTH = 1024
 _MAX_SOURCE_LENGTH = 1024
 _MAX_STORAGE_KEY_LENGTH = 1024
@@ -45,6 +47,8 @@ class UploadCompletionEvent:
             "storage_key",
             _MAX_STORAGE_KEY_LENGTH,
         )
+        if not is_canonical_file_storage_key(self.storage_key):
+            raise ValueError("storage_key is invalid")
         _require_nonblank_bounded(
             self.entity_tag,
             "entity_tag",
