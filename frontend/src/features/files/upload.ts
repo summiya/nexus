@@ -1,4 +1,4 @@
-import type { UploadGrant } from "./types";
+import { MAX_UPLOAD_CONTEXT_LENGTH, type UploadGrant } from "./types";
 
 export const FILE_UPLOAD_BLOCK_SIZE_BYTES = 8 * 1024 * 1024;
 export const FILE_UPLOAD_CONCURRENCY = 4;
@@ -25,7 +25,8 @@ function grantIsSupported(grant: UploadGrant): boolean {
     headers[0][1] === "BlockBlob" &&
     metadata.length === 1 &&
     metadata[0][0] === requiredContextMetadataKey &&
-    metadata[0][1].trim().length > 0
+    metadata[0][1].trim().length > 0 &&
+    metadata[0][1].length <= MAX_UPLOAD_CONTEXT_LENGTH
   );
 }
 

@@ -1,4 +1,5 @@
 export const MAX_FILE_SIZE_BYTES = 512 * 1024 * 1024;
+export const MAX_UPLOAD_CONTEXT_LENGTH = 4096;
 
 export interface UploadGrant {
   url: string;

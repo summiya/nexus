@@ -14,6 +14,9 @@ from nexus.main import create_app
 
 settings_module = importlib.import_module("nexus.config.settings")
 
+DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
+PRODUCTION_FILE_UPLOAD_CONTEXT_KEY = "ZW52LWZpbGUtdXBsb2FkLWNvbnRleHQta2V5LTAwMDE"
+
 SETTINGS_ENV_KEYS = [
     "APP_NAME",
     "APP_ENV",
@@ -76,7 +79,7 @@ def set_required_settings_env(monkeypatch) -> None:
     )
     monkeypatch.setenv(
         "FILE_UPLOAD_CONTEXT_KEY",
-        "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE",
+        DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY,
     )
 
 
@@ -88,7 +91,7 @@ def build_settings(**overrides: object) -> Settings:
         "otp_hmac_secret": "test-secret-value-with-enough-length",
         "auth_token_secret": "test-auth-token-secret-with-enough-length",
         "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
-        "file_upload_context_key": ("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
+        "file_upload_context_key": DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY,
         **overrides,
     }
     return Settings(_env_file=None, **values)
@@ -123,7 +126,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.file_upload_grant_ttl_seconds == 600
     assert (
         settings.file_upload_context_key.get_secret_value()
-        == "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
+        == DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
     )
     assert settings.storage_provider == "azure_blob"
     assert settings.azure_storage_container is None
@@ -300,6 +303,46 @@ def test_invalid_file_upload_context_key_fails_validation(
         build_settings(file_upload_context_key=value)
 
 
+def test_development_environment_allows_development_upload_context_key(
+    clean_environment,
+) -> None:
+    settings = build_settings(
+        app_env="development",
+        file_upload_context_key=DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY,
+    )
+
+    assert settings.file_upload_context_key.get_secret_value() == (
+        DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
+    )
+
+
+def test_production_environment_rejects_development_upload_context_key(
+    clean_environment,
+) -> None:
+    with pytest.raises(ValidationError) as captured:
+        build_settings(
+            app_env="production",
+            file_upload_context_key=DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY,
+        )
+
+    error = str(captured.value)
+    assert "Production File upload context key must be overridden." in error
+    assert DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY not in error
+
+
+def test_production_environment_allows_distinct_upload_context_key(
+    clean_environment,
+) -> None:
+    settings = build_settings(
+        app_env="production",
+        file_upload_context_key=PRODUCTION_FILE_UPLOAD_CONTEXT_KEY,
+    )
+
+    assert settings.file_upload_context_key.get_secret_value() == (
+        PRODUCTION_FILE_UPLOAD_CONTEXT_KEY
+    )
+
+
 def test_valid_cors_list_parses(monkeypatch, clean_environment) -> None:
     set_required_settings_env(monkeypatch)
     monkeypatch.setenv(
@@ -390,7 +433,7 @@ def test_storage_connection_string_is_redacted_from_settings_representation() ->
 
 
 def test_file_upload_context_key_is_redacted_from_settings_representation() -> None:
-    key = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
+    key = DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
 
     settings = build_settings(file_upload_context_key=key)
 

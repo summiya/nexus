@@ -1,13 +1,12 @@
 import { z } from "zod";
 
 import { apiRequest } from "../../services/api/client";
-import type { InitiatedFileUpload } from "./types";
+import { MAX_UPLOAD_CONTEXT_LENGTH, type InitiatedFileUpload } from "./types";
 
 const timestampSchema = z.string().datetime({ offset: true });
 const nonblankStringSchema = z
   .string()
   .refine((value) => value.trim().length > 0);
-const maxUploadContextLength = 4096;
 
 const initiatedFileUploadSchema = z
   .object({
@@ -19,7 +18,7 @@ const initiatedFileUploadSchema = z
         metadata: z
           .object({
             nexus_upload_context: nonblankStringSchema.pipe(
-              z.string().max(maxUploadContextLength),
+              z.string().max(MAX_UPLOAD_CONTEXT_LENGTH),
             ),
           })
           .strict(),

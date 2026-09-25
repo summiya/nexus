@@ -3,11 +3,12 @@ import binascii
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field, HttpUrl, SecretStr, field_validator
+from pydantic import Field, HttpUrl, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 ROOT_ENV_FILE = REPOSITORY_ROOT / ".env"
+_DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY = b"nexus-development-upload-key-001"
 
 
 class Settings(BaseSettings):
@@ -51,7 +52,11 @@ class Settings(BaseSettings):
 
     @field_validator("file_upload_context_key")
     @classmethod
-    def validate_file_upload_context_key(cls, value: SecretStr) -> SecretStr:
+    def validate_file_upload_context_key(
+        cls,
+        value: SecretStr,
+        info: ValidationInfo,
+    ) -> SecretStr:
         encoded = value.get_secret_value()
         try:
             padding = "=" * (-len(encoded) % 4)
@@ -64,11 +69,17 @@ class Settings(BaseSettings):
             raise ValueError("File upload context key is invalid") from exc
         if len(decoded) != 32:
             raise ValueError("File upload context key is invalid")
+        if (
+            info.data.get("app_env") == "production"
+            and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
+        ):
+            raise ValueError("Production File upload context key must be overridden.")
         return value
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 
