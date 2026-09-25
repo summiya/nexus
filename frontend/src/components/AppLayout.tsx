@@ -19,6 +19,7 @@ export function AppLayout() {
             Home
           </NavLink>
           <NavLink to="/conversations">Conversations</NavLink>
+          <NavLink to="/files">Files</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>

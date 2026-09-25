@@ -76,4 +76,11 @@ test("login restores the intended protected route and survives reload", async ({
     page.getByRole("heading", { name: "Foundation configuration" }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/settings\?tab=profile#security$/);
+
+  await page.getByRole("link", { name: "Files" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Upload a file" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Choose a file")).toBeVisible();
+  await expect(page.getByText("Maximum file size: 512 MB.")).toBeVisible();
 });

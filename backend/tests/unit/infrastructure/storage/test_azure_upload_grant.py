@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from azure.core.exceptions import AzureError
@@ -98,6 +100,18 @@ def _delegation_key(
             else signed_expiry
         ),
     )
+
+
+def _real_delegation_key() -> UserDelegationKey:
+    key = UserDelegationKey()
+    key.signed_oid = "11111111-1111-4111-8111-111111111111"
+    key.signed_tid = "22222222-2222-4222-8222-222222222222"
+    key.signed_start = _timestamp(NOW - timedelta(minutes=15))
+    key.signed_expiry = _timestamp(NOW + timedelta(hours=1))
+    key.signed_service = "b"
+    key.signed_version = "2026-04-06"
+    key.value = base64.b64encode(b"nexus-test-signing-key-material").decode()
+    return key
 
 
 def _issuer(
@@ -220,6 +234,27 @@ def test_issues_exact_blob_scoped_create_only_https_grant(
         assert permission.delete is False
         assert permission.add is False
         assert permission.tag is False
+
+    asyncio.run(scenario())
+
+
+def test_real_sdk_emits_create_only_sas_with_compatible_service_version() -> None:
+    async def scenario() -> None:
+        client = FakeBlobServiceClient(cast(FakeDelegationKey, _real_delegation_key()))
+
+        grant = await _issuer(client).issue_upload_grant(
+            storage_key="files/0123456789abcdef0123456789abcdef",
+            expires_at=REQUESTED_EXPIRY,
+        )
+
+        query = parse_qs(urlsplit(grant.url).query, keep_blank_values=True)
+        assert query["sp"] == ["c"]
+        assert "w" not in query["sp"][0]
+        assert query["spr"] == ["https"]
+        assert query["sr"] == ["b"]
+        assert date.fromisoformat(query["sv"][0]) >= date(2026, 4, 6)
+        assert query["sig"][0]
+        assert "st" not in query
 
     asyncio.run(scenario())
 
