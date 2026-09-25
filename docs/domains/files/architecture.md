@@ -1,6 +1,6 @@
 # File Domain Architecture
 
-**Status:** Implemented Phase 7 Azure User Delegation upload-grant adapter
+**Status:** Implemented Phase 8 authorized upload initiation and trusted upload state
 
 ## Purpose
 
@@ -16,12 +16,19 @@ or network I/O. Phase 6 adds the provider-neutral boundary for issuing a
 short-lived, exact-object browser upload capability. It does not implement a
 provider signer or compose that capability into the application. Phase 7 adds
 the Azure User Delegation SAS implementation of that boundary without changing
-application composition or exposing Azure types outside infrastructure.
+application composition or exposing Azure types outside infrastructure. Phase 8
+adds runtime RBAC enforcement, application orchestration, and atomic persistence
+of a pending File plus its trusted upload-attempt metadata. It still exposes no
+HTTP API.
 
 ## Boundary
 
 ```text
-Future File upload application service
+InitiateFileUpload
+        ├── PermissionChecker
+        │       ↑
+        │   SqlAlchemyPermissionChecker
+        │
         ├── UploadIntentPolicy
         │       ↓
         │   ValidatedUploadIntent
@@ -32,17 +39,19 @@ Future File upload application service
         │       ↓
         │   AsyncSession / PostgreSQL
         │
-        ├── ObjectStorage
-        │       ↑
-        │   AzureBlobObjectStorage
-        │       ↓
-        │   Async Azure ContainerClient
-        │
         └── UploadGrantIssuer
                 ↑
         AzureUserDelegationUploadGrantIssuer
                 ↓
         Borrowed async BlobServiceClient
+
+File binary storage operations
+        ↓
+ObjectStorage
+        ↑
+AzureBlobObjectStorage
+        ↓
+Async Azure ContainerClient
 ```
 
 The File domain and ports do not depend on FastAPI, SQLAlchemy, or a cloud
@@ -95,13 +104,11 @@ File(AVAILABLE).size_bytes
 ```
 
 During Phase 5, `ValidatedUploadIntent.declared_size_bytes` exists only in
-request/application memory. The current File schema intentionally does not
-persist that declaration, and `File(PENDING).size_bytes` remains `None`. Do not
-overload `File.size_bytes` with untrusted request metadata. If later
-asynchronous verification needs to compare the actual Blob size with the
-declaration, the Phase 8 upload-initiation design must preserve
-`declared_size_bytes` in trusted persistent upload-initiation or upload-attempt
-state. The exact persistence mechanism is deferred to Phase 8.
+request/application memory. Phase 8 copies the accepted declaration into a
+separate trusted `FileUploadAttempt`; `File(PENDING).size_bytes` remains `None`.
+Do not overload `File.size_bytes` with untrusted request metadata. Later
+asynchronous verification can compare the actual Blob size with the accepted
+declaration without treating the declaration as verified storage truth.
 
 A later verification phase must measure the stored object before making the
 File available.
@@ -409,6 +416,72 @@ persisted, or emitted to telemetry. Azure acquisition and signing failures are
 translated to a fixed safe `UploadGrantError`; task cancellation remains
 cancellation.
 
+## Authorized upload initiation and trusted upload state
+
+`InitiateFileUpload` is the provider-neutral Phase 8 application use case. It
+accepts trusted organization and user public IDs plus untrusted upload metadata;
+the client never supplies a storage key, creator identity, or tenant identity.
+Its ordering is deliberate:
+
+```text
+check files.upload
+        ↓
+validate upload intent and generate storage_key
+        ↓
+calculate requested grant expiration
+        ↓
+issue and validate the effective upload grant
+        ↓
+construct File(PENDING) + FileUploadAttempt
+        ↓
+atomically persist both
+        ↓
+return File + ephemeral grant
+```
+
+The runtime permission check resolves the exact organization/user pair through
+tenant-safe User, UserRole, Role, RolePermission, and Permission joins. The
+Organization and User must be active and not deleted, the Role must not be
+deleted, and the requested permission must be assigned. Missing or mismatched
+state is a denial. The check is performed on every initiation and is not cached,
+so RBAC changes affect the next request. It is a point-in-time decision: Nexus
+does not hold a database transaction or row lock across the later provider call.
+
+Provider I/O occurs before the short File write transaction. If grant issuance
+fails, no permanent File state is created. If persistence fails, the signed
+grant is never returned and expires naturally. The write transaction inserts
+exactly one new pending File and one upload attempt atomically. The pending File
+has `size_bytes=None` and `checksum_sha256=None`.
+
+`FileUploadAttempt` stores only:
+
+- the File and organization relationship;
+- `declared_size_bytes` accepted by the upload-intent policy;
+- the provider's effective `grant_expires_at`;
+- the trusted creation timestamp.
+
+The table never stores the signed URL, SAS query, required grant headers, User
+Delegation Key, provider name, container, credential, actual size, checksum, or
+security result. Its composite `(file_id, organization_id)` foreign key targets
+the owning File and cascades when that File is deleted.
+
+The schema deliberately allows more than one upload attempt for a File so it
+does not block a future, explicitly designed grant-reissuance flow. Phase 8 does
+not implement reissuance: every initiation creates one new File and exactly one
+attempt. If reissuance is added later, asynchronous storage events must be
+correlated deliberately with the responsible attempt. A worker must not assume
+that the latest attempt caused a `BlobCreated` event because cloud events may be
+delayed or delivered out of order. Reissuance must also preserve the trusted
+declared metadata associated with the existing File. Attempt identifiers,
+event identifiers, attempt statuses, and correlation fields remain deferred to
+that later event/verification design.
+
+File write transactions retain the existing cancellation-settlement guarantee.
+If a commit completes while the awaiting request is cancelled, the pending File
+and attempt may remain even though the caller did not receive the grant. Later
+abandoned-pending cleanup owns that lifecycle; Phase 8 does not abandon an
+in-progress commit or rollback.
+
 The current local Azurite path uses HTTP plus a Shared Key connection string.
 That path cannot exercise the production security chain:
 
@@ -478,20 +551,19 @@ File API phase.
 
 ## Future upload and verification lifecycle
 
-Phases 5 and 6 define the provider-neutral preparation boundaries but do not
-execute a direct upload. Later phases can compose them without changing either
-boundary:
+Phases 5 and 6 define the provider-neutral preparation boundaries. Phase 8
+composes them into authorized upload initiation without changing either
+boundary; the client upload and verification steps remain future work:
 
 ```text
 authenticate and authorize upload
         ↓
 UploadIntentPolicy
         ↓
-Phase 8 preserves declared_size_bytes in trusted upload state when required
+issue short-lived exact-object upload grant
         ↓
-persist File(PENDING) with size_bytes=None
-        ↓
-issue an exact-object upload grant
+atomically persist File(PENDING) with size_bytes=None
+and FileUploadAttempt with declared_size_bytes
         ↓
 client uploads directly to object storage
         ↓
@@ -503,7 +575,7 @@ transition File to AVAILABLE or FAILED
 The client never chooses the storage key. A successful object upload or a
 provider event alone does not establish tenant ownership, authorization, or
 File availability. Later verification must measure the actual object size and
-enforce the configured maximum. When Phase 8 preserves `declared_size_bytes`
+enforce the configured maximum. Because Phase 8 preserves `declared_size_bytes`
 in trusted persistent upload state, asynchronous verification must also compare
 the actual size with that declaration. It must not use `File.size_bytes` for
 the untrusted declaration; that field remains `None` while pending and records
@@ -583,17 +655,19 @@ Phase 7
     Azure User Delegation upload-grant adapter (implemented)
 
 Phase 8
-    authorized upload initiation and trusted upload state (future)
+    authorized upload initiation and trusted upload state (implemented)
+
+Phase 9
+    upload-initiation HTTP API, configuration, and composition (future)
 ```
 
 ## Deferred work
 
 Later phases own:
 
-- authorization, File(PENDING) creation, and upload application orchestration;
+- upload-initiation HTTP schemas, controller, authentication-context mapping,
+  grant-TTL configuration, composition wiring, and API idempotency decision;
 - Azure upload-grant composition wiring;
-- trusted upload-initiation state, including declared-size persistence where
-  required for later verification;
 - actual size, type, checksum, and security verification;
 - File lifecycle transitions after storage verification;
 - upload and management APIs;

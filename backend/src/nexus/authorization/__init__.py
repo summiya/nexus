@@ -1,5 +1,5 @@
-"""Authorization domain services for NEXUS."""
+"""Provider-neutral authorization contracts for NEXUS."""
 
-from nexus.authorization.bootstrap import provision_administrator_role
+from nexus.authorization.permissions import PermissionChecker, PermissionCheckError
 
-__all__ = ["provision_administrator_role"]
+__all__ = ["PermissionCheckError", "PermissionChecker"]
