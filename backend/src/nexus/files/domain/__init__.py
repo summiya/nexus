@@ -6,10 +6,12 @@ from nexus.files.domain.file import (
     File,
     FileStorageStatus,
 )
+from nexus.files.domain.upload import FileUploadAttempt
 
 __all__ = [
     "MAX_MIME_TYPE_LENGTH",
     "MAX_ORIGINAL_NAME_LENGTH",
     "File",
     "FileStorageStatus",
+    "FileUploadAttempt",
 ]
