@@ -2,9 +2,6 @@ targetScope = 'subscription'
 
 metadata description = 'Routes committed Nexus File blobs through Event Grid into a durable Service Bus queue.'
 
-@description('Azure region for the Service Bus namespace. Keep the pipeline regional with the source storage account.')
-param location string
-
 @description('Resource group that will own the Service Bus namespace.')
 param serviceBusResourceGroupName string
 
@@ -97,19 +94,18 @@ var trustedSystemTopicName = systemTopicHasTrustedSource
     ? validatedSystemTopicName
     : fail('The Event Grid system-topic type is invalid.')
   : fail('The Event Grid system-topic source is invalid.')
-var trustedEventGridPrincipalId = trustedSystemTopicName == validatedSystemTopicName
-  ? systemTopic.identity.principalId
+var systemTopicHasSystemAssignedIdentity = contains(systemTopic.identity.?type ?? '', 'SystemAssigned')
+var systemTopicPrincipalId = systemTopic.identity.?principalId ?? ''
+var trustedEventGridPrincipalId = trustedSystemTopicName == validatedSystemTopicName && systemTopicHasSystemAssignedIdentity && !empty(trim(systemTopicPrincipalId))
+  ? systemTopicPrincipalId
   : fail('The Event Grid system-topic identity is invalid.')
-var validatedServiceBusLocation = toLower(location) == toLower(storageAccount.location)
-  ? location
-  : fail('The Service Bus region must match the Nexus storage account region.')
 
 module serviceBus './modules/file-upload-service-bus.bicep' = {
   name: 'nexus-file-upload-service-bus'
   scope: resourceGroup(serviceBusResourceGroupName)
   params: {
     eventGridPrincipalId: trustedEventGridPrincipalId
-    location: validatedServiceBusLocation
+    location: storageAccount.location
     messagingUnits: messagingUnits
     namespaceName: serviceBusNamespaceName
     premiumMessagingPartitions: premiumMessagingPartitions

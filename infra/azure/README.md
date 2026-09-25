@@ -91,10 +91,12 @@ creating or weakening infrastructure.
 
 The pipeline also resolves the configured existing storage account and fails
 closed unless the selected topic has `Microsoft.Storage.StorageAccounts` as its
-topic type and that exact account resource ID as its source. The Service Bus
-region must match the source storage-account region. These deployment guards
-prevent a different storage account or an accidental cross-region pipeline
-from receiving Nexus queue permissions.
+topic type and that exact account resource ID as its source. The selected topic
+must expose a usable system-assigned Managed Identity principal. The Service
+Bus resource location is derived directly from the source storage account; it
+is not an independent deployment parameter. These deployment guards prevent a
+different storage account, an unusable topic identity, or an accidental
+cross-region pipeline from receiving Nexus queue permissions.
 
 ### New-system-topic mode
 
@@ -208,13 +210,15 @@ deployment prerequisite.
 
 Phase 13 must dead-letter every Phase 11
 `AzureBlobCreatedEventMappingError` immediately using the bounded safe reason
-`INVALID_BLOB_CREATED_EVENT`. Every occurrence must produce a structured log or
-metric with safe correlation and be sent immediately to the DLQ. Operational
-alerts must be rate/threshold based and follow the security/anomaly policy
-rather than paging once per event. Do not copy raw event payloads, SAS data,
-protected UploadContext ciphertext, secrets, or provider details into the
-reason. Temporary Azure Storage, PostgreSQL, Key Vault, and network failures
-may follow retry/abandon semantics.
+`INVALID_BLOB_CREATED_EVENT`. The normal expected baseline is zero. Every
+occurrence must produce a structured log or metric with safe correlation and
+be sent immediately to the DLQ. Monitoring must raise one grouped
+operational/security alert when the count is at least one during a short
+monitoring window. Additional occurrences in that window increment logs and
+metrics without producing one page per message. Do not copy raw event payloads,
+SAS data, protected UploadContext ciphertext, secrets, or provider details into
+the reason. Temporary Azure Storage, PostgreSQL, Key Vault, and network
+failures may follow retry/abandon semantics.
 
 ## Orphan reconciliation and release gate
 
@@ -251,13 +255,17 @@ The validation run must prove:
 2. BlobDeleted, another container, and another key namespace do not route.
 3. The exact emitted Event Grid source is captured for Phase 11 configuration.
 4. Event Grid Managed Identity can send and unauthorized identities cannot.
-5. `aeg-output-event-id` is present.
-6. Reproduced Event Grid redelivery retains the same Service Bus `MessageId`.
-7. Forced Event Grid delivery failure creates a dead-letter object.
-8. That dead-letter Blob does not create another File completion message.
-9. Queue, DLQ, Event Grid failure, CPU, memory, and throttling metrics are
+5. With storage account A configured, selecting a system topic whose source is
+   storage account B fails closed before creating either the queue sender or
+   dead-letter Blob role assignment. Retain deployment and role-assignment
+   evidence for this negative case.
+6. `aeg-output-event-id` is present.
+7. Reproduced Event Grid redelivery retains the same Service Bus `MessageId`.
+8. Forced Event Grid delivery failure creates a dead-letter object.
+9. That dead-letter Blob does not create another File completion message.
+10. Queue, DLQ, Event Grid failure, CPU, memory, and throttling metrics are
    visible.
-10. First deployment behavior is recorded, including any transient Event Grid
+11. First deployment behavior is recorded, including any transient Event Grid
     authorization failure, RBAC propagation wait, and successful idempotent
     redeployment.
 
@@ -285,6 +293,10 @@ az deployment sub create \
   --template-file infra/azure/file-upload-events.bicep \
   --parameters infra/azure/file-upload-events.example.bicepparam
 ```
+
+The CLI `--location` above stores the subscription-scope deployment record. It
+does not select the Service Bus resource region; the template derives that
+region directly from the configured Nexus storage account.
 
 The example file is illustrative and contains no credentials. Replace every
 placeholder and review the immutable partition count before deployment.

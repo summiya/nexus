@@ -1,6 +1,5 @@
 using './file-upload-events.bicep'
 
-param location = 'eastus'
 param serviceBusResourceGroupName = 'nexus-production-messaging'
 param serviceBusNamespaceName = 'replace-with-globally-unique-namespace'
 param queueName = 'file-upload-completions'

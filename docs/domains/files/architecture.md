@@ -836,10 +836,11 @@ an authorized destination.
 
 Deployment resolves the configured Nexus storage account and fails closed
 unless the selected system topic has that exact account resource ID as its
-source and `Microsoft.Storage.StorageAccounts` as its topic type. The Service
-Bus namespace region must equal the source storage-account region. The topic's
-Managed Identity is not granted queue or dead-letter access until those trusted
-source and regional invariants pass.
+source and `Microsoft.Storage.StorageAccounts` as its topic type. It also
+requires a usable system-assigned Managed Identity principal. The Service Bus
+resource location is derived directly from the source storage-account region,
+not supplied independently. The topic's Managed Identity is not granted queue
+or dead-letter access until those trusted source and identity invariants pass.
 
 The File event subscription delivers CloudEvents 1.0, includes only
 `Microsoft.Storage.BlobCreated`, and applies the case-sensitive subject prefix
@@ -883,10 +884,12 @@ abuse review.
 
 `AzureBlobCreatedEventMappingError` is a permanent semantic message failure.
 Phase 13 must immediately dead-letter it with the fixed bounded reason
-`INVALID_BLOB_CREATED_EVENT`. Every occurrence must emit a structured log or
-metric with safe correlation. Alerting must be rate/threshold based and follow
-the security/anomaly policy instead of paging once per event. The worker must
-not expose the unrestricted provider payload, SAS data, protected
+`INVALID_BLOB_CREATED_EVENT`. Its normal expected baseline is zero. Every
+occurrence must emit a structured log or metric with safe correlation.
+Monitoring must raise one grouped operational/security alert when the count is
+at least one during a short monitoring window; additional occurrences in that
+window increment logs and metrics without paging once per message. The worker
+must not expose the unrestricted provider payload, SAS data, protected
 UploadContext, secrets, or internal details in DLQ reason text. Temporary
 storage, database, Key Vault, and network failures may use retry/abandon
 behavior.
