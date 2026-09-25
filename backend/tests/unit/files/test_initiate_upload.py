@@ -56,7 +56,7 @@ class FakePermissionChecker:
 class RecordingIntentPolicy:
     def __init__(self, events: list[str]) -> None:
         self.events = events
-        self.policy = UploadIntentPolicy(max_size_bytes=52_428_800)
+        self.policy = UploadIntentPolicy(max_size_bytes=536_870_912)
         self.calls: list[tuple[str, str | None, int]] = []
 
     def prepare(

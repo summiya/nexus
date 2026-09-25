@@ -410,7 +410,7 @@ target:  exact signed Blob URL
 ```
 
 This contract intentionally assumes one direct HTTP `PUT` using Azure `Put
-Blob`. Nexus's current 50 MiB upload maximum is appropriate for that single
+Blob`. Nexus's current 512 MiB upload maximum is appropriate for that single
 request design. If a future browser uploader uses staged or chunked Azure
 operations such as `Put Block` and `Put Block List`, the least-privilege
 create-only permissions and Azure service-version behavior must be explicitly
@@ -592,10 +592,13 @@ malformed values are rejected. Phase 5 has no MIME allowlist and does not
 compare the MIME value with a filename extension.
 
 Declared size must be an integer other than `bool`, must be nonnegative, and
-must not exceed `FILE_UPLOAD_MAX_SIZE_BYTES`. The initial configurable default
-is 52,428,800 bytes (50 MiB), and zero-byte uploads are valid. This limit does
-not prove the object's actual size and is not an object-storage capability
-limit.
+must not exceed `FILE_UPLOAD_MAX_SIZE_BYTES`. Nexus's maximum individual File
+size is 512 MiB (536,870,912 bytes), and zero-byte uploads are valid. During
+upload initiation, this limit applies only to the untrusted declared size; it
+does not prove the object's actual size and is not an object-storage capability
+limit. Later upload verification must independently enforce that the actual
+stored object size is no greater than 536,870,912 bytes before a File can
+become `AVAILABLE`.
 
 The generated `files/<uuid4 hex>` key is 38 provider-portable ASCII characters
 using lowercase hexadecimal plus `/`. Nexus performs no database or storage
