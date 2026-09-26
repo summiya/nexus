@@ -69,6 +69,7 @@ class InvalidUploadCompletionMessageBody(ValueError):
 
 type FileWorkerEvent = UploadCompletionEvent | MalwareScanResultEvent
 
+
 class FileWorkerEventMapper[
     MapperEventT: (UploadCompletionEvent, MalwareScanResultEvent)
 ](Protocol):

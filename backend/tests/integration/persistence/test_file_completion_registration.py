@@ -312,7 +312,6 @@ def test_unrelated_database_integrity_failure_is_not_duplicate_success(
     assert _stored_rows(migrated_engine) == []
 
 
-
 def test_malware_scan_transition_is_idempotent(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],

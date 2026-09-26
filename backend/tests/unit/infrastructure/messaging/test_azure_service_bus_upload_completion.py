@@ -761,7 +761,6 @@ def test_event_correlation_does_not_use_service_bus_message_id() -> None:
     assert "cloud-event-id" not in first
 
 
-
 def test_invalid_malware_scan_event_is_dead_lettered_with_bounded_reason() -> None:
     class RejectingMalwareMapper:
         def map_event(self, payload: Mapping[str, object]) -> UploadCompletionEvent:
