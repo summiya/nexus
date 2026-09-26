@@ -37,6 +37,7 @@ def test_storage_status_values_are_stable_lowercase_contracts() -> None:
         "pending",
         "available",
         "failed",
+        "deleting",
     ]
 
 
