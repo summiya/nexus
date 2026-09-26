@@ -82,6 +82,12 @@ param queueMaxSizeInMegabytes int = 81920
 @description('Optional user-assigned Managed Identity principal for the File worker. Empty creates no worker role assignments.')
 param fileWorkerPrincipalId string = ''
 
+var systemTopicPlacementIsDefenderCompatible = toLower(systemTopicSubscriptionId) == toLower(storageSubscriptionId)
+  && toLower(systemTopicResourceGroupName) == toLower(storageResourceGroupName)
+var defenderCompatibleSystemTopicName = systemTopicPlacementIsDefenderCompatible
+  ? systemTopicName
+  : fail('The storage Event Grid system topic must be in the storage account resource group for Defender malware scanning.')
+
 var expectedSystemTopicResourceId = resourceId(
   systemTopicSubscriptionId,
   systemTopicResourceGroupName,
@@ -89,7 +95,7 @@ var expectedSystemTopicResourceId = resourceId(
   systemTopicName
 )
 var validatedSystemTopicName = toLower(systemTopicResourceId) == toLower(expectedSystemTopicResourceId)
-  ? systemTopicName
+  ? defenderCompatibleSystemTopicName
   : fail('The explicit Event Grid system-topic resource ID is inconsistent.')
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2026-04-01' existing = {
