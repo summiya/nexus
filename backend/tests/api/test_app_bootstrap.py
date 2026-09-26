@@ -586,8 +586,15 @@ def test_file_composition_failure_closes_all_earlier_owned_resources(
         session_factory: object,
         upload_grant_issuer: UploadGrantIssuer,
         download_grant_issuer: DownloadGrantIssuer,
+        object_storage: ObjectStorage,
     ) -> None:
-        del settings, session_factory, upload_grant_issuer, download_grant_issuer
+        del (
+            settings,
+            session_factory,
+            upload_grant_issuer,
+            download_grant_issuer,
+            object_storage,
+        )
         raise RuntimeError("file composition failed")
 
     monkeypatch.setattr(
