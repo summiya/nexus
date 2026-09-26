@@ -9,7 +9,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from azure.servicebus import ServiceBusReceivedMessage, ServiceBusReceiveMode
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
@@ -24,14 +24,14 @@ from azure.servicebus.exceptions import (
     ServiceBusError,
 )
 
+from nexus.files.application import FileWorkerEvent
 from nexus.files.ports import (
-    UploadCompletionEvent,
-    UploadCompletionHandler,
+    MalwareScanResultRejectedError,
     UploadCompletionRejectedError,
 )
 from nexus.infrastructure.storage import (
-    AzureBlobCreatedEventMapper,
     AzureBlobCreatedEventMappingError,
+    AzureMalwareScanResultMappingError,
 )
 from nexus.logging import get_logger
 
@@ -40,9 +40,11 @@ MAX_UPLOAD_COMPLETION_MESSAGE_BODY_BYTES = 65_536
 _INVALID_BODY_REASON = "INVALID_MESSAGE_BODY"
 _INVALID_EVENT_REASON = "INVALID_BLOB_CREATED_EVENT"
 _INVALID_UPLOAD_COMPLETION_REASON = "INVALID_UPLOAD_COMPLETION"
+_INVALID_MALWARE_SCAN_REASON = "INVALID_MALWARE_SCAN_RESULT"
 _INVALID_BODY_DESCRIPTION = "The message body is not a valid upload event."
 _INVALID_EVENT_DESCRIPTION = "The BlobCreated event is invalid."
 _INVALID_UPLOAD_COMPLETION_DESCRIPTION = "The upload completion is invalid."
+_INVALID_MALWARE_SCAN_DESCRIPTION = "The malware scan result is invalid."
 _RECEIVE_WAIT_SECONDS = 5.0
 _RECONNECT_DELAY_SECONDS = 2.0
 _INITIAL_FAILURE_DELAY_SECONDS = 2.0
@@ -61,7 +63,19 @@ logger = get_logger(__name__)
 
 
 class InvalidUploadCompletionMessageBody(ValueError):
-    """A Service Bus body cannot be decoded as one CloudEvent object."""
+    """A Service Bus body cannot be decoded as one supported File event object."""
+
+
+class FileWorkerEventMapper(Protocol):
+    """Map one decoded provider payload into a File worker event."""
+
+    def map_event(self, payload: Mapping[str, object]) -> FileWorkerEvent: ...
+
+
+class FileWorkerEventHandler(Protocol):
+    """Apply one provider-neutral File worker event."""
+
+    async def handle(self, event: FileWorkerEvent) -> None: ...
 
 
 class _ProcessingOutcome(Enum):
@@ -115,8 +129,8 @@ class AzureServiceBusUploadCompletionWorker:
 
     client: ServiceBusClient
     queue_name: str
-    mapper: AzureBlobCreatedEventMapper
-    handler: UploadCompletionHandler
+    mapper: FileWorkerEventMapper
+    handler: FileWorkerEventHandler
     auto_lock_renewer: AutoLockRenewer
     jitter: Callable[[float, float], float] = field(
         default=random.uniform,
@@ -219,6 +233,14 @@ class AzureServiceBusUploadCompletionWorker:
                 description=_INVALID_EVENT_DESCRIPTION,
                 correlation=message_correlation,
             )
+        except AzureMalwareScanResultMappingError:
+            return await self._dead_letter(
+                receiver,
+                message,
+                reason=_INVALID_MALWARE_SCAN_REASON,
+                description=_INVALID_MALWARE_SCAN_DESCRIPTION,
+                correlation=message_correlation,
+            )
 
         event_correlation = _safe_event_correlation(event)
         if stop_event.is_set():
@@ -263,6 +285,21 @@ class AzureServiceBusUploadCompletionWorker:
                 message,
                 reason=_INVALID_UPLOAD_COMPLETION_REASON,
                 description=_INVALID_UPLOAD_COMPLETION_DESCRIPTION,
+                correlation=event_correlation,
+            )
+        except MalwareScanResultRejectedError as exc:
+            stop_task.cancel()
+            await _settle_cancelled_task(stop_task)
+            logger.warning(
+                "file_malware_scan_result_rejected",
+                correlation=event_correlation,
+                rejection_reason=exc.reason.value,
+            )
+            return await self._dead_letter(
+                receiver,
+                message,
+                reason=_INVALID_MALWARE_SCAN_REASON,
+                description=_INVALID_MALWARE_SCAN_DESCRIPTION,
                 correlation=event_correlation,
             )
         except Exception as exc:  # noqa: BLE001 - unexpected handlers are retryable
@@ -316,6 +353,20 @@ class AzureServiceBusUploadCompletionWorker:
                 message,
                 reason=_INVALID_UPLOAD_COMPLETION_REASON,
                 description=_INVALID_UPLOAD_COMPLETION_DESCRIPTION,
+                correlation=correlation,
+            )
+            return _ProcessingOutcome.STOPPED
+        except MalwareScanResultRejectedError as exc:
+            logger.warning(
+                "file_malware_scan_result_rejected",
+                correlation=correlation,
+                rejection_reason=exc.reason.value,
+            )
+            await self._dead_letter(
+                receiver,
+                message,
+                reason=_INVALID_MALWARE_SCAN_REASON,
+                description=_INVALID_MALWARE_SCAN_DESCRIPTION,
                 correlation=correlation,
             )
             return _ProcessingOutcome.STOPPED
@@ -454,7 +505,7 @@ def _safe_message_correlation(message: ServiceBusReceivedMessage) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:_SAFE_CORRELATION_LENGTH]
 
 
-def _safe_event_correlation(event: UploadCompletionEvent) -> str:
+def _safe_event_correlation(event: FileWorkerEvent) -> str:
     value = f"{event.source}\0{event.event_id}"
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:_SAFE_CORRELATION_LENGTH]
 
@@ -462,6 +513,8 @@ def _safe_event_correlation(event: UploadCompletionEvent) -> str:
 __all__ = [
     "MAX_UPLOAD_COMPLETION_MESSAGE_BODY_BYTES",
     "AzureServiceBusUploadCompletionWorker",
+    "FileWorkerEventHandler",
+    "FileWorkerEventMapper",
     "InvalidUploadCompletionMessageBody",
     "decode_upload_completion_body",
 ]
