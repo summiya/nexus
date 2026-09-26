@@ -158,6 +158,33 @@ describe("FileLibrary", () => {
     },
   );
 
+  it("lets users return to the previous page after a later page fails", async () => {
+    const user = userEvent.setup();
+    apiMocks.listFiles
+      .mockResolvedValueOnce(firstPage)
+      .mockRejectedValueOnce(new Error("page failed"))
+      .mockResolvedValueOnce(firstPage);
+    renderLibrary();
+
+    await screen.findByText("report.pdf");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Files are temporarily unavailable.",
+    );
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Previous" }));
+
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
+        { cursor: null, limit: 50 },
+        expect.any(AbortSignal),
+      );
+    });
+  });
+
   it("returns to the prior backend cursor without reconstructing one", async () => {
     const user = userEvent.setup();
     const secondPage: FilePage = {
