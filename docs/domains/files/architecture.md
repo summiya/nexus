@@ -1081,6 +1081,33 @@ malware-processing failures. Phase 15 adds no custom antivirus,
 quarantine/delete workflow, MIME sniffing, checksum persistence, Document
 processing, OCR, chunks, embeddings, or RAG.
 
+## File metadata read API and pagination
+
+Phase 16 exposes authenticated File metadata through `GET /files` and
+`GET /files/{file_public_id}`. Read authorization uses the existing
+`files.read` permission, and every persistence query applies the organization
+boundary in SQL. An unknown File and a File owned by another organization are
+therefore indistinguishable to the caller.
+
+The current File model has organization ownership but no project relationship.
+Phase 16 remains organization-scoped rather than introducing a speculative
+project field or authorization rule. Project-scoped File reads should be added
+only when the File model gains an explicit project relationship.
+
+Listing uses newest-first keyset pagination over
+`(organization_id, created_at, public_id)`, matching the existing database
+index. The HTTP cursor is opaque and versioned, page size is bounded, and the
+query requests `limit + 1` rows to determine whether another page exists.
+There is no `COUNT(*)` dependency and no offset pagination, so deep pages do
+not become progressively more expensive as File volume grows.
+
+Read responses expose only safe File metadata: public identity, original name,
+MIME type, verified size when known, lifecycle status, and timestamps. They do
+not expose internal database IDs, organization/creator IDs, storage keys,
+checksums, provider URLs, Blob metadata, or credentials. PENDING and FAILED
+Files may be visible as metadata to an authorized caller, but content-serving
+and download paths must continue to serve only AVAILABLE Files.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
