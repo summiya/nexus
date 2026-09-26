@@ -299,3 +299,61 @@ def test_downgrade_removes_file_schema(
     command.downgrade(config, PREVIOUS_HEAD)
 
     assert "files" not in inspect(engine).get_table_names()
+
+
+def test_deleting_status_migration_upgrade_and_downgrade(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, "20260925_0010")
+    with engine.begin() as connection:
+        organization_id = _insert_organization(connection, "deleting-status")
+        user_id = _insert_user(connection, organization_id, "deleting@example.com")
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        _insert_file(
+            connection,
+            _file_values(
+                organization_id,
+                user_id,
+                storage_status="deleting",
+            ),
+        )
+
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        deleting_id = _insert_file(
+            connection,
+            _file_values(
+                organization_id,
+                user_id,
+                storage_status="deleting",
+            ),
+        )
+        assert deleting_id is not None
+
+    command.downgrade(config, "20260925_0010")
+
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM files WHERE storage_status = 'deleting'")
+            )
+            == 0
+        )
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM files WHERE storage_status = 'failed'")
+            )
+            == 1
+        )
+
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        _insert_file(
+            connection,
+            _file_values(
+                organization_id,
+                user_id,
+                storage_status="deleting",
+            ),
+        )

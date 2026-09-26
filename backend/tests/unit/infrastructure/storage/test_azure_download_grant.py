@@ -43,8 +43,6 @@ class FakeKeyProvider:
         return self.key
 
 
-
-
 def _real_delegation_key() -> UserDelegationKey:
     key = UserDelegationKey()
     key.signed_oid = "11111111-1111-4111-8111-111111111111"
@@ -190,7 +188,6 @@ def test_missing_mime_falls_back_to_octet_stream(
     assert calls[0]["content_type"] == "application/octet-stream"
 
 
-
 def test_ascii_control_characters_cannot_enter_content_disposition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -214,7 +211,6 @@ def test_ascii_control_characters_cannot_enter_content_disposition(
     disposition = cast(str, calls[0]["content_disposition"])
     assert "\r" not in disposition
     assert "\n" not in disposition
-
 
 
 def test_real_sdk_emits_read_only_blob_https_sas() -> None:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from unittest.mock import Mock
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.composition.files import build_file_composition
 from nexus.config.settings import Settings
-from nexus.files.ports import DownloadGrant, UploadGrant
+from nexus.files.ports import DownloadGrant, ObjectStorage, UploadGrant
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
@@ -65,12 +66,14 @@ def test_file_composition_builds_upload_service_from_shared_dependencies() -> No
     session_factory = async_sessionmaker[AsyncSession]()
     issuer = StubUploadGrantIssuer()
     download_issuer = StubDownloadGrantIssuer()
+    object_storage = Mock(spec=ObjectStorage)
 
     composition = build_file_composition(
         _settings(),
         session_factory=session_factory,
         upload_grant_issuer=issuer,
         download_grant_issuer=download_issuer,
+        object_storage=object_storage,
     )
 
     service = composition.initiate_upload
@@ -87,3 +90,9 @@ def test_file_composition_builds_upload_service_from_shared_dependencies() -> No
     assert composition.issue_download.get_file is composition.get_file
     assert composition.issue_download.download_grant_issuer is download_issuer
     assert composition.issue_download.grant_ttl == timedelta(seconds=300)
+    assert composition.delete_file.object_storage is object_storage
+    assert composition.delete_file.persistence is composition.get_file.persistence
+    assert (
+        composition.delete_file.permission_checker
+        is composition.get_file.permission_checker
+    )

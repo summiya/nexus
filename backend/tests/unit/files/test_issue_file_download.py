@@ -72,9 +72,7 @@ class FakePermissionChecker:
         user_public_id: UUID,
         permission_key: str,
     ) -> bool:
-        self.calls.append(
-            (organization_public_id, user_public_id, permission_key)
-        )
+        self.calls.append((organization_public_id, user_public_id, permission_key))
         return self.allowed
 
 
