@@ -1030,6 +1030,43 @@ Phase 14 does not delete permanently rejected Blobs. They accumulate in the
 canonical container until the required reconciliation process classifies them
 for recovery, quarantine, or deletion.
 
+## Defender malware scanning and File availability
+
+Phase 15 uses Microsoft Defender for Storage on-upload malware scanning as the
+managed security scanner. Defender publishes scan results to a dedicated Event
+Grid custom topic; Nexus routes those events into the existing File Service Bus
+queue and handles them in the existing File worker process. Blob index-tag scan
+result writes are disabled, so File availability does not trust mutable Blob tags.
+
+The Azure infrastructure mapper validates the expected custom-topic resource ID,
+Defender malware-result event type, known schema metadata, configured storage
+account and File container, canonical storage key, and ETag. The Blob URI in the
+provider payload is never used as object identity or as network input. Nexus
+accepts Defender result data versions 1.0 and 1.1 and fails closed on unknown
+versions.
+
+Before changing File state, the application reads current Blob properties and
+requires the scan-result ETag to identify the current Blob version. A missing
+Blob or stale ETag is an obsolete successful no-op. A malware result can race
+ahead of Phase 14 File registration; a missing File row is therefore retryable
+rather than successful.
+
+The terminal lifecycle is:
+
+```text
+PENDING + clean scan       -> AVAILABLE
+PENDING + malicious scan   -> FAILED
+PENDING + scan error       -> FAILED
+PENDING + not scanned      -> FAILED
+same terminal replay       -> idempotent success
+opposite terminal result   -> permanent conflict
+```
+
+The database transition locks the File row by `storage_key` and applies the
+state change in one short transaction. Phase 15 adds no custom antivirus,
+quarantine/delete workflow, MIME sniffing, checksum persistence, Document
+processing, OCR, chunks, embeddings, or RAG.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
@@ -1054,9 +1091,9 @@ validate source/blob/context and storage-key binding
         ↓
 create File(PENDING) with verified actual size_bytes
         ↓
-verify actual object size, type, checksum, and security state
+verify managed malware/security result
         ↓
-transition File to AVAILABLE or FAILED
+clean → AVAILABLE; unsuccessful/malicious → FAILED
 ```
 
 The client never chooses the storage key. A successful object upload or a
@@ -1165,8 +1202,7 @@ Pre-event persistence refactor
 
 Later phases own:
 
-- actual size, type, checksum, and security verification;
-- File lifecycle transitions after storage verification;
+- MIME/content-type verification and checksum generation where later justified;
 - oversized and invalid-object cleanup;
 - committed-Blob event dead-letter handling and reconciliation;
 - upload-initiation abuse protection, rate limiting, or quota enforcement;
