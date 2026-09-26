@@ -174,6 +174,7 @@ async def build_app_container(
             session_factory=resolved_database.session_factory,
             upload_grant_issuer=storage.upload_grant_issuer,
             download_grant_issuer=storage.download_grant_issuer,
+            object_storage=storage.object_storage,
         )
     except (Exception, CancelledError) as construction_error:
         try:
