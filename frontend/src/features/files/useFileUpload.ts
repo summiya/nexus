@@ -1,6 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { initiateFileUpload } from "./api";
+import { fileKeys } from "./queries";
 import { MAX_FILE_SIZE_BYTES } from "./types";
 import { uploadGrantedFile } from "./upload";
 
@@ -30,6 +32,7 @@ const idleState: FileUploadState = {
 };
 
 export function useFileUpload() {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<FileUploadState>(idleState);
   const activeUploadRef = useRef<ActiveUpload | null>(null);
   const nextOperationIdRef = useRef(0);
@@ -109,6 +112,7 @@ export function useFileUpload() {
             feedback: null,
             progress: 100,
           });
+          await queryClient.invalidateQueries({ queryKey: fileKeys.all });
         }
       } catch {
         if (!operationIsCurrent(operation)) {
@@ -138,7 +142,7 @@ export function useFileUpload() {
         }
       }
     },
-    [operationIsCurrent],
+    [operationIsCurrent, queryClient],
   );
 
   const cancelUpload = useCallback(() => {
