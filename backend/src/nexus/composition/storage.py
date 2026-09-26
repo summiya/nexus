@@ -12,6 +12,9 @@ from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.settings import Settings
 from nexus.files.ports import (
+    DownloadGrant,
+    DownloadGrantError,
+    DownloadGrantIssuer,
     ObjectStorage,
     UploadGrant,
     UploadGrantError,
@@ -19,6 +22,8 @@ from nexus.files.ports import (
 )
 from nexus.infrastructure.storage import (
     AzureBlobObjectStorage,
+    AzureUserDelegationDownloadGrantIssuer,
+    AzureUserDelegationKeyProvider,
     AzureUserDelegationUploadGrantIssuer,
 )
 
@@ -32,6 +37,21 @@ type AsyncCloseCallback = Callable[[], Awaitable[None]]
 
 class StorageConfigurationError(ValueError):
     """Raised when object storage configuration is invalid or unsupported."""
+
+
+class _UnavailableDownloadGrantIssuer:
+    """Fail safely where configured storage auth cannot issue download grants."""
+
+    async def issue_download_grant(
+        self,
+        *,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        expires_at: datetime,
+    ) -> DownloadGrant:
+        del storage_key, original_name, mime_type, expires_at
+        raise DownloadGrantError("Download grants are unavailable")
 
 
 class _UnavailableUploadGrantIssuer:
@@ -73,6 +93,7 @@ class StorageComposition:
 
     object_storage: ObjectStorage
     upload_grant_issuer: UploadGrantIssuer
+    download_grant_issuer: DownloadGrantIssuer
     _close_callback: AsyncCloseCallback = field(
         default=_noop_close,
         repr=False,
@@ -154,6 +175,7 @@ async def build_storage_composition(
     *,
     object_storage: ObjectStorage | None = None,
     upload_grant_issuer: UploadGrantIssuer | None = None,
+    download_grant_issuer: DownloadGrantIssuer | None = None,
 ) -> StorageComposition:
     """Build provider-neutral storage dependencies and own their resources."""
 
@@ -165,11 +187,19 @@ async def build_storage_composition(
                 if upload_grant_issuer is not None
                 else _UnavailableUploadGrantIssuer()
             ),
+            download_grant_issuer=(
+                download_grant_issuer
+                if download_grant_issuer is not None
+                else _UnavailableDownloadGrantIssuer()
+            ),
         )
 
     container_name, connection_string, account_url = _azure_configuration(settings)
     account_name: str | None = None
-    if upload_grant_issuer is None and account_url is not None:
+    if (
+        (upload_grant_issuer is None or download_grant_issuer is None)
+        and account_url is not None
+    ):
         account_name = (settings.azure_storage_account_name or "").strip()
         if not account_name:
             raise StorageConfigurationError(
@@ -195,16 +225,39 @@ async def build_storage_composition(
             )
         container_client = service_client.get_container_client(container_name)
         resolved_storage = AzureBlobObjectStorage(container_client)
+        delegation_key_provider = (
+            AzureUserDelegationKeyProvider(service_client)
+            if connection_string is None
+            and (upload_grant_issuer is None or download_grant_issuer is None)
+            else None
+        )
+
         if upload_grant_issuer is not None:
             resolved_upload_grant_issuer = upload_grant_issuer
         elif connection_string is not None:
             resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
         else:
             assert account_name is not None
+            assert delegation_key_provider is not None
             resolved_upload_grant_issuer = AzureUserDelegationUploadGrantIssuer(
                 service_client,
                 account_name=account_name,
                 container_name=container_name,
+                delegation_key_provider=delegation_key_provider,
+            )
+
+        if download_grant_issuer is not None:
+            resolved_download_grant_issuer = download_grant_issuer
+        elif connection_string is not None:
+            resolved_download_grant_issuer = _UnavailableDownloadGrantIssuer()
+        else:
+            assert account_name is not None
+            assert delegation_key_provider is not None
+            resolved_download_grant_issuer = AzureUserDelegationDownloadGrantIssuer(
+                service_client,
+                account_name=account_name,
+                container_name=container_name,
+                delegation_key_provider=delegation_key_provider,
             )
     except (Exception, CancelledError) as construction_error:
         try:
@@ -222,5 +275,6 @@ async def build_storage_composition(
     return StorageComposition(
         object_storage=resolved_storage,
         upload_grant_issuer=resolved_upload_grant_issuer,
+        download_grant_issuer=resolved_download_grant_issuer,
         _close_callback=close_resources,
     )
