@@ -112,7 +112,7 @@ export function useFileUpload() {
             feedback: null,
             progress: 100,
           });
-          await queryClient.invalidateQueries({ queryKey: fileKeys.all });
+          void queryClient.invalidateQueries({ queryKey: fileKeys.all });
         }
       } catch {
         if (!operationIsCurrent(operation)) {
