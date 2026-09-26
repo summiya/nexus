@@ -1,25 +1,23 @@
-import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FilePage } from "./types";
 
-const queryMock = vi.hoisted(() => ({
-  refetch: vi.fn(),
-  state: {
-    data: undefined as FilePage | undefined,
-    isError: false,
-    isFetching: false,
-    isPending: false,
-    isPlaceholderData: false,
-  },
+const apiMocks = vi.hoisted(() => ({
+  listFiles: vi.fn(),
 }));
 
-vi.mock("./queries", () => ({
-  useFilesQuery: vi.fn(() => queryMock.state),
-}));
+vi.mock("./api", async () => {
+  const actual = await vi.importActual<typeof import("./api")>("./api");
+  return {
+    ...actual,
+    listFiles: apiMocks.listFiles,
+  };
+});
 
-import { useFilesQuery } from "./queries";
 import { FileLibrary } from "./FileLibrary";
 
 const firstPage: FilePage = {
@@ -37,20 +35,40 @@ const firstPage: FilePage = {
   nextCursor: "cursor-2",
 };
 
+function createTestQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  });
+}
+
+function renderLibrary(queryClient = createTestQueryClient()) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <FileLibrary />
+    </QueryClientProvider>,
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("FileLibrary", () => {
   beforeEach(() => {
-    queryMock.refetch.mockReset();
-    queryMock.state.data = firstPage;
-    queryMock.state.isError = false;
-    queryMock.state.isFetching = false;
-    queryMock.state.isPending = false;
-    queryMock.state.isPlaceholderData = false;
+    apiMocks.listFiles.mockReset();
   });
 
-  it("renders metadata, status, and pending security explanation", () => {
-    render(<FileLibrary />);
+  it("renders metadata, status, and the pending security explanation", async () => {
+    apiMocks.listFiles.mockResolvedValue(firstPage);
+    renderLibrary();
 
-    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText("application/pdf")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(
@@ -60,69 +78,110 @@ describe("FileLibrary", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
-  it("renders loading, empty, and error states safely", async () => {
-    const { rerender } = render(<FileLibrary />);
+  it("renders the first-page loading state", () => {
+    apiMocks.listFiles.mockReturnValue(new Promise(() => undefined));
+    renderLibrary();
 
-    queryMock.state.data = undefined;
-    queryMock.state.isPending = true;
-    rerender(<FileLibrary />);
     expect(screen.getByRole("status")).toHaveTextContent("Loading files");
-
-    queryMock.state.isPending = false;
-    queryMock.state.data = { items: [], nextCursor: null };
-    rerender(<FileLibrary />);
-    expect(screen.getByText("No files yet.")).toBeInTheDocument();
-
-    queryMock.state.data = undefined;
-    queryMock.state.isError = true;
-    rerender(<FileLibrary />);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Files are temporarily unavailable.",
-    );
-
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(queryMock.refetch).toHaveBeenCalledOnce();
   });
 
-  it("keeps current rows visible and disables navigation during page fetch", async () => {
+  it("renders the empty state", async () => {
+    apiMocks.listFiles.mockResolvedValue({ items: [], nextCursor: null });
+    renderLibrary();
+
+    expect(await screen.findByText("No files yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/appear here after Nexus verifies it/i),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a safe error and retries", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(<FileLibrary />);
+    apiMocks.listFiles
+      .mockRejectedValueOnce(new Error("private backend detail"))
+      .mockResolvedValueOnce(firstPage);
+    renderLibrary();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Files are temporarily unavailable.",
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      "private backend detail",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    expect(apiMocks.listFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps current rows visible and disables navigation while the next page loads", async () => {
+    const user = userEvent.setup();
+    const secondPage = deferred<FilePage>();
+    apiMocks.listFiles
+      .mockResolvedValueOnce(firstPage)
+      .mockReturnValueOnce(secondPage.promise);
+    renderLibrary();
+
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(useFilesQuery).toHaveBeenLastCalledWith("cursor-2");
 
-    queryMock.state.data = firstPage;
-    queryMock.state.isFetching = true;
-    queryMock.state.isPlaceholderData = true;
-    rerender(<FileLibrary />);
+    await waitFor(() => {
+      expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
+        { cursor: "cursor-2", limit: 50 },
+        expect.any(AbortSignal),
+      );
+    });
 
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent("Loading page");
-  });
 
-  it("uses backend cursors for next and restores the prior cursor", async () => {
-    const user = userEvent.setup();
-    const { rerender } = render(<FileLibrary />);
-
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(useFilesQuery).toHaveBeenLastCalledWith("cursor-2");
-
-    queryMock.state.data = {
+    secondPage.resolve({
       items: [
         {
           ...firstPage.items[0],
           publicId: "22222222-2222-4222-8222-222222222222",
           originalName: "second.pdf",
+          storageStatus: "available",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    expect(await screen.findByText("second.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+
+  it("returns to the prior backend cursor without reconstructing one", async () => {
+    const user = userEvent.setup();
+    const secondPage: FilePage = {
+      items: [
+        {
+          ...firstPage.items[0],
+          publicId: "22222222-2222-4222-8222-222222222222",
+          originalName: "second.pdf",
+          storageStatus: "available",
         },
       ],
       nextCursor: null,
     };
-    rerender(<FileLibrary />);
+    apiMocks.listFiles
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(secondPage);
+    renderLibrary();
 
+    await screen.findByText("report.pdf");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("second.pdf");
     await user.click(screen.getByRole("button", { name: "Previous" }));
-    expect(useFilesQuery).toHaveBeenLastCalledWith(null);
+
+    await waitFor(() => {
+      expect(apiMocks.listFiles.mock.calls.some(([input]) => input.cursor === null)).toBe(true);
+    });
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
   });
 });
