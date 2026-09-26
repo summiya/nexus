@@ -105,7 +105,6 @@ describe("FileLibrary", () => {
     expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
   });
 
-
   it("shows Delete for every visible File status", async () => {
     apiMocks.listFiles.mockResolvedValue({
       items: [
