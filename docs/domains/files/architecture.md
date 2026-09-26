@@ -120,15 +120,16 @@ in every state and is validated only when present. Phase 1 does not implement
 checksum-based deduplication.
 
 The size accepted by `UploadIntentPolicy` is deliberately named
-`declared_size_bytes`: it is untrusted request metadata. It is not copied into
-`File.size_bytes` while a File is pending. The intended later lifecycle is:
+`declared_size_bytes`: it is untrusted request metadata. It is never copied
+directly into `File.size_bytes`. The committed-upload worker independently
+measures the current Blob and stores that verified actual size:
 
 ```text
 ValidatedUploadIntent.declared_size_bytes
     untrusted client declaration
 
 File(PENDING).size_bytes
-    None
+    actual verified object size
 
 File(AVAILABLE).size_bytes
     actual verified object size
@@ -136,10 +137,9 @@ File(AVAILABLE).size_bytes
 
 During upload initiation, `ValidatedUploadIntent.declared_size_bytes` is copied
 into the encrypted, authenticated `UploadContext` carried with the Blob. No File
-row exists yet. When a future worker accepts a committed Blob and its context,
-it can retain the declaration as trusted authorization context while keeping
-`File(PENDING).size_bytes` as `None`. Do not overload `File.size_bytes` with
-untrusted request metadata.
+row exists yet. When the worker accepts a committed Blob and its context, it
+requires the actual size, protected declaration, and provider event size to
+agree. Do not overload `File.size_bytes` with untrusted request metadata.
 
 A later verification phase must measure the stored object before making the
 File available.
@@ -518,8 +518,8 @@ entry `nexus_upload_context`, comfortably inside Azure's 8 KiB total metadata
 limit. Decoding validates authenticity, schema, versions, and field invariants.
 It deliberately does not reject a context because worker processing occurs
 after `grant_expires_at`: a Blob may commit before grant expiry and its event may
-arrive later. A future worker must evaluate trusted Blob/event timing against
-the authorization window.
+arrive later. Azure enforces the grant at commit time; the event occurrence time
+remains diagnostic rather than a replacement authorization check.
 
 If grant issuance or protection fails, no permanent File state exists. A grant
 created before a later protection or response failure is never returned and
@@ -680,10 +680,9 @@ that the committed Blob carries the protected context metadata.
 Phase 10 completes direct browser transfer capability, but the complete File
 upload feature is not yet hardened for unrestricted or public production
 traffic. Frontend size validation and server-side declared-size validation are
-not authoritative security controls. Later phases must add:
+not authoritative security controls. Phase 14 independently verifies stored
+size; later phases must still add:
 
-- actual stored-object size verification;
-- enforcement that actual size is at most 536,870,912 bytes;
 - content and MIME verification;
 - security and malware checks where applicable;
 - cleanup of oversized or otherwise invalid stored objects;
@@ -696,9 +695,9 @@ Those controls are intentionally not implemented in Phase 10. The release
 invariant remains:
 
 ```text
-browser transfer complete  -> committed Blob; File row may not exist yet
-future worker acceptance   -> File PENDING
-verification complete      -> File AVAILABLE or FAILED
+browser transfer complete -> committed Blob; File row may not exist yet
+worker acceptance         -> File PENDING with verified actual size
+security verification     -> File AVAILABLE or FAILED
 ```
 
 Only verified `AVAILABLE` Files may enter later Document processing or RAG
@@ -932,11 +931,10 @@ abandon does not trigger the failure cooldown. Lock loss or any complete,
 abandon, or dead-letter settlement failure is never reported as successful
 processing.
 
-Phase 13 stores no transport-level delivery receipt and constructs no database
-resource. Its worker entrypoint fails closed until Phase 14 supplies a real
-`UploadCompletionHandler`. Phase 14 must perform slow external work without a
-database transaction, then apply the File business effect in one short
-transaction protected by `INV-REL-004`.
+Phase 13 stores no transport-level delivery receipt. Phase 14 supplies the real
+`UploadCompletionHandler`: it performs Blob access and UploadContext decryption
+without a database transaction, then applies the File business effect in one
+short transaction protected by `INV-REL-004`.
 
 Service Bus DLQ messages do not observe TTL and are not automatically removed.
 Phase 13 operations must therefore define inspection, safe replay, and explicit
@@ -963,7 +961,7 @@ reconciliation source. The same object version may therefore have different
 delivery identities across sources. Only business identity deduplicates across
 those sources.
 
-After a future worker authenticates the protected `UploadContext`, it must
+After the worker authenticates the protected `UploadContext`, it must
 classify File business identity using both `file_public_id` and `storage_key`
 plus immutable ownership:
 
@@ -997,6 +995,41 @@ rotation with old-key decryption overlap, handling for objects created under
 retiring keys, and a documented compromise response. Phase 11 adds none of
 that key-management infrastructure.
 
+## Committed-upload verification and registration
+
+Phase 14 reads the current Blob properties through the provider-neutral
+`ObjectStorage` boundary. Azure ETags are normalized only by removing expected
+surrounding quotes; weak and strong ETag semantics are otherwise preserved. A
+missing Blob is an obsolete successful no-op, while an ETag mismatch is a stale
+successful no-op. These outcomes use distinct safe structured log events so
+their rates can be observed without logging storage keys, metadata, names, or
+provider details.
+
+For a current Blob, the worker decrypts `nexus_upload_context`, binds it to the
+event storage key, and requires the actual Blob size, protected declared size,
+and event-reported size to match. The verified actual size must not exceed
+`FILE_UPLOAD_MAX_SIZE_BYTES`. The API and worker read this same setting and
+deployment must keep their values identical; otherwise the API may authorize an
+upload that the worker later rejects permanently.
+
+Only after external verification does one short PostgreSQL transaction resolve
+the exact organization/creator relationship and apply `INV-REL-004`. New Files
+are inserted as `PENDING` with the verified actual `size_bytes` and no checksum.
+An exact identity-and-ownership duplicate succeeds without mutation. Partial,
+divergent, or ownership-conflicting identities are permanently rejected and
+dead-lettered as `INVALID_UPLOAD_COMPLETION`. Expected unique races roll back
+and reclassify both identities in a fresh transaction; unrelated integrity
+failures remain transient database failures.
+
+The worker uses a deliberately small PostgreSQL pool because each process
+handles one message at a time. Its initial defaults are pool size two and zero
+overflow; deployments may tune these narrow settings while accounting for the
+total pool capacity of all worker replicas.
+
+Phase 14 does not delete permanently rejected Blobs. They accumulate in the
+canonical container until the required reconciliation process classifies them
+for recovery, quarantine, or deletion.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
@@ -1015,11 +1048,11 @@ protect Nexus UploadContext; no PostgreSQL File write
         ↓
 client commits Blob with protected context metadata
         ↓
-future BlobCreated → Event Grid → Service Bus → worker
+BlobCreated → Event Grid → Service Bus → worker
         ↓
 validate source/blob/context and storage-key binding
         ↓
-create File(PENDING) with size_bytes=None
+create File(PENDING) with verified actual size_bytes
         ↓
 verify actual object size, type, checksum, and security state
         ↓
@@ -1033,7 +1066,7 @@ container and event type, fetch Blob properties, unprotect the context, compare
 the actual Blob key with `context.storage_key`, and re-check organization/user
 validity. Verification must measure actual object size, enforce the configured
 maximum, and compare it with the protected declaration. `File.size_bytes`
-remains `None` while pending and records only the verified final size. Business
+records that verified actual size while pending. Business
 deduplication follows the complete identity and ownership classification above;
 delivery deduplication alone cannot establish successful prior processing.
 

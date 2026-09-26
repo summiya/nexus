@@ -9,6 +9,7 @@ from nexus.files.application.upload_intent import (
     UploadIntentValidationError,
     ValidatedUploadIntent,
 )
+from nexus.files.application.verify_upload_completion import VerifyUploadCompletion
 
 __all__ = [
     "InitiateFileUpload",
@@ -16,4 +17,5 @@ __all__ = [
     "UploadIntentPolicy",
     "UploadIntentValidationError",
     "ValidatedUploadIntent",
+    "VerifyUploadCompletion",
 ]

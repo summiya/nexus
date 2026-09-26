@@ -179,8 +179,10 @@ Phase 13 recommends a user-assigned Managed Identity for the independently
 scaled File worker. `fileWorkerPrincipalId` is optional because this routing
 deployment does not create that identity. When it is empty, no worker role is
 created. When the worker deployment has provisioned the identity, rerun the
-same idempotent deployment with its principal ID to grant only Azure Service
-Bus Data Receiver on `file-upload-completions`.
+same idempotent deployment with its principal ID to grant Azure Service Bus
+Data Receiver on `file-upload-completions` and Storage Blob Data Reader on the
+configured File container. Both assignments are scoped to the individual
+queue/container rather than their parent namespace/account.
 
 The worker must reach the default-deny namespace through an approved private
 network path, preferably VNet integration with a Service Bus private endpoint
@@ -346,6 +348,29 @@ region directly from the configured Nexus storage account.
 
 The example file is illustrative and contains no credentials. Replace every
 placeholder and review the immutable partition count before deployment.
+
+The API and File worker must receive the same
+`FILE_UPLOAD_MAX_SIZE_BYTES` value. A mismatch can authorize a valid browser
+upload at the API and then permanently reject it in the worker. Each worker
+process handles one message at a time and starts with a two-connection database
+pool and zero overflow; capacity review must multiply those settings by the
+maximum worker replica count.
+
+If `FILE_UPLOAD_CONTEXT_KEY` is misconfigured, otherwise valid uploads are
+dead-lettered with `INVALID_UPLOAD_COMPLETION`. Recovery is to restore the
+correct protected-context key, verify worker health, and safely replay the
+affected DLQ messages. Do not copy protected context values into runbook notes
+or logs.
+
+Phase 14 deliberately does not delete rejected Blobs. They remain in the File
+container and accumulate until reconciliation classifies them for recovery,
+quarantine, or deletion.
+
+Before enabling Defender for Storage on the File storage account, controlled
+validation must prove that Defender index-tag writes do not change the Blob
+ETag observed by Event Grid and Blob properties. If they do, Phase 14 will
+classify every pre-tag event as stale, and Defender must not be enabled until
+that interaction has an approved design.
 
 ## Operational metrics and gates
 

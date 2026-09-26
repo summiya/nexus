@@ -8,14 +8,12 @@ from collections.abc import Coroutine
 from typing import Any
 
 from nexus.composition.file_worker import (
-    FileWorkerConfigurationError,
     build_file_worker_composition,
 )
 from nexus.config.file_worker_settings import (
     FileWorkerSettings,
     load_file_worker_settings,
 )
-from nexus.files.ports import UploadCompletionHandler
 from nexus.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -23,8 +21,6 @@ logger = get_logger(__name__)
 
 async def run_file_upload_completion_worker(
     settings: FileWorkerSettings,
-    *,
-    handler: UploadCompletionHandler,
 ) -> None:
     """Run one worker until SIGTERM, SIGINT, or task cancellation."""
 
@@ -40,10 +36,7 @@ async def run_file_upload_completion_worker(
 
     composition = None
     try:
-        composition = await build_file_worker_composition(
-            settings,
-            handler=handler,
-        )
+        composition = await build_file_worker_composition(settings)
         await composition.worker.run(stop_event)
     finally:
         for handled_signal in installed_signals:
@@ -52,20 +45,11 @@ async def run_file_upload_completion_worker(
             await _settle_cleanup(composition.close())
 
 
-def _build_upload_completion_handler() -> UploadCompletionHandler:
-    """Fail closed until Phase 14 supplies the real File business handler."""
-
-    raise FileWorkerConfigurationError(
-        "File upload completion handler is not configured."
-    )
-
-
 def main() -> None:
     """Load configuration and run the dedicated process."""
 
     configure_logging()
     try:
-        handler = _build_upload_completion_handler()
         settings = load_file_worker_settings()
     except Exception as exc:  # noqa: BLE001 - CLI startup must fail closed
         logger.error(
@@ -76,12 +60,7 @@ def main() -> None:
 
     configure_logging(settings.log_level)
     try:
-        asyncio.run(
-            run_file_upload_completion_worker(
-                settings,
-                handler=handler,
-            )
-        )
+        asyncio.run(run_file_upload_completion_worker(settings))
     except Exception as exc:  # noqa: BLE001 - CLI runtime must fail closed
         logger.error(
             "file_upload_completion_worker_runtime_failed",

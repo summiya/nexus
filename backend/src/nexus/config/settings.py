@@ -11,6 +11,29 @@ ROOT_ENV_FILE = REPOSITORY_ROOT / ".env"
 _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY = b"nexus-development-upload-key-001"
 
 
+def validate_file_upload_context_key(
+    value: SecretStr,
+    *,
+    app_env: object,
+) -> SecretStr:
+    """Validate the shared API/worker UploadContext protection key."""
+    encoded = value.get_secret_value()
+    try:
+        padding = "=" * (-len(encoded) % 4)
+        decoded = base64.b64decode(
+            encoded + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("File upload context key is invalid") from exc
+    if len(decoded) != 32:
+        raise ValueError("File upload context key is invalid")
+    if app_env == "production" and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY:
+        raise ValueError("Production File upload context key must be overridden.")
+    return value
+
+
 class Settings(BaseSettings):
     app_name: str = "NEXUS"
     app_env: str = "development"
@@ -57,24 +80,10 @@ class Settings(BaseSettings):
         value: SecretStr,
         info: ValidationInfo,
     ) -> SecretStr:
-        encoded = value.get_secret_value()
-        try:
-            padding = "=" * (-len(encoded) % 4)
-            decoded = base64.b64decode(
-                encoded + padding,
-                altchars=b"-_",
-                validate=True,
-            )
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("File upload context key is invalid") from exc
-        if len(decoded) != 32:
-            raise ValueError("File upload context key is invalid")
-        if (
-            info.data.get("app_env") == "production"
-            and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
-        ):
-            raise ValueError("Production File upload context key must be overridden.")
-        return value
+        return validate_file_upload_context_key(
+            value,
+            app_env=info.data.get("app_env"),
+        )
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

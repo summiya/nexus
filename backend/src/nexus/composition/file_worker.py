@@ -7,15 +7,16 @@ from dataclasses import dataclass
 
 from azure.identity.aio import ManagedIdentityCredential
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
+from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.file_worker_settings import FileWorkerSettings
-from nexus.files.ports import UploadCompletionHandler
+from nexus.files.application import VerifyUploadCompletion
 from nexus.infrastructure.messaging import AzureServiceBusUploadCompletionWorker
+from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
+from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.infrastructure.storage import AzureBlobCreatedEventMapper
-
-
-class FileWorkerConfigurationError(ValueError):
-    """The File completion worker cannot start safely."""
+from nexus.infrastructure.storage.azure_blob import AzureBlobObjectStorage
+from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,8 @@ class FileWorkerComposition:
 
     worker: AzureServiceBusUploadCompletionWorker
     service_bus_client: ServiceBusClient
+    blob_service_client: BlobServiceClient
+    database: Database
     credential: ManagedIdentityCredential
     auto_lock_renewer: AutoLockRenewer
 
@@ -36,23 +39,24 @@ class FileWorkerComposition:
             try:
                 await self.service_bus_client.close()
             finally:
-                await self.credential.close()
+                try:
+                    await self.blob_service_client.close()
+                finally:
+                    try:
+                        await self.database.dispose()
+                    finally:
+                        await self.credential.close()
 
 
 async def build_file_worker_composition(
     settings: FileWorkerSettings,
-    *,
-    handler: UploadCompletionHandler | None,
 ) -> FileWorkerComposition:
-    """Build the worker without constructing FastAPI or database resources."""
-
-    if handler is None:
-        raise FileWorkerConfigurationError(
-            "File upload completion handler is not configured."
-        )
+    """Build only resources required to verify and register File uploads."""
 
     credential: ManagedIdentityCredential | None = None
     client: ServiceBusClient | None = None
+    blob_service_client: BlobServiceClient | None = None
+    database: Database | None = None
     auto_lock_renewer: AutoLockRenewer | None = None
     try:
         client_id = settings.azure_service_bus_managed_identity_client_id
@@ -66,6 +70,27 @@ async def build_file_worker_composition(
                 settings.azure_service_bus_fully_qualified_namespace
             ),
             credential=credential,
+        )
+        blob_service_client = BlobServiceClient(
+            account_url=str(settings.azure_storage_account_url),
+            credential=credential,
+        )
+        object_storage = AzureBlobObjectStorage(
+            blob_service_client.get_container_client(settings.azure_storage_container)
+        )
+        database = build_database(
+            settings.database_url,
+            pool_size=settings.file_worker_database_pool_size,
+            max_overflow=settings.file_worker_database_max_overflow,
+        )
+        context_protector = AesGcmUploadContextProtector.from_base64url_key(
+            settings.file_upload_context_key.get_secret_value()
+        )
+        handler = VerifyUploadCompletion(
+            object_storage=object_storage,
+            context_protector=context_protector,
+            persistence=SqlAlchemyFilePersistence(database.session_factory),
+            max_size_bytes=settings.file_upload_max_size_bytes,
         )
         auto_lock_renewer = AutoLockRenewer(
             max_lock_renewal_duration=(settings.file_worker_max_lock_renewal_seconds)
@@ -86,6 +111,8 @@ async def build_file_worker_composition(
             await _close_partial_resources(
                 auto_lock_renewer,
                 client,
+                blob_service_client,
+                database,
                 credential,
             )
         except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001
@@ -98,6 +125,8 @@ async def build_file_worker_composition(
     return FileWorkerComposition(
         worker=worker,
         service_bus_client=client,
+        blob_service_client=blob_service_client,
+        database=database,
         credential=credential,
         auto_lock_renewer=auto_lock_renewer,
     )
@@ -106,6 +135,8 @@ async def build_file_worker_composition(
 async def _close_partial_resources(
     auto_lock_renewer: AutoLockRenewer | None,
     client: ServiceBusClient | None,
+    blob_service_client: BlobServiceClient | None,
+    database: Database | None,
     credential: ManagedIdentityCredential | None,
 ) -> None:
     try:
@@ -116,12 +147,19 @@ async def _close_partial_resources(
             if client is not None:
                 await client.close()
         finally:
-            if credential is not None:
-                await credential.close()
+            try:
+                if blob_service_client is not None:
+                    await blob_service_client.close()
+            finally:
+                try:
+                    if database is not None:
+                        await database.dispose()
+                finally:
+                    if credential is not None:
+                        await credential.close()
 
 
 __all__ = [
     "FileWorkerComposition",
-    "FileWorkerConfigurationError",
     "build_file_worker_composition",
 ]

@@ -14,7 +14,7 @@ from nexus.composition.storage import (
     build_storage_composition,
 )
 from nexus.config.settings import Settings
-from nexus.files.ports import UploadGrant, UploadGrantError
+from nexus.files.ports import StoredObjectProperties, UploadGrant, UploadGrantError
 from nexus.infrastructure.storage import AzureBlobObjectStorage
 from nexus.infrastructure.storage.azure_upload_grant import (
     AzureUserDelegationUploadGrantIssuer,
@@ -38,6 +38,14 @@ class StubObjectStorage:
 
     async def delete_object(self, *, storage_key: str) -> None:
         del storage_key
+
+    async def get_object_properties(
+        self,
+        *,
+        storage_key: str,
+    ) -> StoredObjectProperties:
+        del storage_key
+        return StoredObjectProperties(entity_tag="etag", size_bytes=0, metadata={})
 
     async def _empty_stream(self) -> AsyncIterator[bytes]:
         if False:

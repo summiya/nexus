@@ -9,13 +9,9 @@ from unittest.mock import Mock
 import pytest
 
 from nexus.config.file_worker_settings import FileWorkerSettings
-from nexus.files.ports import UploadCompletionEvent
 from nexus.workers import file_upload_completion as entrypoint
 
-
-class StubHandler:
-    async def handle(self, event: UploadCompletionEvent) -> None:
-        del event
+DEVELOPMENT_CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
 
 
 class FakeWorker:
@@ -58,10 +54,13 @@ class FakeLoop:
 def _settings() -> FileWorkerSettings:
     return FileWorkerSettings(
         _env_file=None,
+        database_url="postgresql://nexus:nexus@postgres:5432/nexus",
+        file_upload_context_key=DEVELOPMENT_CONTEXT_KEY,
         azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
         azure_storage_container="nexus-files",
+        azure_storage_account_url="https://nexus.blob.core.windows.net",
     )
 
 
@@ -78,10 +77,7 @@ def test_entrypoint_installs_signals_runs_and_closes_composition(
         monkeypatch.setattr(entrypoint.asyncio, "get_running_loop", lambda: fake_loop)
         monkeypatch.setattr(entrypoint, "build_file_worker_composition", build)
 
-        await entrypoint.run_file_upload_completion_worker(
-            _settings(),
-            handler=StubHandler(),
-        )
+        await entrypoint.run_file_upload_completion_worker(_settings())
 
         assert set(fake_loop.handlers) == {signal.SIGTERM, signal.SIGINT}
         assert set(fake_loop.removed) == {signal.SIGTERM, signal.SIGINT}
@@ -93,23 +89,27 @@ def test_entrypoint_installs_signals_runs_and_closes_composition(
     asyncio.run(scenario())
 
 
-def test_main_fails_closed_before_loading_settings_or_connecting(
+def test_main_fails_closed_when_settings_cannot_load(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings_loaded = False
+    safe_logger = Mock()
 
     def load_settings() -> FileWorkerSettings:
-        nonlocal settings_loaded
-        settings_loaded = True
-        return _settings()
+        raise RuntimeError("sensitive configuration detail")
 
+    run = Mock()
     monkeypatch.setattr(entrypoint, "load_file_worker_settings", load_settings)
+    monkeypatch.setattr(entrypoint, "logger", safe_logger)
+    monkeypatch.setattr(entrypoint.asyncio, "run", run)
 
     with pytest.raises(SystemExit) as caught:
         entrypoint.main()
 
     assert caught.value.code == 1
-    assert settings_loaded is False
+    run.assert_not_called()
+    assert "sensitive configuration detail" not in repr(
+        safe_logger.error.call_args_list
+    )
 
 
 def test_main_logs_only_runtime_error_type_and_exits_nonzero(
@@ -121,7 +121,6 @@ def test_main_logs_only_runtime_error_type_and_exits_nonzero(
         operation.close()
         raise RuntimeError("sensitive provider response")
 
-    monkeypatch.setattr(entrypoint, "_build_upload_completion_handler", StubHandler)
     monkeypatch.setattr(entrypoint, "load_file_worker_settings", _settings)
     monkeypatch.setattr(entrypoint, "configure_logging", Mock())
     monkeypatch.setattr(entrypoint, "logger", safe_logger)

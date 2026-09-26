@@ -5,16 +5,29 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, HttpUrl, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from nexus.config.settings import ROOT_ENV_FILE
+from nexus.config.settings import (
+    ROOT_ENV_FILE,
+    validate_file_upload_context_key,
+)
+
+_INVALID_ACCOUNT_URL_MESSAGE = (
+    "Azure storage account URL must be a credential-free HTTPS service root"
+)
 
 
 class FileWorkerSettings(BaseSettings):
     """Only the configuration required by the File completion worker."""
 
     log_level: str = "INFO"
+    app_env: str = "development"
+    database_url: str = Field(min_length=1)
+    file_upload_max_size_bytes: int = Field(default=536_870_912, gt=0)
+    file_upload_context_key: SecretStr
+    file_worker_database_pool_size: int = Field(default=2, ge=1, le=20)
+    file_worker_database_max_overflow: int = Field(default=0, ge=0, le=20)
     azure_service_bus_fully_qualified_namespace: str = Field(
         min_length=1,
         max_length=255,
@@ -23,6 +36,7 @@ class FileWorkerSettings(BaseSettings):
     azure_service_bus_managed_identity_client_id: UUID | None = None
     azure_event_grid_expected_source: str = Field(min_length=1, max_length=1024)
     azure_storage_container: str = Field(min_length=1, max_length=63)
+    azure_storage_account_url: HttpUrl
     file_upload_completion_source: str = Field(
         default="azure-primary",
         min_length=1,
@@ -59,6 +73,32 @@ class FileWorkerSettings(BaseSettings):
             or any(character.isspace() for character in value)
         ):
             raise ValueError("Service Bus namespace is invalid")
+        return value
+
+    @field_validator("file_upload_context_key")
+    @classmethod
+    def validate_upload_context_key(
+        cls,
+        value: SecretStr,
+        info: ValidationInfo,
+    ) -> SecretStr:
+        return validate_file_upload_context_key(
+            value,
+            app_env=info.data.get("app_env"),
+        )
+
+    @field_validator("azure_storage_account_url")
+    @classmethod
+    def validate_storage_account_url(cls, value: HttpUrl) -> HttpUrl:
+        if (
+            value.scheme != "https"
+            or value.username is not None
+            or value.password is not None
+            or value.path != "/"
+            or value.query is not None
+            or value.fragment is not None
+        ):
+            raise ValueError(_INVALID_ACCOUNT_URL_MESSAGE)
         return value
 
     model_config = SettingsConfigDict(

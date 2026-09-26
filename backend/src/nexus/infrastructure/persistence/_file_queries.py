@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
@@ -76,9 +76,47 @@ async def get_file(
         return None
 
     model, stored_organization_public_id, creator_public_id = row
+    return _to_file(model, stored_organization_public_id, creator_public_id)
+
+
+async def files_matching_identity(
+    session: AsyncSession,
+    *,
+    file_public_id: UUID,
+    storage_key: str,
+) -> tuple[File, ...]:
+    """Return File rows matching either immutable completion identity."""
+    rows = (
+        await session.execute(
+            select(FileModel, Organization.public_id, User.public_id)
+            .join(Organization, FileModel.organization_id == Organization.id)
+            .join(
+                User,
+                (User.id == FileModel.created_by_user_id)
+                & (User.organization_id == FileModel.organization_id),
+            )
+            .where(
+                or_(
+                    FileModel.public_id == file_public_id,
+                    FileModel.storage_key == storage_key,
+                )
+            )
+        )
+    ).all()
+    return tuple(
+        _to_file(model, organization_public_id, creator_public_id)
+        for model, organization_public_id, creator_public_id in rows
+    )
+
+
+def _to_file(
+    model: FileModel,
+    organization_public_id: UUID,
+    creator_public_id: UUID,
+) -> File:
     return File(
         public_id=model.public_id,
-        organization_public_id=stored_organization_public_id,
+        organization_public_id=organization_public_id,
         created_by_user_public_id=creator_public_id,
         original_name=model.original_name,
         mime_type=model.mime_type,

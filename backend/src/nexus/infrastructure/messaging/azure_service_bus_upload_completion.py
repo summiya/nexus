@@ -24,7 +24,11 @@ from azure.servicebus.exceptions import (
     ServiceBusError,
 )
 
-from nexus.files.ports import UploadCompletionEvent, UploadCompletionHandler
+from nexus.files.ports import (
+    UploadCompletionEvent,
+    UploadCompletionHandler,
+    UploadCompletionRejectedError,
+)
 from nexus.infrastructure.storage import (
     AzureBlobCreatedEventMapper,
     AzureBlobCreatedEventMappingError,
@@ -35,8 +39,10 @@ MAX_UPLOAD_COMPLETION_MESSAGE_BODY_BYTES = 65_536
 
 _INVALID_BODY_REASON = "INVALID_MESSAGE_BODY"
 _INVALID_EVENT_REASON = "INVALID_BLOB_CREATED_EVENT"
+_INVALID_UPLOAD_COMPLETION_REASON = "INVALID_UPLOAD_COMPLETION"
 _INVALID_BODY_DESCRIPTION = "The message body is not a valid upload event."
 _INVALID_EVENT_DESCRIPTION = "The BlobCreated event is invalid."
+_INVALID_UPLOAD_COMPLETION_DESCRIPTION = "The upload completion is invalid."
 _RECEIVE_WAIT_SECONDS = 5.0
 _RECONNECT_DELAY_SECONDS = 2.0
 _INITIAL_FAILURE_DELAY_SECONDS = 2.0
@@ -244,6 +250,21 @@ class AzureServiceBusUploadCompletionWorker:
             await _settle_cancelled_task(stop_task)
             await self._abandon_for_shutdown(receiver, message, event_correlation)
             raise
+        except UploadCompletionRejectedError as exc:
+            stop_task.cancel()
+            await _settle_cancelled_task(stop_task)
+            logger.warning(
+                "file_upload_completion_rejected",
+                correlation=event_correlation,
+                rejection_reason=exc.reason.value,
+            )
+            return await self._dead_letter(
+                receiver,
+                message,
+                reason=_INVALID_UPLOAD_COMPLETION_REASON,
+                description=_INVALID_UPLOAD_COMPLETION_DESCRIPTION,
+                correlation=event_correlation,
+            )
         except Exception as exc:  # noqa: BLE001 - unexpected handlers are retryable
             stop_task.cancel()
             await _settle_cancelled_task(stop_task)
@@ -283,6 +304,20 @@ class AzureServiceBusUploadCompletionWorker:
                 correlation=correlation,
             )
             await self._abandon_for_shutdown(receiver, message, correlation)
+            return _ProcessingOutcome.STOPPED
+        except UploadCompletionRejectedError as exc:
+            logger.warning(
+                "file_upload_completion_rejected",
+                correlation=correlation,
+                rejection_reason=exc.reason.value,
+            )
+            await self._dead_letter(
+                receiver,
+                message,
+                reason=_INVALID_UPLOAD_COMPLETION_REASON,
+                description=_INVALID_UPLOAD_COMPLETION_DESCRIPTION,
+                correlation=correlation,
+            )
             return _ProcessingOutcome.STOPPED
         except Exception as exc:  # noqa: BLE001 - failed work must be redelivered
             logger.warning(
