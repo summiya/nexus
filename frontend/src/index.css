@@ -812,6 +812,12 @@ p {
   color: #fca5a5;
 }
 
+.file-library-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
 .file-library-error .text-button {
   width: fit-content;
 }
