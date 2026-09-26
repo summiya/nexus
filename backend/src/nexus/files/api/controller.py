@@ -20,10 +20,8 @@ from nexus.files.api.schemas import (
     UploadInstructionsResponseBody,
     UploadMetadataResponseBody,
 )
-
 from nexus.files.application import DEFAULT_FILE_PAGE_SIZE, MAX_FILE_PAGE_SIZE
 from nexus.files.domain import File
-
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -53,22 +51,6 @@ async def list_files(
             else None
         ),
     )
-
-
-@router.get("/{file_public_id}", response_model=FileMetadataResponseBody)
-async def get_file(
-    file_public_id: UUID,
-    response: Response,
-    auth_context: CurrentAuthContextDep,
-    service: GetFileDep,
-) -> FileMetadataResponseBody:
-    file = await service.execute(
-        organization_public_id=auth_context.organization_public_id,
-        user_public_id=auth_context.user_public_id,
-        file_public_id=file_public_id,
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return _to_file_metadata(file)
 
 
 @router.post(
@@ -102,6 +84,21 @@ async def initiate_file_upload(
         ),
     )
 
+
+@router.get("/{file_public_id}", response_model=FileMetadataResponseBody)
+async def get_file(
+    file_public_id: UUID,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: GetFileDep,
+) -> FileMetadataResponseBody:
+    file = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        file_public_id=file_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return _to_file_metadata(file)
 
 
 def _to_file_metadata(file: File) -> FileMetadataResponseBody:
