@@ -326,6 +326,10 @@ describe("File download API", () => {
       expires_at: expiresAt,
     },
     {
+      url: "http://storage.example/file?sig=insecure",
+      expires_at: expiresAt,
+    },
+    {
       url: signedUrl,
       expires_at: "not-a-timestamp",
     },
