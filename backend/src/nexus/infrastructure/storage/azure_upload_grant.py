@@ -63,7 +63,8 @@ class AzureUserDelegationUploadGrantIssuer:
                 expires_at=expires_at
             )
         except AzureUserDelegationKeyError as exc:
-            raise UploadGrantError(_UPLOAD_GRANT_FAILURE_MESSAGE) from exc
+            cause = exc.__cause__ if exc.__cause__ is not None else exc
+            raise UploadGrantError(_UPLOAD_GRANT_FAILURE_MESSAGE) from cause
 
         blob_client = self._service_client.get_blob_client(
             container=self._container_name,
