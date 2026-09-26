@@ -20,7 +20,11 @@ from azure.servicebus.exceptions import (
     ServiceBusError,
 )
 
-from nexus.files.ports import UploadCompletionEvent
+from nexus.files.ports import (
+    UploadCompletionEvent,
+    UploadCompletionRejectedError,
+    UploadCompletionRejectionReason,
+)
 from nexus.infrastructure.messaging import (
     azure_service_bus_upload_completion as worker_module,
 )
@@ -351,6 +355,37 @@ def test_handler_failure_is_abandoned_once_without_same_delivery_retry() -> None
     asyncio.run(scenario())
 
 
+def test_permanent_upload_rejection_is_dead_lettered_without_abandon() -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver()
+        handler = RecordingHandler(
+            [
+                UploadCompletionRejectedError(
+                    UploadCompletionRejectionReason.SIZE_MISMATCH
+                )
+            ]
+        )
+        message = _message()
+
+        await _worker(receiver, handler)._process_message(
+            cast(Any, receiver),
+            cast(ServiceBusReceivedMessage, message),
+            asyncio.Event(),
+        )
+
+        assert receiver.dead_letter_calls == [
+            (
+                message,
+                "INVALID_UPLOAD_COMPLETION",
+                "The upload completion is invalid.",
+            )
+        ]
+        assert receiver.abandon_calls == []
+        assert receiver.complete_calls == []
+
+    asyncio.run(scenario())
+
+
 def test_graceful_shutdown_completes_handler_within_grace_period() -> None:
     async def scenario() -> None:
         receiver = FakeReceiver([[_message()]])
@@ -401,6 +436,30 @@ def test_graceful_shutdown_abandons_handler_failure_without_jitter() -> None:
         assert len(receiver.abandon_calls) == 1
         assert receiver.complete_calls == []
         assert jitter_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_graceful_shutdown_dead_letters_permanent_rejection() -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver([[_message()]])
+        handler = ControlledHandler(
+            failure=UploadCompletionRejectedError(
+                UploadCompletionRejectionReason.INVALID_OWNER
+            )
+        )
+        stop_event = asyncio.Event()
+        processing = asyncio.create_task(_worker(receiver, handler).run(stop_event))
+
+        await handler.started.wait()
+        stop_event.set()
+        handler.release.set()
+        await processing
+
+        assert len(receiver.dead_letter_calls) == 1
+        assert receiver.dead_letter_calls[0][1] == "INVALID_UPLOAD_COMPLETION"
+        assert receiver.abandon_calls == []
+        assert receiver.complete_calls == []
 
     asyncio.run(scenario())
 

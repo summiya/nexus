@@ -13,6 +13,7 @@ from nexus.files.ports import (
     ObjectStorageAlreadyExistsError,
     ObjectStorageError,
     ObjectStorageNotFoundError,
+    StoredObjectProperties,
 )
 
 _ALREADY_EXISTS_MESSAGE = "The object already exists in storage."
@@ -114,3 +115,38 @@ class AzureBlobObjectStorage:
             return
         except AzureError as exc:
             raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
+
+    async def get_object_properties(
+        self,
+        *,
+        storage_key: str,
+    ) -> StoredObjectProperties:
+        """Read current Blob identity, size, and application metadata."""
+        try:
+            blob_client = self._container_client.get_blob_client(storage_key)
+            properties = await _await_provider_operation(
+                blob_client.get_blob_properties()
+            )
+            return StoredObjectProperties(
+                entity_tag=_normalize_entity_tag(properties.etag),
+                size_bytes=properties.size,
+                metadata=properties.metadata,
+            )
+        except ResourceNotFoundError as exc:
+            raise ObjectStorageNotFoundError(_NOT_FOUND_MESSAGE) from exc
+        except AzureError as exc:
+            raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
+
+
+def _normalize_entity_tag(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("entity tag is invalid")
+
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        normalized = value[1:-1]
+        if not normalized:
+            raise ValueError("entity tag is invalid")
+        return normalized
+    return value

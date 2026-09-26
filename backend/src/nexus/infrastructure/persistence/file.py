@@ -7,14 +7,29 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 from uuid import UUID
 
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.files.domain import File
-from nexus.files.ports import FilePersistence, FilePersistenceError
+from nexus.files.ports import (
+    FileIdentityConflictError,
+    FilePersistence,
+    FilePersistenceError,
+)
 from nexus.infrastructure.persistence import _file_queries as queries
 
 T = TypeVar("T")
+
+_FILE_IDENTITY_CONSTRAINTS = frozenset(
+    {
+        "uq_files_public_id",
+        "uq_files_storage_key",
+    }
+)
+
+
+class _FileIdentityRace(Exception):
+    """An expected File identity constraint lost a concurrent insert race."""
 
 
 class SqlAlchemyFilePersistence(FilePersistence):
@@ -28,6 +43,25 @@ class SqlAlchemyFilePersistence(FilePersistence):
 
     async def create_file(self, file: File) -> None:
         await self._run_transaction(lambda session: queries.insert_file(session, file))
+
+    async def register_completed_upload(self, file: File) -> None:
+        try:
+            await self._run_transaction(
+                lambda session: self._register_or_classify(
+                    session,
+                    file,
+                    insert_when_absent=True,
+                ),
+                identity_race_constraints=_FILE_IDENTITY_CONSTRAINTS,
+            )
+        except _FileIdentityRace:
+            await self._run_transaction(
+                lambda session: self._register_or_classify(
+                    session,
+                    file,
+                    insert_when_absent=False,
+                )
+            )
 
     async def get_file(
         self,
@@ -56,8 +90,15 @@ class SqlAlchemyFilePersistence(FilePersistence):
     async def _run_transaction(
         self,
         operation: Callable[[AsyncSession], Awaitable[T]],
+        *,
+        identity_race_constraints: frozenset[str] = frozenset(),
     ) -> T:
-        transaction = asyncio.create_task(self._execute_transaction(operation))
+        transaction = asyncio.create_task(
+            self._execute_transaction(
+                operation,
+                identity_race_constraints=identity_race_constraints,
+            )
+        )
         try:
             return await asyncio.shield(transaction)
         except asyncio.CancelledError:
@@ -67,12 +108,57 @@ class SqlAlchemyFilePersistence(FilePersistence):
     async def _execute_transaction(
         self,
         operation: Callable[[AsyncSession], Awaitable[T]],
+        *,
+        identity_race_constraints: frozenset[str],
     ) -> T:
         try:
             async with self._session_factory.begin() as session:
                 return await operation(session)
+        except IntegrityError as exc:
+            if _constraint_name(exc) in identity_race_constraints:
+                raise _FileIdentityRace from exc
+            raise FilePersistenceError("File persistence failed") from exc
         except SQLAlchemyError as exc:
             raise FilePersistenceError("File persistence failed") from exc
+
+    async def _register_or_classify(
+        self,
+        session: AsyncSession,
+        file: File,
+        *,
+        insert_when_absent: bool,
+    ) -> None:
+        matches = await queries.files_matching_identity(
+            session,
+            file_public_id=file.public_id,
+            storage_key=file.storage_key,
+        )
+        if not matches:
+            if not insert_when_absent:
+                raise FilePersistenceError("File persistence failed")
+            await queries.insert_file(session, file)
+            return
+
+        if len(matches) == 1:
+            existing = matches[0]
+            identities_match = (
+                existing.public_id == file.public_id
+                and existing.storage_key == file.storage_key
+            )
+            ownership_matches = (
+                existing.organization_public_id == file.organization_public_id
+                and existing.created_by_user_public_id == file.created_by_user_public_id
+            )
+            if identities_match and ownership_matches:
+                return
+
+        raise FileIdentityConflictError("File completion identity conflicts")
+
+
+def _constraint_name(exc: IntegrityError) -> str | None:
+    diagnostic = getattr(exc.orig, "diag", None)
+    name = getattr(diagnostic, "constraint_name", None)
+    return name if isinstance(name, str) else None
 
 
 async def _settle_cancelled_transaction(transaction: asyncio.Task[object]) -> None:

@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 import pytest
 
 import nexus.files.ports as file_ports
-from nexus.files.ports import UploadCompletionEvent, UploadCompletionHandler
+from nexus.files.ports import (
+    UploadCompletionEvent,
+    UploadCompletionHandler,
+    UploadCompletionRejectedError,
+    UploadCompletionRejectionReason,
+)
 
 TIMESTAMP = datetime(2026, 9, 25, tzinfo=UTC)
 
@@ -131,3 +136,13 @@ def test_upload_completion_event_rejects_negative_size() -> None:
 
 def test_upload_completion_event_allows_zero_byte_object() -> None:
     assert _event(reported_size_bytes=0).reported_size_bytes == 0
+
+
+def test_permanent_rejection_exposes_only_bounded_safe_reason() -> None:
+    error = UploadCompletionRejectedError(
+        UploadCompletionRejectionReason.FILE_IDENTITY_CONFLICT
+    )
+
+    assert str(error) == "Upload completion was rejected"
+    assert error.reason is UploadCompletionRejectionReason.FILE_IDENTITY_CONFLICT
+    assert file_ports.UploadCompletionRejectedError is UploadCompletionRejectedError

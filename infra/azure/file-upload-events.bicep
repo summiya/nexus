@@ -67,7 +67,7 @@ param duplicateDetectionHistoryTimeWindow string = 'PT10M'
 @description('Maximum queue capacity in MiB. The Phase 12 baseline is 80 GiB.')
 param queueMaxSizeInMegabytes int = 81920
 
-@description('Optional user-assigned Managed Identity principal for the future File worker. Empty creates no receiver assignment.')
+@description('Optional user-assigned Managed Identity principal for the File worker. Empty creates no worker role assignments.')
 param fileWorkerPrincipalId string = ''
 
 var expectedSystemTopicResourceId = resourceId(
@@ -125,6 +125,16 @@ module deadLetterStorage './modules/file-upload-dead-letter-storage.bicep' = {
   params: {
     containerName: deadLetterContainerName
     eventGridPrincipalId: trustedEventGridPrincipalId
+    storageAccountName: storageAccountName
+  }
+}
+
+module fileWorkerStorageAccess './modules/file-worker-storage-access.bicep' = if (!empty(trim(fileWorkerPrincipalId))) {
+  name: 'nexus-file-upload-worker-storage-access'
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+  params: {
+    fileContainerName: fileContainerName
+    fileWorkerPrincipalId: fileWorkerPrincipalId
     storageAccountName: storageAccountName
   }
 }

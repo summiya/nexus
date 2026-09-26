@@ -225,3 +225,26 @@ def test_normal_completion_leaves_shared_client_usable() -> None:
         assert await collect(storage.stream_object(storage_key="second")) == b"second"
 
     asyncio.run(_with_isolated_storage(scenario))
+
+
+def test_upload_context_metadata_round_trips_through_object_properties() -> None:
+    async def scenario(
+        storage: AzureBlobObjectStorage,
+        client: ContainerClient,
+    ) -> None:
+        storage_key = f"files/{uuid.uuid4().hex}"
+        protected_context = "nuc1.primary.frontend-upload-context"
+        await client.upload_blob(
+            name=storage_key,
+            data=b"uploaded-content",
+            metadata={"nexus_upload_context": protected_context},
+            overwrite=False,
+        )
+
+        properties = await storage.get_object_properties(storage_key=storage_key)
+
+        assert properties.size_bytes == len(b"uploaded-content")
+        assert properties.metadata["nexus_upload_context"] == protected_context
+        assert properties.entity_tag
+
+    asyncio.run(_with_isolated_storage(scenario))

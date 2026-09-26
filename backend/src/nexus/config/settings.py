@@ -8,7 +8,31 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 ROOT_ENV_FILE = REPOSITORY_ROOT / ".env"
+DEFAULT_FILE_UPLOAD_MAX_SIZE_BYTES = 536_870_912
 _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY = b"nexus-development-upload-key-001"
+
+
+def validate_file_upload_context_key(
+    value: SecretStr,
+    *,
+    app_env: object,
+) -> SecretStr:
+    """Validate the shared API/worker UploadContext protection key."""
+    encoded = value.get_secret_value()
+    try:
+        padding = "=" * (-len(encoded) % 4)
+        decoded = base64.b64decode(
+            encoded + padding,
+            altchars=b"-_",
+            validate=True,
+        )
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("File upload context key is invalid") from exc
+    if len(decoded) != 32:
+        raise ValueError("File upload context key is invalid")
+    if app_env == "production" and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY:
+        raise ValueError("Production File upload context key must be overridden.")
+    return value
 
 
 class Settings(BaseSettings):
@@ -40,7 +64,10 @@ class Settings(BaseSettings):
     conversation_history_limit: int = Field(default=50, ge=1, le=200)
     conversation_history_max_chars: int = Field(default=120_000, ge=1, le=1_000_000)
     conversation_message_max_length: int = Field(default=32_000, ge=1, le=100_000)
-    file_upload_max_size_bytes: int = Field(default=536_870_912, gt=0)
+    file_upload_max_size_bytes: int = Field(
+        default=DEFAULT_FILE_UPLOAD_MAX_SIZE_BYTES,
+        gt=0,
+    )
     file_upload_grant_ttl_seconds: int = Field(default=600, gt=0, le=3600)
     file_upload_context_key: SecretStr
     storage_provider: str = Field(default="azure_blob", min_length=1)
@@ -57,24 +84,10 @@ class Settings(BaseSettings):
         value: SecretStr,
         info: ValidationInfo,
     ) -> SecretStr:
-        encoded = value.get_secret_value()
-        try:
-            padding = "=" * (-len(encoded) % 4)
-            decoded = base64.b64decode(
-                encoded + padding,
-                altchars=b"-_",
-                validate=True,
-            )
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("File upload context key is invalid") from exc
-        if len(decoded) != 32:
-            raise ValueError("File upload context key is invalid")
-        if (
-            info.data.get("app_env") == "production"
-            and decoded == _DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
-        ):
-            raise ValueError("Production File upload context key must be overridden.")
-        return value
+        return validate_file_upload_context_key(
+            value,
+            app_env=info.data.get("app_env"),
+        )
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

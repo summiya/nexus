@@ -16,10 +16,17 @@ class FileReferenceError(Exception):
     """A required File organization or creator reference is invalid."""
 
 
+class FileIdentityConflictError(Exception):
+    """Stored File identities or immutable ownership conflict."""
+
+
 class FilePersistence(Protocol):
     """Short transaction operations used by future File application code."""
 
     async def create_file(self, file: File) -> None: ...
+
+    async def register_completed_upload(self, file: File) -> None:
+        """Create a File once or accept its exact immutable duplicate."""
 
     async def get_file(
         self,
@@ -29,4 +36,9 @@ class FilePersistence(Protocol):
     ) -> File | None: ...
 
 
-__all__ = ["FilePersistence", "FilePersistenceError", "FileReferenceError"]
+__all__ = [
+    "FileIdentityConflictError",
+    "FilePersistence",
+    "FilePersistenceError",
+    "FileReferenceError",
+]

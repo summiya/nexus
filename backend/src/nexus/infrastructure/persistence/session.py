@@ -33,13 +33,20 @@ class Database:
         await self.engine.dispose()
 
 
-def build_database(database_url: str) -> Database:
+def build_database(
+    database_url: str,
+    *,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+) -> Database:
     """Build database resources from the owning application's configuration."""
 
     normalized_database_url = _normalize_database_url(database_url)
     engine = create_async_engine(
         normalized_database_url,
         pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
     )
     return Database(
         engine=engine,

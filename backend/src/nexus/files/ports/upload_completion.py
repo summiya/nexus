@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from nexus.files.domain import is_canonical_file_storage_key
@@ -12,6 +13,26 @@ _MAX_EVENT_ID_LENGTH = 1024
 _MAX_SOURCE_LENGTH = 1024
 _MAX_STORAGE_KEY_LENGTH = 1024
 _MAX_ENTITY_TAG_LENGTH = 1024
+
+
+class UploadCompletionRejectionReason(StrEnum):
+    """Bounded safe reasons for permanently rejecting a committed upload."""
+
+    MISSING_UPLOAD_CONTEXT = "missing_upload_context"
+    INVALID_UPLOAD_CONTEXT = "invalid_upload_context"
+    STORAGE_KEY_MISMATCH = "storage_key_mismatch"
+    SIZE_MISMATCH = "size_mismatch"
+    SIZE_LIMIT_EXCEEDED = "size_limit_exceeded"
+    INVALID_OWNER = "invalid_owner"
+    FILE_IDENTITY_CONFLICT = "file_identity_conflict"
+
+
+class UploadCompletionRejectedError(Exception):
+    """A committed upload is permanently invalid and must not be retried."""
+
+    def __init__(self, reason: UploadCompletionRejectionReason) -> None:
+        self.reason = reason
+        super().__init__("Upload completion was rejected")
 
 
 def _require_nonblank_bounded(
@@ -82,4 +103,9 @@ class UploadCompletionHandler(Protocol):
     async def handle(self, event: UploadCompletionEvent) -> None: ...
 
 
-__all__ = ["UploadCompletionEvent", "UploadCompletionHandler"]
+__all__ = [
+    "UploadCompletionEvent",
+    "UploadCompletionHandler",
+    "UploadCompletionRejectedError",
+    "UploadCompletionRejectionReason",
+]

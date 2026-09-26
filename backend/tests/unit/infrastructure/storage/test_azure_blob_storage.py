@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -36,10 +37,17 @@ class FakeContainerClient:
         self.uploaded_chunks: list[bytes] = []
         self.download_calls: list[str] = []
         self.delete_calls: list[str] = []
+        self.properties_calls: list[str] = []
         self.upload_error: BaseException | None = None
         self.upload_failure_wrapper: AzureError | None = None
         self.download_error: BaseException | None = None
         self.delete_error: BaseException | None = None
+        self.properties_error: BaseException | None = None
+        self.properties = SimpleNamespace(
+            etag='"0x8D123"',
+            size=42,
+            metadata={"nexus_upload_context": "protected"},
+        )
         self.consume_upload = False
         self.download_chunks: AsyncIterator[bytes] = byte_stream(b"content")
         self.close_calls = 0
@@ -81,6 +89,15 @@ class FakeContainerClient:
         self.delete_calls.append(blob)
         if self.delete_error is not None:
             raise self.delete_error
+
+    def get_blob_client(self, blob: str) -> FakeContainerClient:
+        self.properties_calls.append(blob)
+        return self
+
+    async def get_blob_properties(self) -> object:
+        if self.properties_error is not None:
+            raise self.properties_error
+        return self.properties
 
     async def close(self) -> None:
         self.close_calls += 1
@@ -343,5 +360,65 @@ def test_delete_is_idempotent_and_translates_other_provider_errors(
 
         assert fake_client.delete_calls == ["opaque-key"]
         assert fake_client.close_calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_properties_normalize_only_expected_surrounding_etag_quotes() -> None:
+    async def scenario() -> None:
+        fake_client = FakeContainerClient()
+        adapter = adapter_for(fake_client)
+
+        properties = await adapter.get_object_properties(storage_key="opaque-key")
+
+        assert properties.entity_tag == "0x8D123"
+        assert properties.size_bytes == 42
+        assert properties.metadata == {"nexus_upload_context": "protected"}
+        assert fake_client.properties_calls == ["opaque-key"]
+
+        fake_client.properties.etag = 'W/"0xWEAK"'
+        weak = await adapter.get_object_properties(storage_key="opaque-key")
+        assert weak.entity_tag == 'W/"0xWEAK"'
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("malformed_etag", [None, "", 123, ["0x8D123"]])
+def test_properties_reject_malformed_etags(malformed_etag: object) -> None:
+    async def scenario() -> None:
+        fake_client = FakeContainerClient()
+        fake_client.properties.etag = malformed_etag
+        adapter = adapter_for(fake_client)
+
+        with pytest.raises(ObjectStorageError) as captured:
+            await adapter.get_object_properties(storage_key="opaque-key")
+
+        assert str(captured.value) == "The object storage operation failed."
+        assert isinstance(captured.value.__cause__, (TypeError, ValueError))
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_error"),
+    [
+        (ResourceNotFoundError("missing"), ObjectStorageNotFoundError),
+        (AzureError("provider detail"), ObjectStorageError),
+    ],
+)
+def test_properties_translate_provider_errors(
+    provider_error: AzureError,
+    expected_error: type[ObjectStorageError],
+) -> None:
+    async def scenario() -> None:
+        fake_client = FakeContainerClient()
+        fake_client.properties_error = provider_error
+        adapter = adapter_for(fake_client)
+
+        with pytest.raises(expected_error) as captured:
+            await adapter.get_object_properties(storage_key="opaque-key")
+
+        assert "provider detail" not in str(captured.value)
+        assert captured.value.__cause__ is provider_error
 
     asyncio.run(scenario())

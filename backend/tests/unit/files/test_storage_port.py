@@ -4,12 +4,15 @@ import inspect
 from collections.abc import AsyncIterable, AsyncIterator
 from typing import get_type_hints
 
+import pytest
+
 import nexus.files.ports as file_ports
 from nexus.files.ports.storage import (
     ObjectStorage,
     ObjectStorageAlreadyExistsError,
     ObjectStorageError,
     ObjectStorageNotFoundError,
+    StoredObjectProperties,
 )
 
 
@@ -39,6 +42,13 @@ def test_delete_object_is_an_async_contract() -> None:
     assert parameters["storage_key"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
+def test_get_object_properties_is_an_async_contract() -> None:
+    parameters = inspect.signature(ObjectStorage.get_object_properties).parameters
+
+    assert inspect.iscoroutinefunction(ObjectStorage.get_object_properties)
+    assert parameters["storage_key"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
 def test_storage_specific_errors_share_the_provider_neutral_base() -> None:
     assert issubclass(ObjectStorageAlreadyExistsError, ObjectStorageError)
     assert issubclass(ObjectStorageNotFoundError, ObjectStorageError)
@@ -49,3 +59,19 @@ def test_file_ports_export_the_object_storage_contract() -> None:
     assert file_ports.ObjectStorageError is ObjectStorageError
     assert file_ports.ObjectStorageAlreadyExistsError is ObjectStorageAlreadyExistsError
     assert file_ports.ObjectStorageNotFoundError is ObjectStorageNotFoundError
+    assert file_ports.StoredObjectProperties is StoredObjectProperties
+
+
+def test_stored_object_metadata_is_defensively_copied_and_read_only() -> None:
+    metadata = {"nexus_upload_context": "protected"}
+    properties = StoredObjectProperties(
+        entity_tag="etag",
+        size_bytes=42,
+        metadata=metadata,
+    )
+
+    metadata["nexus_upload_context"] = "changed"
+
+    assert properties.metadata["nexus_upload_context"] == "protected"
+    with pytest.raises(TypeError):
+        properties.metadata["new"] = "value"  # type: ignore[index]
