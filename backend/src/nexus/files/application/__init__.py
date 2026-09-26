@@ -1,10 +1,6 @@
 """File application policies."""
 
 from nexus.files.application.apply_malware_scan_result import ApplyMalwareScanResult
-from nexus.files.application.handle_file_worker_event import (
-    FileWorkerEvent,
-    HandleFileWorkerEvent,
-)
 from nexus.files.application.initiate_upload import (
     InitiatedFileUpload,
     InitiateFileUpload,
@@ -18,8 +14,6 @@ from nexus.files.application.verify_upload_completion import VerifyUploadComplet
 
 __all__ = [
     "ApplyMalwareScanResult",
-    "FileWorkerEvent",
-    "HandleFileWorkerEvent",
     "InitiateFileUpload",
     "InitiatedFileUpload",
     "UploadIntentPolicy",
