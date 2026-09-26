@@ -53,6 +53,16 @@ class FilePersistence(Protocol):
         file_public_id: UUID,
     ) -> File | None: ...
 
+    async def list_files(
+        self,
+        *,
+        organization_public_id: UUID,
+        before_created_at: datetime | None,
+        before_public_id: UUID | None,
+        limit: int,
+    ) -> tuple[File, ...]:
+        """List one keyset page in newest-first deterministic order."""
+
 
 __all__ = [
     "FileIdentityConflictError",
