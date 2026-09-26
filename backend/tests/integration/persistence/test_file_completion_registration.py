@@ -16,8 +16,10 @@ from nexus.files.application import VerifyUploadCompletion
 from nexus.files.domain import File, FileStorageStatus, UploadContext
 from nexus.files.ports import (
     FileIdentityConflictError,
+    FileNotReadyError,
     FilePersistenceError,
     FileReferenceError,
+    FileStateConflictError,
     StoredObjectProperties,
     UploadCompletionEvent,
 )
@@ -308,3 +310,77 @@ def test_unrelated_database_integrity_failure_is_not_duplicate_success(
         )
 
     assert _stored_rows(migrated_engine) == []
+
+
+def test_malware_scan_transition_is_idempotent(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    file = _file(organization_id, user_id)
+    persistence = _persistence(persistence_async_session_factory)
+    asyncio.run(persistence.create_file(file))
+
+    asyncio.run(
+        persistence.apply_malware_scan_result(
+            storage_key=file.storage_key,
+            target_status=FileStorageStatus.AVAILABLE,
+            updated_at=TIMESTAMP,
+        )
+    )
+    asyncio.run(
+        persistence.apply_malware_scan_result(
+            storage_key=file.storage_key,
+            target_status=FileStorageStatus.AVAILABLE,
+            updated_at=TIMESTAMP,
+        )
+    )
+
+    rows = _stored_rows(migrated_engine)
+    assert len(rows) == 1
+    assert rows[0].storage_status == FileStorageStatus.AVAILABLE.value
+
+
+def test_malware_scan_conflicting_terminal_state_is_rejected(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    file = _file(organization_id, user_id)
+    persistence = _persistence(persistence_async_session_factory)
+    asyncio.run(persistence.create_file(file))
+    asyncio.run(
+        persistence.apply_malware_scan_result(
+            storage_key=file.storage_key,
+            target_status=FileStorageStatus.AVAILABLE,
+            updated_at=TIMESTAMP,
+        )
+    )
+
+    with pytest.raises(FileStateConflictError):
+        asyncio.run(
+            persistence.apply_malware_scan_result(
+                storage_key=file.storage_key,
+                target_status=FileStorageStatus.FAILED,
+                updated_at=TIMESTAMP,
+            )
+        )
+
+    assert _stored_rows(migrated_engine)[0].storage_status == "available"
+
+
+def test_malware_scan_before_file_registration_remains_retryable(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    del migrated_engine
+    persistence = _persistence(persistence_async_session_factory)
+
+    with pytest.raises(FileNotReadyError):
+        asyncio.run(
+            persistence.apply_malware_scan_result(
+                storage_key=f"files/{uuid4().hex}",
+                target_status=FileStorageStatus.AVAILABLE,
+                updated_at=TIMESTAMP,
+            )
+        )

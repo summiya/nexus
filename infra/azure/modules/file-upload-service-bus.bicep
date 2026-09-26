@@ -6,8 +6,11 @@ param location string
 @description('Globally unique Service Bus namespace name.')
 param namespaceName string
 
-@description('Shared File upload-completion queue name.')
+@description('File upload-completion queue name.')
 param queueName string
+
+@description('Defender malware scan-result queue name.')
+param malwareScanQueueName string
 
 @allowed([
   1
@@ -33,6 +36,9 @@ param duplicateDetectionHistoryTimeWindow string
 
 @description('System-assigned principal ID of the explicitly selected Event Grid system topic.')
 param eventGridPrincipalId string
+
+@description('System-assigned principal ID of the Defender malware scan result Event Grid topic.')
+param malwareScanTopicPrincipalId string
 
 @description('Optional user-assigned File worker principal. Empty creates no receiver role assignment.')
 param fileWorkerPrincipalId string = ''
@@ -105,11 +111,44 @@ resource queue 'Microsoft.ServiceBus/namespaces/queues@2026-01-01' = {
   ]
 }
 
+resource malwareScanQueue 'Microsoft.ServiceBus/namespaces/queues@2026-01-01' = {
+  name: malwareScanQueueName
+  parent: serviceBusNamespace
+  properties: {
+    autoDeleteOnIdle: 'P10675199DT2H48M5.4775807S'
+    deadLetteringOnMessageExpiration: true
+    defaultMessageTimeToLive: 'P7D'
+    duplicateDetectionHistoryTimeWindow: duplicateDetectionHistoryTimeWindow
+    enableBatchedOperations: true
+    enableExpress: false
+    lockDuration: 'PT1M'
+    maxDeliveryCount: 10
+    maxMessageSizeInKilobytes: 1024
+    maxSizeInMegabytes: queueMaxSizeInMegabytes
+    requiresDuplicateDetection: true
+    requiresSession: false
+    status: 'Active'
+  }
+  dependsOn: [
+    networkRules
+  ]
+}
+
 resource eventGridSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(queue.id, eventGridPrincipalId, serviceBusDataSenderRoleDefinitionId)
   scope: queue
   properties: {
     principalId: eventGridPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataSenderRoleDefinitionId
+  }
+}
+
+resource malwareScanTopicSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(malwareScanQueue.id, malwareScanTopicPrincipalId, serviceBusDataSenderRoleDefinitionId)
+  scope: malwareScanQueue
+  properties: {
+    principalId: malwareScanTopicPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: serviceBusDataSenderRoleDefinitionId
   }
@@ -125,5 +164,16 @@ resource fileWorkerReceiverRole 'Microsoft.Authorization/roleAssignments@2022-04
   }
 }
 
+resource fileWorkerMalwareScanReceiverRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(trim(fileWorkerPrincipalId))) {
+  name: guid(malwareScanQueue.id, fileWorkerPrincipalId, serviceBusDataReceiverRoleDefinitionId)
+  scope: malwareScanQueue
+  properties: {
+    principalId: fileWorkerPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataReceiverRoleDefinitionId
+  }
+}
+
 output namespaceResourceId string = serviceBusNamespace.id
 output queueResourceId string = queue.id
+output malwareScanQueueResourceId string = malwareScanQueue.id

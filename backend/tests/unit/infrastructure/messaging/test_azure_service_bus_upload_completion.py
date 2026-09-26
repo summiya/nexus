@@ -21,6 +21,8 @@ from azure.servicebus.exceptions import (
 )
 
 from nexus.files.ports import (
+    MalwareScanRejectionReason,
+    MalwareScanResultRejectedError,
     UploadCompletionEvent,
     UploadCompletionRejectedError,
     UploadCompletionRejectionReason,
@@ -34,7 +36,10 @@ from nexus.infrastructure.messaging.azure_service_bus_upload_completion import (
     InvalidUploadCompletionMessageBody,
     decode_upload_completion_body,
 )
-from nexus.infrastructure.storage import AzureBlobCreatedEventMapper
+from nexus.infrastructure.storage import (
+    AzureBlobCreatedEventMapper,
+    AzureMalwareScanResultMappingError,
+)
 
 AZURE_SOURCE = (
     "/subscriptions/00000000-0000-0000-0000-000000000000/"
@@ -754,3 +759,58 @@ def test_event_correlation_does_not_use_service_bus_message_id() -> None:
 
     assert first == second
     assert "cloud-event-id" not in first
+
+
+def test_invalid_malware_scan_event_is_dead_lettered_with_bounded_reason() -> None:
+    class RejectingMalwareMapper:
+        def map_event(self, payload: Mapping[str, object]) -> UploadCompletionEvent:
+            del payload
+            raise AzureMalwareScanResultMappingError("unsafe provider detail")
+
+    async def scenario() -> None:
+        receiver = FakeReceiver()
+        worker = AzureServiceBusUploadCompletionWorker(
+            client=cast(Any, FakeClient(receiver)),
+            queue_name="file-upload-completions",
+            mapper=cast(Any, RejectingMalwareMapper()),
+            handler=RecordingHandler(),
+            auto_lock_renewer=cast(Any, object()),
+        )
+
+        await worker._process_message(
+            cast(Any, receiver),
+            cast(ServiceBusReceivedMessage, _message()),
+            asyncio.Event(),
+        )
+
+        assert len(receiver.dead_letter_calls) == 1
+        _message_value, reason, description = receiver.dead_letter_calls[0]
+        assert reason == "INVALID_MALWARE_SCAN_RESULT"
+        assert description == "The malware scan result is invalid."
+        assert "unsafe provider detail" not in description
+
+    asyncio.run(scenario())
+
+
+def test_conflicting_malware_terminal_state_is_dead_lettered_not_abandoned() -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver()
+        handler = RecordingHandler(
+            [
+                MalwareScanResultRejectedError(
+                    MalwareScanRejectionReason.FILE_STATE_CONFLICT
+                )
+            ]
+        )
+
+        await _worker(receiver, handler)._process_message(
+            cast(Any, receiver),
+            cast(ServiceBusReceivedMessage, _message()),
+            asyncio.Event(),
+        )
+
+        assert len(receiver.dead_letter_calls) == 1
+        assert receiver.dead_letter_calls[0][1] == "INVALID_MALWARE_SCAN_RESULT"
+        assert receiver.abandon_calls == []
+
+    asyncio.run(scenario())

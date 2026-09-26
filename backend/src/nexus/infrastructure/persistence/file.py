@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from nexus.files.domain import File
+from nexus.files.domain import File, FileStorageStatus
 from nexus.files.ports import (
     FileIdentityConflictError,
+    FileNotReadyError,
     FilePersistence,
     FilePersistenceError,
+    FileStateConflictError,
 )
 from nexus.infrastructure.persistence import _file_queries as queries
 
@@ -62,6 +65,22 @@ class SqlAlchemyFilePersistence(FilePersistence):
                     insert_when_absent=False,
                 )
             )
+
+    async def apply_malware_scan_result(
+        self,
+        *,
+        storage_key: str,
+        target_status: FileStorageStatus,
+        updated_at: datetime,
+    ) -> None:
+        await self._run_transaction(
+            lambda session: self._apply_malware_scan_result(
+                session,
+                storage_key=storage_key,
+                target_status=target_status,
+                updated_at=updated_at,
+            )
+        )
 
     async def get_file(
         self,
@@ -120,6 +139,31 @@ class SqlAlchemyFilePersistence(FilePersistence):
             raise FilePersistenceError("File persistence failed") from exc
         except SQLAlchemyError as exc:
             raise FilePersistenceError("File persistence failed") from exc
+
+    async def _apply_malware_scan_result(
+        self,
+        session: AsyncSession,
+        *,
+        storage_key: str,
+        target_status: FileStorageStatus,
+        updated_at: datetime,
+    ) -> None:
+        current_status = await queries.file_storage_status_for_update(
+            session,
+            storage_key=storage_key,
+        )
+        if current_status is None:
+            raise FileNotReadyError("File is not ready for malware result")
+        if current_status is target_status:
+            return
+        if current_status is not FileStorageStatus.PENDING:
+            raise FileStateConflictError("File malware state conflicts")
+        await queries.update_file_storage_status(
+            session,
+            storage_key=storage_key,
+            target_status=target_status,
+            updated_at=updated_at,
+        )
 
     async def _register_or_classify(
         self,

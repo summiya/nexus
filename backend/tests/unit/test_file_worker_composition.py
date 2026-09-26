@@ -11,7 +11,7 @@ import pytest
 from nexus.composition import file_worker as composition_module
 from nexus.composition.file_worker import build_file_worker_composition
 from nexus.config.file_worker_settings import FileWorkerSettings
-from nexus.files.application import VerifyUploadCompletion
+from nexus.files.application import ApplyMalwareScanResult, VerifyUploadCompletion
 from nexus.infrastructure.persistence.session import Database
 
 DEVELOPMENT_CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
@@ -162,6 +162,10 @@ def _settings(**changes: object) -> FileWorkerSettings:
         azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
+        azure_malware_scan_expected_topic=(
+            "/subscriptions/test/resourceGroups/nexus/providers/"
+            "Microsoft.EventGrid/topics/nexus-file-malware-scan-results"
+        ),
         azure_storage_container="nexus-files",
         azure_storage_account_url="https://nexus.blob.core.windows.net",
         **changes,
@@ -190,6 +194,12 @@ def test_builds_dedicated_worker_and_closes_owned_resources_once() -> None:
         assert composition.worker.queue_name == "file-upload-completions"
         assert composition.worker.auto_lock_renewer is renewer
         assert isinstance(composition.worker.handler, VerifyUploadCompletion)
+        assert composition.malware_scan_worker.queue_name == "file-malware-scan-results"
+        assert composition.malware_scan_worker.auto_lock_renewer is renewer
+        assert isinstance(
+            composition.malware_scan_worker.handler,
+            ApplyMalwareScanResult,
+        )
 
         await composition.close()
 

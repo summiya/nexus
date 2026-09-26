@@ -37,7 +37,9 @@ async def run_file_upload_completion_worker(
     composition = None
     try:
         composition = await build_file_worker_composition(settings)
-        await composition.worker.run(stop_event)
+        async with asyncio.TaskGroup() as workers:
+            workers.create_task(composition.worker.run(stop_event))
+            workers.create_task(composition.malware_scan_worker.run(stop_event))
     finally:
         for handled_signal in installed_signals:
             loop.remove_signal_handler(handled_signal)

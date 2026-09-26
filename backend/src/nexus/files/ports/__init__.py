@@ -1,10 +1,19 @@
 """Application-facing File ports."""
 
+from nexus.files.ports.malware_scan import (
+    MalwareScanRejectionReason,
+    MalwareScanResultEvent,
+    MalwareScanResultHandler,
+    MalwareScanResultRejectedError,
+    MalwareScanVerdict,
+)
 from nexus.files.ports.persistence import (
     FileIdentityConflictError,
+    FileNotReadyError,
     FilePersistence,
     FilePersistenceError,
     FileReferenceError,
+    FileStateConflictError,
 )
 from nexus.files.ports.storage import (
     ObjectStorage,
@@ -33,9 +42,16 @@ from nexus.files.ports.upload_grant import (
 __all__ = [
     "UPLOAD_CONTEXT_MAX_LENGTH",
     "FileIdentityConflictError",
+    "FileNotReadyError",
     "FilePersistence",
     "FilePersistenceError",
     "FileReferenceError",
+    "FileStateConflictError",
+    "MalwareScanRejectionReason",
+    "MalwareScanResultEvent",
+    "MalwareScanResultHandler",
+    "MalwareScanResultRejectedError",
+    "MalwareScanVerdict",
     "ObjectStorage",
     "ObjectStorageAlreadyExistsError",
     "ObjectStorageError",

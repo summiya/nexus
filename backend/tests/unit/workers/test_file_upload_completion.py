@@ -28,6 +28,7 @@ class FakeWorker:
 @dataclass
 class FakeComposition:
     worker: FakeWorker
+    malware_scan_worker: FakeWorker
     close_calls: int = 0
 
     async def close(self) -> None:
@@ -59,6 +60,10 @@ def _settings() -> FileWorkerSettings:
         azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
+        azure_malware_scan_expected_topic=(
+            "/subscriptions/test/resourceGroups/nexus/providers/"
+            "Microsoft.EventGrid/topics/nexus-file-malware-scan-results"
+        ),
         azure_storage_container="nexus-files",
         azure_storage_account_url="https://nexus.blob.core.windows.net",
     )
@@ -69,7 +74,7 @@ def test_entrypoint_installs_signals_runs_and_closes_composition(
 ) -> None:
     async def scenario() -> None:
         fake_loop = FakeLoop()
-        composition = FakeComposition(FakeWorker())
+        composition = FakeComposition(FakeWorker(), FakeWorker())
 
         async def build(*_args: object, **_kwargs: object) -> FakeComposition:
             return composition
@@ -84,6 +89,9 @@ def test_entrypoint_installs_signals_runs_and_closes_composition(
         assert composition.worker.run_calls == 1
         assert composition.worker.stop_event is not None
         assert composition.worker.stop_event.is_set()
+        assert composition.malware_scan_worker.run_calls == 1
+        assert composition.malware_scan_worker.stop_event is not None
+        assert composition.malware_scan_worker.stop_event.is_set()
         assert composition.close_calls == 1
 
     asyncio.run(scenario())

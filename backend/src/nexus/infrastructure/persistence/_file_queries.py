@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
@@ -126,4 +127,38 @@ def _to_file(
         checksum_sha256=model.checksum_sha256,
         created_at=model.created_at,
         updated_at=model.updated_at,
+    )
+
+
+async def file_storage_status_for_update(
+    session: AsyncSession,
+    *,
+    storage_key: str,
+) -> FileStorageStatus | None:
+    """Lock one File by storage key and return its current lifecycle status."""
+    value = (
+        await session.execute(
+            select(FileModel.storage_status)
+            .where(FileModel.storage_key == storage_key)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    return FileStorageStatus(value) if value is not None else None
+
+
+async def update_file_storage_status(
+    session: AsyncSession,
+    *,
+    storage_key: str,
+    target_status: FileStorageStatus,
+    updated_at: datetime,
+) -> None:
+    """Update one already-locked File lifecycle status."""
+    await session.execute(
+        update(FileModel)
+        .where(FileModel.storage_key == storage_key)
+        .values(
+            storage_status=target_status.value,
+            updated_at=updated_at,
+        )
     )

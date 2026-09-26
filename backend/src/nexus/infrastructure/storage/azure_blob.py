@@ -128,7 +128,7 @@ class AzureBlobObjectStorage:
                 blob_client.get_blob_properties()
             )
             return StoredObjectProperties(
-                entity_tag=_normalize_entity_tag(properties.etag),
+                entity_tag=normalize_azure_entity_tag(properties.etag),
                 size_bytes=properties.size,
                 metadata=properties.metadata,
             )
@@ -140,7 +140,8 @@ class AzureBlobObjectStorage:
             raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
 
 
-def _normalize_entity_tag(value: object) -> str:
+def normalize_azure_entity_tag(value: object) -> str:
+    """Normalize the quoted strong ETag shape returned by Azure Blob SDK."""
     if not isinstance(value, str) or not value:
         raise ValueError("entity tag is invalid")
 
@@ -150,3 +151,6 @@ def _normalize_entity_tag(value: object) -> str:
             raise ValueError("entity tag is invalid")
         return normalized
     return value
+
+
+__all__ = ["AzureBlobObjectStorage", "normalize_azure_entity_tag"]

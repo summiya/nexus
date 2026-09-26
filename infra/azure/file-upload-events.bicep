@@ -1,6 +1,6 @@
 targetScope = 'subscription'
 
-metadata description = 'Routes committed Nexus File blobs through Event Grid into a durable Service Bus queue.'
+metadata description = 'Routes File upload and Defender malware-scan events into the durable Nexus File queue.'
 
 @description('Resource group that will own the Service Bus namespace.')
 param serviceBusResourceGroupName string
@@ -8,8 +8,11 @@ param serviceBusResourceGroupName string
 @description('Globally unique Service Bus Premium namespace name.')
 param serviceBusNamespaceName string
 
-@description('Shared queue for committed Nexus File upload events.')
+@description('Queue for committed Nexus File upload events.')
 param queueName string = 'file-upload-completions'
+
+@description('Queue for Defender malware scan result events.')
+param malwareScanQueueName string = 'file-malware-scan-results'
 
 @description('Immutable Premium namespace partition count. Nexus launches with one partition.')
 @allowed([
@@ -61,6 +64,15 @@ param systemTopicName string
 @description('Nexus-owned File event-subscription name on the shared system topic.')
 param eventSubscriptionName string = 'nexus-file-upload-completions'
 
+@description('Dedicated custom Event Grid topic for Defender malware scan results.')
+param malwareScanTopicName string = 'nexus-file-malware-scan-results'
+
+@description('Nexus-owned Defender result event-subscription name.')
+param malwareScanEventSubscriptionName string = 'nexus-file-malware-scan-results'
+
+@description('Maximum Defender on-upload malware scanning volume per month in GB. Use -1 for unlimited.')
+param malwareScanCapGBPerMonth int
+
 @description('Service Bus duplicate-detection history window.')
 param duplicateDetectionHistoryTimeWindow string = 'PT10M'
 
@@ -70,6 +82,15 @@ param queueMaxSizeInMegabytes int = 81920
 @description('Optional user-assigned Managed Identity principal for the File worker. Empty creates no worker role assignments.')
 param fileWorkerPrincipalId string = ''
 
+var systemTopicSubscriptionMatchesStorage = toLower(systemTopicSubscriptionId) == toLower(storageSubscriptionId)
+var systemTopicResourceGroupMatchesStorage = toLower(systemTopicResourceGroupName) == toLower(storageResourceGroupName)
+var systemTopicPlacementIsDefenderCompatible = systemTopicSubscriptionMatchesStorage
+  ? systemTopicResourceGroupMatchesStorage
+  : false
+var defenderCompatibleSystemTopicName = systemTopicPlacementIsDefenderCompatible
+  ? systemTopicName
+  : fail('The storage Event Grid system topic must be in the storage account resource group for Defender malware scanning.')
+
 var expectedSystemTopicResourceId = resourceId(
   systemTopicSubscriptionId,
   systemTopicResourceGroupName,
@@ -77,7 +98,7 @@ var expectedSystemTopicResourceId = resourceId(
   systemTopicName
 )
 var validatedSystemTopicName = toLower(systemTopicResourceId) == toLower(expectedSystemTopicResourceId)
-  ? systemTopicName
+  ? defenderCompatibleSystemTopicName
   : fail('The explicit Event Grid system-topic resource ID is inconsistent.')
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2026-04-01' existing = {
@@ -103,13 +124,24 @@ var trustedEventGridPrincipalId = trustedSystemTopicName == validatedSystemTopic
   ? systemTopicPrincipalId
   : fail('The Event Grid system-topic identity is invalid.')
 
+module malwareScanTopic './modules/file-malware-scan-topic.bicep' = {
+  name: 'nexus-file-malware-scan-topic'
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+  params: {
+    location: storageAccount.location
+    malwareScanTopicName: malwareScanTopicName
+  }
+}
+
 module serviceBus './modules/file-upload-service-bus.bicep' = {
   name: 'nexus-file-upload-service-bus'
   scope: resourceGroup(serviceBusResourceGroupName)
   params: {
     eventGridPrincipalId: trustedEventGridPrincipalId
+    malwareScanTopicPrincipalId: malwareScanTopic.outputs.topicPrincipalId
     fileWorkerPrincipalId: fileWorkerPrincipalId
     location: storageAccount.location
+    malwareScanQueueName: malwareScanQueueName
     messagingUnits: messagingUnits
     namespaceName: serviceBusNamespaceName
     premiumMessagingPartitions: premiumMessagingPartitions
@@ -125,6 +157,7 @@ module deadLetterStorage './modules/file-upload-dead-letter-storage.bicep' = {
   params: {
     containerName: deadLetterContainerName
     eventGridPrincipalId: trustedEventGridPrincipalId
+    malwareScanTopicPrincipalId: malwareScanTopic.outputs.topicPrincipalId
     storageAccountName: storageAccountName
   }
 }
@@ -152,8 +185,37 @@ module eventSubscription './modules/file-upload-event-subscription.bicep' = {
   }
 }
 
+module malwareScanSubscription './modules/file-malware-scan-subscription.bicep' = {
+  name: 'nexus-file-malware-scan-subscription'
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+  params: {
+    deadLetterContainerName: deadLetterContainerName
+    deadLetterStorageAccountId: deadLetterStorage.outputs.storageAccountId
+    eventSubscriptionName: malwareScanEventSubscriptionName
+    malwareScanTopicName: malwareScanTopic.outputs.topicName
+    queueResourceId: serviceBus.outputs.malwareScanQueueResourceId
+  }
+}
+
+module defenderMalwareScanning './modules/file-malware-scan-defender.bicep' = {
+  name: 'nexus-file-malware-scanning'
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+  params: {
+    deadLetterContainerName: deadLetterContainerName
+    malwareScanCapGBPerMonth: malwareScanCapGBPerMonth
+    malwareScanTopicResourceId: malwareScanTopic.outputs.topicResourceId
+    storageAccountName: storageAccountName
+  }
+  dependsOn: [
+    malwareScanSubscription
+  ]
+}
+
 output eventSubscriptionResourceId string = eventSubscription.outputs.eventSubscriptionResourceId
+output malwareScanEventSubscriptionResourceId string = malwareScanSubscription.outputs.eventSubscriptionResourceId
+output malwareScanTopicResourceId string = malwareScanTopic.outputs.topicResourceId
 output fileUploadQueueResourceId string = serviceBus.outputs.queueResourceId
+output malwareScanQueueResourceId string = serviceBus.outputs.malwareScanQueueResourceId
 output eventGridDeadLetterContainerResourceId string = deadLetterStorage.outputs.containerResourceId
 output premiumPartitionCount int = premiumMessagingPartitions
 output messagingUnitCapacity int = messagingUnits
