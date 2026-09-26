@@ -13,7 +13,7 @@ from nexus.composition import root as composition_root
 from nexus.config.settings import Settings
 from nexus.errors import NexusError
 from nexus.events import EventEnvelope, EventPublisher, InProcessEventPublisher
-from nexus.files.ports import ObjectStorage, UploadGrantIssuer
+from nexus.files.ports import DownloadGrantIssuer, ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailDeliveryError, EmailMessage
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -73,6 +73,7 @@ class TrackingStorageComposition:
     def __init__(self) -> None:
         self.object_storage = Mock(spec=ObjectStorage)
         self.upload_grant_issuer = Mock(spec=UploadGrantIssuer)
+        self.download_grant_issuer = Mock(spec=DownloadGrantIssuer)
         self.close_calls = 0
 
     async def close(self) -> None:
@@ -346,6 +347,7 @@ def test_lifespan_forwards_storage_override_to_async_composition(
     database = TrackingDatabase()
     injected_storage = Mock(spec=ObjectStorage)
     injected_issuer = Mock(spec=UploadGrantIssuer)
+    injected_download_issuer = Mock(spec=DownloadGrantIssuer)
     tracking_composition = TrackingStorageComposition()
     captured: dict[str, object] = {}
 
@@ -354,12 +356,15 @@ def test_lifespan_forwards_storage_override_to_async_composition(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         captured["settings"] = settings
         captured["object_storage"] = object_storage
         captured["upload_grant_issuer"] = upload_grant_issuer
+        captured["download_grant_issuer"] = download_grant_issuer
         tracking_composition.object_storage = object_storage
         tracking_composition.upload_grant_issuer = upload_grant_issuer
+        tracking_composition.download_grant_issuer = download_grant_issuer
         return tracking_composition
 
     monkeypatch.setattr(
@@ -375,6 +380,7 @@ def test_lifespan_forwards_storage_override_to_async_composition(
         email_provider=StubEmailProvider(),
         object_storage=injected_storage,
         upload_grant_issuer=injected_issuer,
+        download_grant_issuer=injected_download_issuer,
     )
 
     assert not hasattr(app.state, "container")
@@ -383,9 +389,14 @@ def test_lifespan_forwards_storage_override_to_async_composition(
             "settings": settings,
             "object_storage": injected_storage,
             "upload_grant_issuer": injected_issuer,
+            "download_grant_issuer": injected_download_issuer,
         }
         assert app.state.container.storage.object_storage is injected_storage
         assert app.state.container.storage.upload_grant_issuer is injected_issuer
+        assert (
+            app.state.container.storage.download_grant_issuer
+            is injected_download_issuer
+        )
 
     assert tracking_composition.close_calls == 1
     assert database.dispose_calls == 1
@@ -404,7 +415,7 @@ def test_lifespan_closes_application_owned_resources(
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage, upload_grant_issuer
+        del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -441,7 +452,7 @@ def test_lifespan_closes_storage_and_database_when_authentication_cleanup_fails(
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage, upload_grant_issuer
+        del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -479,7 +490,7 @@ def test_lifespan_disposes_database_when_storage_cleanup_fails(
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> FailingTrackingStorageComposition:
-        del settings, object_storage, upload_grant_issuer
+        del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
 
     monkeypatch.setattr(
@@ -516,7 +527,7 @@ def test_storage_composition_failure_cleans_earlier_owned_resources(
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage, upload_grant_issuer
+        del settings, object_storage, upload_grant_issuer, download_grant_issuer
         raise RuntimeError("storage composition failed")
 
     monkeypatch.setattr(
@@ -555,7 +566,7 @@ def test_file_composition_failure_closes_all_earlier_owned_resources(
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
-        del settings, object_storage, upload_grant_issuer
+        del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
 
     def fail_file_composition(
@@ -563,8 +574,9 @@ def test_file_composition_failure_closes_all_earlier_owned_resources(
         *,
         session_factory: object,
         upload_grant_issuer: UploadGrantIssuer,
+        download_grant_issuer: DownloadGrantIssuer,
     ) -> None:
-        del settings, session_factory, upload_grant_issuer
+        del settings, session_factory, upload_grant_issuer, download_grant_issuer
         raise RuntimeError("file composition failed")
 
     monkeypatch.setattr(
