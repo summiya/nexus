@@ -294,7 +294,6 @@ describe("File Library API", () => {
 });
 
 
-
 describe("File download API", () => {
   it("requests an ephemeral download grant with POST", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
