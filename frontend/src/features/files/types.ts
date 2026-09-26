@@ -14,3 +14,22 @@ export interface UploadGrant {
 export interface InitiatedFileUpload {
   upload: UploadGrant;
 }
+
+export const FILE_LIBRARY_PAGE_SIZE = 50;
+
+export type FileStorageStatus = "pending" | "available" | "failed";
+
+export interface FileMetadata {
+  publicId: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  storageStatus: FileStorageStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FilePage {
+  items: readonly FileMetadata[];
+  nextCursor: string | null;
+}

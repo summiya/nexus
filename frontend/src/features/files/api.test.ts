@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureApiAuthentication } from "../../services/api/client";
 import { NexusApiError } from "../../services/api/error";
-import { initiateFileUpload } from "./api";
+import { initiateFileUpload, listFiles } from "./api";
 
 const expiresAt = "2026-09-25T10:10:00Z";
 const signedUrl =
@@ -175,5 +175,116 @@ describe("File upload initiation API", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError);
 
     await expect(initiateFileUpload(browserFile())).rejects.toBe(networkError);
+  });
+});
+
+describe("File Library API", () => {
+  it("requests the first page without a cursor and maps strict metadata", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        items: [
+          {
+            public_id: "11111111-1111-4111-8111-111111111111",
+            original_name: "report.pdf",
+            mime_type: "application/pdf",
+            size_bytes: 2048,
+            storage_status: "available",
+            created_at: "2026-09-26T12:00:00Z",
+            updated_at: "2026-09-26T12:01:00Z",
+          },
+        ],
+        next_cursor: "opaque-next",
+      }),
+    );
+
+    await expect(listFiles()).resolves.toEqual({
+      items: [
+        {
+          publicId: "11111111-1111-4111-8111-111111111111",
+          originalName: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 2048,
+          storageStatus: "available",
+          createdAt: "2026-09-26T12:00:00Z",
+          updatedAt: "2026-09-26T12:01:00Z",
+        },
+      ],
+      nextCursor: "opaque-next",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/files?limit=50",
+      expect.any(Object),
+    );
+  });
+
+  it("passes the backend cursor unchanged and supports null file size", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        items: [
+          {
+            public_id: "22222222-2222-4222-8222-222222222222",
+            original_name: "pending.txt",
+            mime_type: "text/plain",
+            size_bytes: null,
+            storage_status: "pending",
+            created_at: "2026-09-26T12:00:00Z",
+            updated_at: "2026-09-26T12:00:00Z",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+
+    const page = await listFiles({ cursor: "opaque cursor/+", limit: 25 });
+
+    expect(page.items[0]?.sizeBytes).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/files?limit=25&cursor=opaque+cursor%2F%2B",
+      expect.any(Object),
+    );
+  });
+
+  it.each([
+    {
+      items: [],
+      next_cursor: null,
+      unexpected: true,
+    },
+    {
+      items: [
+        {
+          public_id: "11111111-1111-4111-8111-111111111111",
+          original_name: "report.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 10,
+          storage_status: "scanning",
+          created_at: "2026-09-26T12:00:00Z",
+          updated_at: "2026-09-26T12:00:00Z",
+        },
+      ],
+      next_cursor: null,
+    },
+    {
+      items: [
+        {
+          public_id: "11111111-1111-4111-8111-111111111111",
+          original_name: "report.pdf",
+          mime_type: "application/pdf",
+          size_bytes: 10,
+          storage_status: "available",
+          created_at: "2026-09-26T12:00:00Z",
+          updated_at: "2026-09-26T12:00:00Z",
+          storage_key: "files/private",
+        },
+      ],
+      next_cursor: null,
+    },
+  ])("rejects incompatible File list responses", async (body) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(body));
+
+    await expect(listFiles()).rejects.toEqual(
+      new Error("The File service returned an invalid response."),
+    );
   });
 });
