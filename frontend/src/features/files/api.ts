@@ -137,7 +137,6 @@ export async function listFiles(
   });
 }
 
-
 export async function requestFileDownload(
   filePublicId: string,
   signal?: AbortSignal,
