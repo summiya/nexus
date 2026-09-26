@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureApiAuthentication } from "../../services/api/client";
 import { NexusApiError } from "../../services/api/error";
-import { initiateFileUpload, listFiles } from "./api";
+import {
+  initiateFileUpload,
+  listFiles,
+  requestFileDownload,
+} from "./api";
 
 const expiresAt = "2026-09-25T10:10:00Z";
 const signedUrl =
@@ -284,6 +288,55 @@ describe("File Library API", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(body));
 
     await expect(listFiles()).rejects.toEqual(
+      new Error("The File service returned an invalid response."),
+    );
+  });
+});
+
+
+
+describe("File download API", () => {
+  it("requests an ephemeral download grant with POST", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        url: signedUrl,
+        expires_at: expiresAt,
+      }),
+    );
+
+    await expect(
+      requestFileDownload("11111111-1111-4111-8111-111111111111"),
+    ).resolves.toEqual({
+      url: signedUrl,
+      expiresAt,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/files/11111111-1111-4111-8111-111111111111/download",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it.each([
+    {
+      url: signedUrl,
+      expires_at: expiresAt,
+      storage_key: "files/private",
+    },
+    {
+      url: "not-a-url",
+      expires_at: expiresAt,
+    },
+    {
+      url: signedUrl,
+      expires_at: "not-a-timestamp",
+    },
+  ])("rejects incompatible download grant responses", async (body) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(body));
+
+    await expect(
+      requestFileDownload("11111111-1111-4111-8111-111111111111"),
+    ).rejects.toEqual(
       new Error("The File service returned an invalid response."),
     );
   });
