@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fileMocks = vi.hoisted(() => ({
@@ -13,6 +15,7 @@ vi.mock("./upload", () => ({
   uploadGrantedFile: fileMocks.uploadGrantedFile,
 }));
 
+import { fileKeys } from "./queries";
 import { MAX_FILE_SIZE_BYTES, type InitiatedFileUpload } from "./types";
 import { useFileUpload } from "./useFileUpload";
 
@@ -44,6 +47,33 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
+
+
+function renderFileUploadHook() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  const invalidateQueries = vi
+    .spyOn(queryClient, "invalidateQueries")
+    .mockResolvedValue();
+
+  function wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        {children}
+      </QueryClientProvider>
+    );
+  }
+
+  return {
+    ...renderHook(useFileUpload, { wrapper }),
+    invalidateQueries,
+  };
+}
+
 describe("useFileUpload", () => {
   beforeEach(() => {
     fileMocks.initiateFileUpload.mockReset();
@@ -53,7 +83,7 @@ describe("useFileUpload", () => {
   });
 
   it("accepts exactly 512 MiB and completes the initiation then transfer flow", async () => {
-    const { result } = renderHook(useFileUpload);
+    const { invalidateQueries, result } = renderFileUploadHook();
     const file = fileWithSize(MAX_FILE_SIZE_BYTES);
 
     await act(() => result.current.startUpload(file));
@@ -71,6 +101,9 @@ describe("useFileUpload", () => {
     );
     expect(result.current.phase).toBe("transferred");
     expect(result.current.progress).toBe(100);
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: fileKeys.all,
+    });
     expect(result.current).not.toHaveProperty("file");
     expect(result.current).not.toHaveProperty("upload");
     expect(result.current).not.toHaveProperty("grant");
@@ -78,7 +111,7 @@ describe("useFileUpload", () => {
   });
 
   it("rejects one byte over the limit before any API or storage call", async () => {
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
 
     await act(() =>
       result.current.startUpload(fileWithSize(MAX_FILE_SIZE_BYTES + 1)),
@@ -98,7 +131,7 @@ describe("useFileUpload", () => {
         await transfer.promise;
       },
     );
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
     let uploadPromise!: Promise<void>;
 
     act(() => {
@@ -119,7 +152,7 @@ describe("useFileUpload", () => {
         onProgress(99);
       },
     );
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
 
     await act(() => result.current.startUpload(fileWithSize(8)));
 
@@ -130,7 +163,7 @@ describe("useFileUpload", () => {
     fileMocks.initiateFileUpload.mockRejectedValue(
       new Error("https://storage.example/?sig=SENSITIVE"),
     );
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
 
     await act(() => result.current.startUpload(fileWithSize(8)));
 
@@ -142,7 +175,7 @@ describe("useFileUpload", () => {
 
   it("classifies transfer failures safely without automatic retry", async () => {
     fileMocks.uploadGrantedFile.mockRejectedValue(new Error("provider detail"));
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
 
     await act(() => result.current.startUpload(fileWithSize(8)));
 
@@ -161,7 +194,7 @@ describe("useFileUpload", () => {
           });
         }),
     );
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
     let uploadPromise!: Promise<void>;
 
     act(() => {
@@ -180,7 +213,7 @@ describe("useFileUpload", () => {
   it("prevents a synchronous duplicate start", async () => {
     const initiation = deferred<InitiatedFileUpload>();
     fileMocks.initiateFileUpload.mockReturnValue(initiation.promise);
-    const { result } = renderHook(useFileUpload);
+    const { result } = renderFileUploadHook();
     const file = fileWithSize(8);
     let first!: Promise<void>;
     let second!: Promise<void>;
@@ -201,7 +234,7 @@ describe("useFileUpload", () => {
   it("aborts on unmount and ignores late completion", async () => {
     const initiation = deferred<InitiatedFileUpload>();
     fileMocks.initiateFileUpload.mockReturnValue(initiation.promise);
-    const { result, unmount } = renderHook(useFileUpload);
+    const { result, unmount } = renderFileUploadHook();
     const uploadPromise = result.current.startUpload(fileWithSize(8));
     const signal = fileMocks.initiateFileUpload.mock.calls[0][1] as AbortSignal;
 
