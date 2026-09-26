@@ -70,9 +70,7 @@ describe("FileLibrary", () => {
     expect(await screen.findByText("report.pdf")).toBeInTheDocument();
     expect(screen.getByText("application/pdf")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
-    expect(
-      screen.getByText("Being checked for security"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Being checked for security")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
@@ -113,50 +111,47 @@ describe("FileLibrary", () => {
     expect(apiMocks.listFiles).toHaveBeenCalledTimes(2);
   });
 
-  it(
-    "keeps current rows visible and disables navigation while the next page loads",
-    async () => {
-      const user = userEvent.setup();
-      const secondPage = deferred<FilePage>();
-      apiMocks.listFiles
-        .mockResolvedValueOnce(firstPage)
-        .mockReturnValueOnce(secondPage.promise);
-      renderLibrary();
+  it("keeps current rows visible and disables navigation while the next page loads", async () => {
+    const user = userEvent.setup();
+    const secondPage = deferred<FilePage>();
+    apiMocks.listFiles
+      .mockResolvedValueOnce(firstPage)
+      .mockReturnValueOnce(secondPage.promise);
+    renderLibrary();
 
-      expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
 
-      await waitFor(() => {
-        expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
-          { cursor: "cursor-2", limit: 50 },
-          expect.any(AbortSignal),
-        );
-      });
+    await waitFor(() => {
+      expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
+        { cursor: "cursor-2", limit: 50 },
+        expect.any(AbortSignal),
+      );
+    });
 
-      expect(screen.getByText("report.pdf")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
-      expect(screen.getByRole("status")).toHaveTextContent("Loading page");
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading page");
 
-      secondPage.resolve({
-        items: [
-          {
-            ...firstPage.items[0],
-            publicId: "22222222-2222-4222-8222-222222222222",
-            originalName: "second.pdf",
-            storageStatus: "available",
-          },
-        ],
-        nextCursor: null,
-      });
+    secondPage.resolve({
+      items: [
+        {
+          ...firstPage.items[0],
+          publicId: "22222222-2222-4222-8222-222222222222",
+          originalName: "second.pdf",
+          storageStatus: "available",
+        },
+      ],
+      nextCursor: null,
+    });
 
-      expect(await screen.findByText("second.pdf")).toBeInTheDocument();
-      expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
-      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
-    },
-  );
+    expect(await screen.findByText("second.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
 
   it("lets users return to the previous page after a later page fails", async () => {
     const user = userEvent.setup();

@@ -44,7 +44,9 @@ function FileRow({ file }: { file: FileMetadata }) {
         <strong title={file.originalName}>{file.originalName}</strong>
         <span>{file.mimeType}</span>
       </div>
-      <span className="file-library-size">{formatFileSize(file.sizeBytes)}</span>
+      <span className="file-library-size">
+        {formatFileSize(file.sizeBytes)}
+      </span>
       <div className="file-library-status">
         <FileStatusBadge status={file.storageStatus} />
         {file.storageStatus === "pending" ? (

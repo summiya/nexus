@@ -49,8 +49,6 @@ function deferred<T>() {
   return { promise, reject, resolve };
 }
 
-
-
 function renderFileUploadHook() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -64,9 +62,7 @@ function renderFileUploadHook() {
 
   function wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     );
   }
 

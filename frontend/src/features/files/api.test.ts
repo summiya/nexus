@@ -218,35 +218,32 @@ describe("File Library API", () => {
     );
   });
 
-  it(
-    "passes the backend cursor unchanged and supports null file size",
-    async () => {
-      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        jsonResponse({
-          items: [
-            {
-              public_id: "22222222-2222-4222-8222-222222222222",
-              original_name: "pending.txt",
-              mime_type: "text/plain",
-              size_bytes: null,
-              storage_status: "pending",
-              created_at: "2026-09-26T12:00:00Z",
-              updated_at: "2026-09-26T12:00:00Z",
-            },
-          ],
-          next_cursor: null,
-        }),
-      );
+  it("passes the backend cursor unchanged and supports null file size", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        items: [
+          {
+            public_id: "22222222-2222-4222-8222-222222222222",
+            original_name: "pending.txt",
+            mime_type: "text/plain",
+            size_bytes: null,
+            storage_status: "pending",
+            created_at: "2026-09-26T12:00:00Z",
+            updated_at: "2026-09-26T12:00:00Z",
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
 
-      const page = await listFiles({ cursor: "opaque cursor/+", limit: 25 });
+    const page = await listFiles({ cursor: "opaque cursor/+", limit: 25 });
 
-      expect(page.items[0]?.sizeBytes).toBeNull();
-      expect(fetchMock).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/files?limit=25&cursor=opaque+cursor%2F%2B",
-        expect.any(Object),
-      );
-    },
-  );
+    expect(page.items[0]?.sizeBytes).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/files?limit=25&cursor=opaque+cursor%2F%2B",
+      expect.any(Object),
+    );
+  });
 
   it.each([
     {
