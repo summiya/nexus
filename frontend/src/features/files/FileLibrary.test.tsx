@@ -113,7 +113,9 @@ describe("FileLibrary", () => {
     expect(apiMocks.listFiles).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps current rows visible and disables navigation while the next page loads", async () => {
+  it(
+    "keeps current rows visible and disables navigation while the next page loads",
+    async () => {
     const user = userEvent.setup();
     const secondPage = deferred<FilePage>();
     apiMocks.listFiles
@@ -151,9 +153,10 @@ describe("FileLibrary", () => {
 
     expect(await screen.findByText("second.pdf")).toBeInTheDocument();
     expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
-  });
+      expect(screen.getByRole("button", { name: "Previous" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    },
+  );
 
   it("returns to the prior backend cursor without reconstructing one", async () => {
     const user = userEvent.setup();
