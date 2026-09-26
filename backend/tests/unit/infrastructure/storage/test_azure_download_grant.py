@@ -142,6 +142,31 @@ def test_unicode_filename_uses_rfc5987_and_html_is_forced_attachment(
     assert calls[0]["content_type"] == "text/html"
 
 
+def test_unicode_basename_uses_visible_ascii_fallback_with_extension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def signer(**kwargs: object) -> str:
+        calls.append(kwargs)
+        return "sig=REDACTED"
+
+    monkeypatch.setattr(azure_download_grant, "generate_blob_sas", signer)
+
+    asyncio.run(
+        _issuer(FakeBlobServiceClient(), FakeKeyProvider()).issue_download_grant(
+            storage_key="files/0123456789abcdef0123456789abcdef",
+            original_name="رپورٹ.pdf",
+            mime_type="application/pdf",
+            expires_at=EXPIRY,
+        )
+    )
+
+    disposition = cast(str, calls[0]["content_disposition"])
+    assert 'filename="download.pdf"' in disposition
+    assert "filename*=UTF-8''" in disposition
+
+
 def test_missing_mime_falls_back_to_octet_stream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
