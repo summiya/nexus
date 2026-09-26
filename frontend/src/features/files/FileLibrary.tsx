@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { FileDownloadButton } from "./FileDownloadButton";
 import { FileStatusBadge } from "./FileStatusBadge";
 import { useFilesQuery } from "./queries";
 import type { FileMetadata } from "./types";
@@ -56,6 +57,11 @@ function FileRow({ file }: { file: FileMetadata }) {
         ) : null}
       </div>
       <time dateTime={file.createdAt}>{formatDate(file.createdAt)}</time>
+      {file.storageStatus === "available" ? (
+        <FileDownloadButton filePublicId={file.publicId} />
+      ) : (
+        <span aria-hidden="true" />
+      )}
     </li>
   );
 }
@@ -145,6 +151,7 @@ export function FileLibrary() {
             <span>Size</span>
             <span>Status</span>
             <span>Added</span>
+            <span>Action</span>
           </div>
           <ul className="file-library-list">
             {items.map((file) => (

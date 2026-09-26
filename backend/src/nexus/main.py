@@ -10,7 +10,7 @@ from nexus.composition.root import build_app_container
 from nexus.config.settings import Settings, load_settings
 from nexus.errors.handlers import register_exception_handlers
 from nexus.events import EventPublisher
-from nexus.files.ports import ObjectStorage, UploadGrantIssuer
+from nexus.files.ports import DownloadGrantIssuer, ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.session import Database
 from nexus.llm.ports import LLMGateway
@@ -29,6 +29,7 @@ def create_app(
     email_provider: EmailProvider | None = None,
     object_storage: ObjectStorage | None = None,
     upload_grant_issuer: UploadGrantIssuer | None = None,
+    download_grant_issuer: DownloadGrantIssuer | None = None,
 ) -> FastAPI:
     """Compose one NEXUS FastAPI application from explicit dependencies."""
     resolved_settings = app_settings or load_settings()
@@ -45,6 +46,7 @@ def create_app(
             email_provider=email_provider,
             object_storage=object_storage,
             upload_grant_issuer=upload_grant_issuer,
+            download_grant_issuer=download_grant_issuer,
         )
         app.state.container = container
         logger.info("application_started")

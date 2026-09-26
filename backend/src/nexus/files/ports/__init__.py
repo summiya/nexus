@@ -1,5 +1,10 @@
 """Application-facing File ports."""
 
+from nexus.files.ports.download_grant import (
+    DownloadGrant,
+    DownloadGrantError,
+    DownloadGrantIssuer,
+)
 from nexus.files.ports.malware_scan import (
     MalwareScanRejectionReason,
     MalwareScanResultEvent,
@@ -41,6 +46,9 @@ from nexus.files.ports.upload_grant import (
 
 __all__ = [
     "UPLOAD_CONTEXT_MAX_LENGTH",
+    "DownloadGrant",
+    "DownloadGrantError",
+    "DownloadGrantIssuer",
     "FileIdentityConflictError",
     "FileNotReadyError",
     "FilePersistence",

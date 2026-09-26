@@ -25,7 +25,7 @@ from nexus.conversations.application import (
     StreamConversationMessage,
 )
 from nexus.events import EventPublisher, InProcessEventPublisher
-from nexus.files.ports import ObjectStorage, UploadGrantIssuer
+from nexus.files.ports import DownloadGrantIssuer, ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
@@ -126,6 +126,7 @@ async def build_app_container(
     email_provider: EmailProvider | None = None,
     object_storage: ObjectStorage | None = None,
     upload_grant_issuer: UploadGrantIssuer | None = None,
+    download_grant_issuer: DownloadGrantIssuer | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
@@ -166,11 +167,13 @@ async def build_app_container(
             app_settings,
             object_storage=object_storage,
             upload_grant_issuer=upload_grant_issuer,
+            download_grant_issuer=download_grant_issuer,
         )
         files = build_file_composition(
             app_settings,
             session_factory=resolved_database.session_factory,
             upload_grant_issuer=storage.upload_grant_issuer,
+            download_grant_issuer=storage.download_grant_issuer,
         )
     except (Exception, CancelledError) as construction_error:
         try:

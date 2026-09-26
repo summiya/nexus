@@ -714,7 +714,7 @@ p {
   display: grid;
   grid-template-columns:
     minmax(0, 2fr) minmax(5rem, 0.7fr) minmax(8rem, 1fr)
-    minmax(7rem, 0.8fr);
+    minmax(7rem, 0.8fr) minmax(6rem, auto);
   gap: 1rem;
   align-items: center;
 }
@@ -855,4 +855,16 @@ p {
   .file-library-row time {
     justify-self: end;
   }
+}
+
+.file-download-action {
+  display: grid;
+  gap: 0.3rem;
+  justify-items: start;
+}
+
+.file-download-error {
+  max-width: 14rem;
+  color: #fca5a5;
+  font-size: 0.78rem;
 }

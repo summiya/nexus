@@ -60,3 +60,11 @@ class ListFilesResponseBody(BaseModel):
 
     items: list[FileMetadataResponseBody]
     next_cursor: str | None
+
+
+
+class FileDownloadResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(repr=False)
+    expires_at: datetime

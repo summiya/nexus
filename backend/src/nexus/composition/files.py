@@ -11,10 +11,11 @@ from nexus.config.settings import Settings
 from nexus.files.application import (
     GetFile,
     InitiateFileUpload,
+    IssueFileDownload,
     ListFiles,
     UploadIntentPolicy,
 )
-from nexus.files.ports import UploadGrantIssuer
+from nexus.files.ports import DownloadGrantIssuer, UploadGrantIssuer
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
@@ -29,6 +30,7 @@ class FileComposition:
     initiate_upload: InitiateFileUpload
     list_files: ListFiles
     get_file: GetFile
+    issue_download: IssueFileDownload
 
 
 def build_file_composition(
@@ -36,11 +38,16 @@ def build_file_composition(
     *,
     session_factory: async_sessionmaker[AsyncSession],
     upload_grant_issuer: UploadGrantIssuer,
+    download_grant_issuer: DownloadGrantIssuer,
 ) -> FileComposition:
     """Build File use cases from provider-neutral runtime dependencies."""
 
     permission_checker = SqlAlchemyPermissionChecker(session_factory)
     persistence = SqlAlchemyFilePersistence(session_factory)
+    get_file = GetFile(
+        persistence=persistence,
+        permission_checker=permission_checker,
+    )
     return FileComposition(
         initiate_upload=InitiateFileUpload(
             intent_policy=UploadIntentPolicy(
@@ -59,9 +66,13 @@ def build_file_composition(
             persistence=persistence,
             permission_checker=permission_checker,
         ),
-        get_file=GetFile(
-            persistence=persistence,
-            permission_checker=permission_checker,
+        get_file=get_file,
+        issue_download=IssueFileDownload(
+            get_file=get_file,
+            download_grant_issuer=download_grant_issuer,
+            grant_ttl=timedelta(
+                seconds=settings.file_download_grant_ttl_seconds,
+            ),
         ),
     )
 

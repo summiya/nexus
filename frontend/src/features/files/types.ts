@@ -33,3 +33,8 @@ export interface FilePage {
   items: readonly FileMetadata[];
   nextCursor: string | null;
 }
+
+export interface FileDownloadGrant {
+  url: string;
+  expiresAt: string;
+}

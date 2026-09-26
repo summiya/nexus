@@ -6,12 +6,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.composition.files import build_file_composition
 from nexus.config.settings import Settings
-from nexus.files.ports import UploadGrant
+from nexus.files.ports import DownloadGrant, UploadGrant
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
 from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
+
+
+class StubDownloadGrantIssuer:
+    async def issue_download_grant(
+        self,
+        *,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        expires_at: datetime,
+    ) -> DownloadGrant:
+        del original_name, mime_type
+        return DownloadGrant(
+            url=f"https://storage.example/{storage_key}?sig=download",
+            expires_at=expires_at,
+        )
 
 
 class StubUploadGrantIssuer:
@@ -41,17 +57,20 @@ def _settings() -> Settings:
         file_upload_context_key=("bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"),
         file_upload_max_size_bytes=123_456,
         file_upload_grant_ttl_seconds=900,
+        file_download_grant_ttl_seconds=300,
     )
 
 
 def test_file_composition_builds_upload_service_from_shared_dependencies() -> None:
     session_factory = async_sessionmaker[AsyncSession]()
     issuer = StubUploadGrantIssuer()
+    download_issuer = StubDownloadGrantIssuer()
 
     composition = build_file_composition(
         _settings(),
         session_factory=session_factory,
         upload_grant_issuer=issuer,
+        download_grant_issuer=download_issuer,
     )
 
     service = composition.initiate_upload
@@ -65,3 +84,6 @@ def test_file_composition_builds_upload_service_from_shared_dependencies() -> No
     assert isinstance(composition.get_file.persistence, SqlAlchemyFilePersistence)
     assert composition.list_files.permission_checker is service.permission_checker
     assert composition.get_file.permission_checker is service.permission_checker
+    assert composition.issue_download.get_file is composition.get_file
+    assert composition.issue_download.download_grant_issuer is download_issuer
+    assert composition.issue_download.grant_ttl == timedelta(seconds=300)

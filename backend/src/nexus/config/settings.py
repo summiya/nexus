@@ -69,6 +69,7 @@ class Settings(BaseSettings):
         gt=0,
     )
     file_upload_grant_ttl_seconds: int = Field(default=600, gt=0, le=3600)
+    file_download_grant_ttl_seconds: int = Field(default=300, gt=0, le=900)
     file_upload_context_key: SecretStr
     storage_provider: str = Field(default="azure_blob", min_length=1)
     azure_storage_container: str | None = None

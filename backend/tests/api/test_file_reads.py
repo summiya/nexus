@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,11 +12,15 @@ from nexus.authentication.api.security import get_current_auth_context
 from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
-from nexus.files.api.dependencies import get_file, get_list_files
+from nexus.files.api.dependencies import (
+    get_file,
+    get_issue_file_download,
+    get_list_files,
+)
 from nexus.files.api.pagination import decode_file_cursor
 from nexus.files.application import FilePage, FilePageCursor
 from nexus.files.domain import File, FileStorageStatus
-from nexus.files.ports import ObjectStorage
+from nexus.files.ports import DownloadGrant, ObjectStorage
 from nexus.main import create_app
 
 NOW = datetime(2026, 9, 26, 12, tzinfo=UTC)
@@ -275,3 +280,70 @@ def test_openapi_exposes_only_metadata_read_endpoints() -> None:
         "created_at",
         "updated_at",
     }
+
+
+
+class FakeIssueFileDownloadService:
+    def __init__(self) -> None:
+        self.error: NexusError | None = None
+        self.calls: list[tuple[UUID, UUID, UUID]] = []
+
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        user_public_id: UUID,
+        file_public_id: UUID,
+    ) -> DownloadGrant:
+        self.calls.append(
+            (organization_public_id, user_public_id, file_public_id)
+        )
+        if self.error is not None:
+            raise self.error
+        return DownloadGrant(
+            url="https://storage.example/file?sig=SENSITIVE",
+            expires_at=NOW + timedelta(minutes=5),
+        )
+
+
+def test_download_endpoint_returns_ephemeral_grant_with_no_store() -> None:
+    service = FakeIssueFileDownloadService()
+    app, organization_id, user_id = _app()
+    file_public_id = uuid4()
+    app.dependency_overrides[get_issue_file_download] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/v1/files/{file_public_id}/download")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert response.json() == {
+        "url": "https://storage.example/file?sig=SENSITIVE",
+        "expires_at": "2026-09-26T12:05:00Z",
+    }
+    assert service.calls == [(organization_id, user_id, file_public_id)]
+
+
+@pytest.mark.parametrize(
+    ("code", "status_code"),
+    [
+        (ErrorCode.NOT_FOUND, 404),
+        (ErrorCode.FORBIDDEN, 403),
+        (ErrorCode.CONFLICT, 409),
+    ],
+)
+def test_download_endpoint_preserves_safe_authorization_and_state_errors(
+    code: ErrorCode,
+    status_code: int,
+) -> None:
+    service = FakeIssueFileDownloadService()
+    service.error = NexusError(code, "safe")
+    app, _, _ = _app()
+    app.dependency_overrides[get_issue_file_download] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/v1/files/{uuid4()}/download")
+
+    assert response.status_code == status_code
+    assert "storage_key" not in response.text
+    assert "sig=" not in response.text

@@ -75,6 +75,32 @@ describe("FileLibrary", () => {
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
+  it("shows Download only for AVAILABLE Files", async () => {
+    apiMocks.listFiles.mockResolvedValue({
+      items: [
+        firstPage.items[0],
+        {
+          ...firstPage.items[0],
+          publicId: "22222222-2222-4222-8222-222222222222",
+          originalName: "failed.pdf",
+          storageStatus: "failed",
+        },
+        {
+          ...firstPage.items[0],
+          publicId: "33333333-3333-4333-8333-333333333333",
+          originalName: "available.pdf",
+          storageStatus: "available",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderLibrary();
+
+    await screen.findByText("available.pdf");
+
+    expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
+  });
+
   it("renders the first-page loading state", () => {
     apiMocks.listFiles.mockReturnValue(new Promise(() => undefined));
     renderLibrary();
