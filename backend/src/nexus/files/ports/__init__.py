@@ -13,6 +13,7 @@ from nexus.files.ports.malware_scan import (
     MalwareScanVerdict,
 )
 from nexus.files.ports.persistence import (
+    FileDeletionTarget,
     FileIdentityConflictError,
     FileNotReadyError,
     FilePersistence,
@@ -49,6 +50,7 @@ __all__ = [
     "DownloadGrant",
     "DownloadGrantError",
     "DownloadGrantIssuer",
+    "FileDeletionTarget",
     "FileIdentityConflictError",
     "FileNotReadyError",
     "FilePersistence",
