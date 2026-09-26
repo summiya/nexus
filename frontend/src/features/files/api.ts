@@ -4,6 +4,7 @@ import { apiRequest } from "../../services/api/client";
 import {
   FILE_LIBRARY_PAGE_SIZE,
   MAX_UPLOAD_CONTEXT_LENGTH,
+  type FileDownloadGrant,
   type FileMetadata,
   type FilePage,
   type InitiatedFileUpload,
@@ -23,6 +24,13 @@ const fileMetadataSchema = z
     storage_status: z.enum(["pending", "available", "failed"]),
     created_at: timestampSchema,
     updated_at: timestampSchema,
+  })
+  .strict();
+
+const fileDownloadGrantSchema = z
+  .object({
+    url: z.string().url(),
+    expires_at: timestampSchema,
   })
   .strict();
 
@@ -127,4 +135,27 @@ export async function listFiles(
     items: Object.freeze(parsed.data.items.map(mapFileMetadata)),
     nextCursor: parsed.data.next_cursor,
   });
+}
+
+
+export async function requestFileDownload(
+  filePublicId: string,
+  signal?: AbortSignal,
+): Promise<FileDownloadGrant> {
+  const response = await apiRequest<unknown>(
+    `/files/${filePublicId}/download`,
+    {
+      method: "POST",
+      signal,
+    },
+  );
+  const parsed = fileDownloadGrantSchema.safeParse(response);
+  if (!parsed.success) {
+    throw invalidFileResponse();
+  }
+
+  return {
+    url: parsed.data.url,
+    expiresAt: parsed.data.expires_at,
+  };
 }
