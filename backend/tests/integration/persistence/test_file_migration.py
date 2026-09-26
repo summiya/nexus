@@ -341,6 +341,12 @@ def test_deleting_status_migration_upgrade_and_downgrade(
             )
             == 0
         )
+        assert (
+            connection.scalar(
+                text("SELECT count(*) FROM files WHERE storage_status = 'failed'")
+            )
+            == 1
+        )
 
     with pytest.raises(IntegrityError), engine.begin() as connection:
         _insert_file(
