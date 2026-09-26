@@ -10,11 +10,19 @@ from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
 from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.file_worker_settings import FileWorkerSettings
-from nexus.files.application import VerifyUploadCompletion
+from nexus.files.application import (
+    ApplyMalwareScanResult,
+    HandleFileWorkerEvent,
+    VerifyUploadCompletion,
+)
 from nexus.infrastructure.messaging import AzureServiceBusUploadCompletionWorker
 from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.persistence.session import Database, build_database
-from nexus.infrastructure.storage import AzureBlobCreatedEventMapper
+from nexus.infrastructure.storage import (
+    AzureBlobCreatedEventMapper,
+    AzureFileWorkerEventMapper,
+    AzureMalwareScanResultMapper,
+)
 from nexus.infrastructure.storage.azure_blob import AzureBlobObjectStorage
 from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 
@@ -86,11 +94,18 @@ async def build_file_worker_composition(
         context_protector = AesGcmUploadContextProtector.from_base64url_key(
             settings.file_upload_context_key.get_secret_value()
         )
-        handler = VerifyUploadCompletion(
-            object_storage=object_storage,
-            context_protector=context_protector,
-            persistence=SqlAlchemyFilePersistence(database.session_factory),
-            max_size_bytes=settings.file_upload_max_size_bytes,
+        persistence = SqlAlchemyFilePersistence(database.session_factory)
+        handler = HandleFileWorkerEvent(
+            upload_completion_handler=VerifyUploadCompletion(
+                object_storage=object_storage,
+                context_protector=context_protector,
+                persistence=persistence,
+                max_size_bytes=settings.file_upload_max_size_bytes,
+            ),
+            malware_scan_handler=ApplyMalwareScanResult(
+                object_storage=object_storage,
+                persistence=persistence,
+            ),
         )
         auto_lock_renewer = AutoLockRenewer(
             max_lock_renewal_duration=(settings.file_worker_max_lock_renewal_seconds)
@@ -98,10 +113,20 @@ async def build_file_worker_composition(
         worker = AzureServiceBusUploadCompletionWorker(
             client=client,
             queue_name=settings.azure_service_bus_queue_name,
-            mapper=AzureBlobCreatedEventMapper(
-                expected_source=settings.azure_event_grid_expected_source,
-                expected_container=settings.azure_storage_container,
-                nexus_source=settings.file_upload_completion_source,
+            mapper=AzureFileWorkerEventMapper(
+                blob_created_mapper=AzureBlobCreatedEventMapper(
+                    expected_source=settings.azure_event_grid_expected_source,
+                    expected_container=settings.azure_storage_container,
+                    nexus_source=settings.file_upload_completion_source,
+                ),
+                malware_scan_mapper=AzureMalwareScanResultMapper(
+                    expected_topic=settings.azure_malware_scan_expected_topic,
+                    expected_storage_account=_storage_account_name(
+                        str(settings.azure_storage_account_url)
+                    ),
+                    expected_container=settings.azure_storage_container,
+                    nexus_source=settings.file_malware_scan_source,
+                ),
             ),
             handler=handler,
             auto_lock_renewer=auto_lock_renewer,
@@ -157,6 +182,21 @@ async def _close_partial_resources(
                 finally:
                     if credential is not None:
                         await credential.close()
+
+
+def _storage_account_name(account_url: str) -> str:
+    host = account_url.removeprefix("https://").split("/", 1)[0]
+    suffix = ".blob.core.windows.net"
+    if not host.endswith(suffix):
+        raise FileWorkerConfigurationError(
+            "Azure storage account URL is not a canonical Blob service URL"
+        )
+    account_name = host.removesuffix(suffix)
+    if not account_name:
+        raise FileWorkerConfigurationError(
+            "Azure storage account URL is not a canonical Blob service URL"
+        )
+    return account_name
 
 
 __all__ = [
