@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import signal
 from dataclasses import dataclass
+from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -56,9 +58,7 @@ class FakeLoop:
 def _settings() -> FileWorkerSettings:
     return FileWorkerSettings(
         _env_file=None,
-        azure_service_bus_fully_qualified_namespace=(
-            "nexus.servicebus.windows.net"
-        ),
+        azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
         azure_storage_container="nexus-files",
@@ -110,3 +110,29 @@ def test_main_fails_closed_before_loading_settings_or_connecting(
 
     assert caught.value.code == 1
     assert settings_loaded is False
+
+
+def test_main_logs_only_runtime_error_type_and_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    safe_logger = Mock()
+
+    def fail_run(operation: Any) -> None:
+        operation.close()
+        raise RuntimeError("sensitive provider response")
+
+    monkeypatch.setattr(entrypoint, "_build_upload_completion_handler", StubHandler)
+    monkeypatch.setattr(entrypoint, "load_file_worker_settings", _settings)
+    monkeypatch.setattr(entrypoint, "configure_logging", Mock())
+    monkeypatch.setattr(entrypoint, "logger", safe_logger)
+    monkeypatch.setattr(entrypoint.asyncio, "run", fail_run)
+
+    with pytest.raises(SystemExit) as caught:
+        entrypoint.main()
+
+    assert caught.value.code == 1
+    safe_logger.error.assert_called_once_with(
+        "file_upload_completion_worker_runtime_failed",
+        error_type="RuntimeError",
+    )
+    assert "sensitive provider response" not in repr(safe_logger.error.call_args_list)

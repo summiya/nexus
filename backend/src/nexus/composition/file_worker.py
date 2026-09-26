@@ -68,9 +68,7 @@ async def build_file_worker_composition(
             credential=credential,
         )
         auto_lock_renewer = AutoLockRenewer(
-            max_lock_renewal_duration=(
-                settings.file_worker_max_lock_renewal_seconds
-            )
+            max_lock_renewal_duration=(settings.file_worker_max_lock_renewal_seconds)
         )
         worker = AzureServiceBusUploadCompletionWorker(
             client=client,

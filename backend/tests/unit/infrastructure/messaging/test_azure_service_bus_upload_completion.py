@@ -5,11 +5,19 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Self, cast
+from unittest.mock import Mock
 
 import pytest
 from azure.servicebus import ServiceBusReceivedMessage
 from azure.servicebus.amqp import AmqpMessageBodyType
-from azure.servicebus.exceptions import ServiceBusError
+from azure.servicebus.exceptions import (
+    MessagingEntityDisabledError,
+    MessagingEntityNotFoundError,
+    ServiceBusAuthenticationError,
+    ServiceBusAuthorizationError,
+    ServiceBusConnectionError,
+    ServiceBusError,
+)
 
 from nexus.files.ports import UploadCompletionEvent
 from nexus.infrastructure.messaging import (
@@ -105,12 +113,20 @@ class FakeReceiver:
 
 
 class FakeClient:
-    def __init__(self, receiver: FakeReceiver) -> None:
+    def __init__(
+        self,
+        receiver: FakeReceiver,
+        *,
+        receiver_errors: list[ServiceBusError] | None = None,
+    ) -> None:
         self.receiver = receiver
+        self.receiver_errors = list(receiver_errors or [])
         self.receiver_kwargs: list[dict[str, object]] = []
 
     def get_queue_receiver(self, **kwargs: object) -> FakeReceiver:
         self.receiver_kwargs.append(dict(kwargs))
+        if self.receiver_errors:
+            raise self.receiver_errors.pop(0)
         return self.receiver
 
 
@@ -140,6 +156,20 @@ class BlockingHandler:
         except asyncio.CancelledError:
             self.cancelled = True
             raise
+
+
+class ControlledHandler:
+    def __init__(self, *, failure: BaseException | None = None) -> None:
+        self.failure = failure
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def handle(self, event: UploadCompletionEvent) -> None:
+        del event
+        self.started.set()
+        await self.release.wait()
+        if self.failure is not None:
+            raise self.failure
 
 
 def _mapper() -> AzureBlobCreatedEventMapper:
@@ -176,15 +206,16 @@ def _message(payload: Mapping[str, object] | None = None) -> FakeMessage:
 
 def _worker(
     receiver: FakeReceiver,
-    handler: RecordingHandler | BlockingHandler,
+    handler: RecordingHandler | BlockingHandler | ControlledHandler,
     *,
+    client: FakeClient | None = None,
     jitter: Any | None = None,
 ) -> AzureServiceBusUploadCompletionWorker:
     values: dict[str, object] = {}
     if jitter is not None:
         values["jitter"] = jitter
     return AzureServiceBusUploadCompletionWorker(
-        client=cast(Any, FakeClient(receiver)),
+        client=cast(Any, client or FakeClient(receiver)),
         queue_name="file-upload-completions",
         mapper=_mapper(),
         handler=handler,
@@ -319,10 +350,10 @@ def test_handler_failure_is_abandoned_once_without_same_delivery_retry() -> None
     asyncio.run(scenario())
 
 
-def test_graceful_shutdown_cancels_and_abandons_in_flight_without_jitter() -> None:
+def test_graceful_shutdown_completes_handler_within_grace_period() -> None:
     async def scenario() -> None:
         receiver = FakeReceiver([[_message()]])
-        handler = BlockingHandler()
+        handler = ControlledHandler()
         jitter_calls: list[tuple[float, float]] = []
         worker = _worker(
             receiver,
@@ -336,12 +367,143 @@ def test_graceful_shutdown_cancels_and_abandons_in_flight_without_jitter() -> No
         processing = asyncio.create_task(worker.run(stop_event))
         await handler.started.wait()
         stop_event.set()
+        handler.release.set()
+        await processing
+
+        assert len(receiver.complete_calls) == 1
+        assert receiver.abandon_calls == []
+        assert jitter_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_graceful_shutdown_abandons_handler_failure_without_jitter() -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver([[_message()]])
+        handler = ControlledHandler(failure=RuntimeError("sensitive failure"))
+        jitter_calls: list[tuple[float, float]] = []
+        worker = _worker(
+            receiver,
+            handler,
+            jitter=lambda minimum, maximum: (
+                jitter_calls.append((minimum, maximum)) or minimum
+            ),
+        )
+        stop_event = asyncio.Event()
+
+        processing = asyncio.create_task(worker.run(stop_event))
+        await handler.started.wait()
+        stop_event.set()
+        handler.release.set()
+        await processing
+
+        assert len(receiver.abandon_calls) == 1
+        assert receiver.complete_calls == []
+        assert jitter_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_graceful_shutdown_cancels_after_grace_then_abandons_without_jitter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver([[_message()]])
+        handler = BlockingHandler()
+        jitter_calls: list[tuple[float, float]] = []
+        worker = _worker(
+            receiver,
+            handler,
+            jitter=lambda minimum, maximum: (
+                jitter_calls.append((minimum, maximum)) or minimum
+            ),
+        )
+        stop_event = asyncio.Event()
+        monkeypatch.setattr(worker_module, "_SHUTDOWN_GRACE_SECONDS", 0.01)
+
+        processing = asyncio.create_task(worker.run(stop_event))
+        await handler.started.wait()
+        stop_event.set()
         await processing
 
         assert handler.cancelled is True
         assert len(receiver.abandon_calls) == 1
         assert receiver.complete_calls == []
         assert jitter_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_grace_period_is_ten_seconds() -> None:
+    assert worker_module._SHUTDOWN_GRACE_SECONDS == 10.0
+
+
+@pytest.mark.parametrize(
+    "failure_type",
+    [
+        ServiceBusAuthenticationError,
+        ServiceBusAuthorizationError,
+        MessagingEntityNotFoundError,
+        MessagingEntityDisabledError,
+    ],
+)
+def test_fatal_receiver_failure_terminates_without_reconnect(
+    failure_type: type[ServiceBusError],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver()
+        failure = failure_type(message="sensitive provider response")
+        client = FakeClient(receiver, receiver_errors=[failure])
+        safe_logger = Mock()
+        monkeypatch.setattr(worker_module, "logger", safe_logger)
+
+        with pytest.raises(failure_type):
+            await _worker(
+                receiver,
+                RecordingHandler(),
+                client=client,
+            ).run(asyncio.Event())
+
+        assert len(client.receiver_kwargs) == 1
+        safe_logger.error.assert_called_once_with(
+            "file_upload_completion_receiver_fatal",
+            error_type=failure_type.__name__,
+        )
+        assert "sensitive provider response" not in repr(
+            safe_logger.error.call_args_list
+        )
+
+    asyncio.run(scenario())
+
+
+def test_recoverable_receiver_failure_reconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        stop_event = asyncio.Event()
+        receiver = FakeReceiver(stop_event=stop_event)
+        client = FakeClient(
+            receiver,
+            receiver_errors=[ServiceBusConnectionError(message="temporary")],
+        )
+        delays: list[float] = []
+
+        async def record_wait(_stop: asyncio.Event, delay: float) -> bool:
+            delays.append(delay)
+            return False
+
+        monkeypatch.setattr(worker_module, "_wait_for_stop", record_wait)
+
+        await _worker(
+            receiver,
+            RecordingHandler(),
+            client=client,
+        ).run(stop_event)
+
+        assert len(client.receiver_kwargs) == 2
+        assert receiver.enter_calls == 1
+        assert delays == [2.0]
 
     asyncio.run(scenario())
 

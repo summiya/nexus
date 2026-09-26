@@ -75,12 +75,19 @@ def main() -> None:
         raise SystemExit(1) from None
 
     configure_logging(settings.log_level)
-    asyncio.run(
-        run_file_upload_completion_worker(
-            settings,
-            handler=handler,
+    try:
+        asyncio.run(
+            run_file_upload_completion_worker(
+                settings,
+                handler=handler,
+            )
         )
-    )
+    except Exception as exc:  # noqa: BLE001 - CLI runtime must fail closed
+        logger.error(
+            "file_upload_completion_worker_runtime_failed",
+            error_type=type(exc).__name__,
+        )
+        raise SystemExit(1) from None
 
 
 async def _settle_cleanup(operation: Coroutine[Any, Any, None]) -> None:

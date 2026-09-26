@@ -249,8 +249,15 @@ Unexpected handler failures are explicitly abandoned. Before receiving again,
 the worker uses a process-local jittered exponential delay whose nominal values
 start at two seconds and double to a 60-second cap; each actual delay remains
 between one-half and all of its nominal value. Successful handling resets the
-delay. Graceful shutdown instead abandons an in-flight message without applying
-this cooldown.
+delay. Graceful shutdown stops new receives and gives an in-flight handler up
+to ten seconds to finish. Success is completed; failure is abandoned; and a
+handler that exceeds the bound is cancelled before an abandon attempt. No
+failure cooldown is applied during shutdown.
+
+Recoverable Service Bus connection failures recreate the receiver after a
+bounded delay. Authentication, authorization, missing-entity, and
+disabled-entity failures terminate the worker after a safe error-type-only log;
+they are not treated as reconnectable outages.
 
 ## Orphan reconciliation and release gate
 

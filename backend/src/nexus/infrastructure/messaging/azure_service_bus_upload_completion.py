@@ -16,7 +16,10 @@ from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusRe
 from azure.servicebus.amqp import AmqpMessageBodyType
 from azure.servicebus.exceptions import (
     MessageLockLostError,
+    MessagingEntityDisabledError,
+    MessagingEntityNotFoundError,
     ServiceBusAuthenticationError,
+    ServiceBusAuthorizationError,
     ServiceBusError,
 )
 
@@ -37,7 +40,15 @@ _RECEIVE_WAIT_SECONDS = 5.0
 _RECONNECT_DELAY_SECONDS = 2.0
 _INITIAL_FAILURE_DELAY_SECONDS = 2.0
 _MAX_FAILURE_DELAY_SECONDS = 60.0
+_SHUTDOWN_GRACE_SECONDS = 10.0
 _SAFE_CORRELATION_LENGTH = 16
+
+_FATAL_SERVICE_BUS_ERRORS = (
+    ServiceBusAuthenticationError,
+    ServiceBusAuthorizationError,
+    MessagingEntityNotFoundError,
+    MessagingEntityDisabledError,
+)
 
 logger = get_logger(__name__)
 
@@ -156,8 +167,11 @@ class AzureServiceBusUploadCompletionWorker:
                                 consecutive_handler_failures = 0
                 except asyncio.CancelledError:
                     raise
-                except ServiceBusAuthenticationError:
-                    logger.error("file_upload_completion_authentication_failed")
+                except _FATAL_SERVICE_BUS_ERRORS as exc:
+                    logger.error(
+                        "file_upload_completion_receiver_fatal",
+                        error_type=type(exc).__name__,
+                    )
                     raise
                 except ServiceBusError as exc:
                     logger.warning(
@@ -211,15 +225,13 @@ class AzureServiceBusUploadCompletionWorker:
                 {handler_task, stop_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            if stop_task in done and handler_task not in done:
-                handler_task.cancel()
-                await _settle_cancelled_task(handler_task)
-                await self._abandon_for_shutdown(
+            if stop_task in done:
+                return await self._settle_during_shutdown(
                     receiver,
                     message,
+                    handler_task,
                     event_correlation,
                 )
-                return _ProcessingOutcome.STOPPED
 
             stop_task.cancel()
             await _settle_cancelled_task(stop_task)
@@ -246,19 +258,62 @@ class AzureServiceBusUploadCompletionWorker:
             )
             return _ProcessingOutcome.HANDLER_FAILED
 
+        return await self._complete(
+            receiver,
+            message,
+            event_correlation,
+        )
+
+    async def _settle_during_shutdown(
+        self,
+        receiver: ServiceBusReceiver,
+        message: ServiceBusReceivedMessage,
+        handler_task: asyncio.Task[None],
+        correlation: str,
+    ) -> _ProcessingOutcome:
+        try:
+            await asyncio.wait_for(
+                handler_task,
+                timeout=_SHUTDOWN_GRACE_SECONDS,
+            )
+        except TimeoutError:
+            logger.info(
+                "file_upload_completion_shutdown_grace_expired",
+                correlation=correlation,
+            )
+            await self._abandon_for_shutdown(receiver, message, correlation)
+            return _ProcessingOutcome.STOPPED
+        except Exception as exc:  # noqa: BLE001 - failed work must be redelivered
+            logger.warning(
+                "file_upload_completion_shutdown_handler_failed",
+                correlation=correlation,
+                error_type=type(exc).__name__,
+            )
+            await self._abandon_for_shutdown(receiver, message, correlation)
+            return _ProcessingOutcome.STOPPED
+
+        await self._complete(receiver, message, correlation)
+        return _ProcessingOutcome.STOPPED
+
+    async def _complete(
+        self,
+        receiver: ServiceBusReceiver,
+        message: ServiceBusReceivedMessage,
+        correlation: str,
+    ) -> _ProcessingOutcome:
         try:
             await receiver.complete_message(message)
         except (ServiceBusError, MessageLockLostError) as exc:
             logger.warning(
                 "file_upload_completion_complete_failed",
-                correlation=event_correlation,
+                correlation=correlation,
                 error_type=type(exc).__name__,
             )
             return _ProcessingOutcome.HANDLED_SETTLEMENT_FAILED
 
         logger.info(
             "file_upload_completion_handled",
-            correlation=event_correlation,
+            correlation=correlation,
         )
         return _ProcessingOutcome.HANDLED
 
@@ -360,16 +415,12 @@ async def _settle_cancelled_task[T](task: asyncio.Task[T]) -> None:
 
 def _safe_message_correlation(message: ServiceBusReceivedMessage) -> str:
     value = str(message.message_id or "missing")
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[
-        :_SAFE_CORRELATION_LENGTH
-    ]
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:_SAFE_CORRELATION_LENGTH]
 
 
 def _safe_event_correlation(event: UploadCompletionEvent) -> str:
     value = f"{event.source}\0{event.event_id}"
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()[
-        :_SAFE_CORRELATION_LENGTH
-    ]
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:_SAFE_CORRELATION_LENGTH]
 
 
 __all__ = [

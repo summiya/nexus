@@ -96,9 +96,7 @@ def fake_azure_resources(monkeypatch: pytest.MonkeyPatch) -> None:
 def _settings(**changes: object) -> FileWorkerSettings:
     return FileWorkerSettings(
         _env_file=None,
-        azure_service_bus_fully_qualified_namespace=(
-            "nexus.servicebus.windows.net"
-        ),
+        azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
         azure_storage_container="nexus-files",

@@ -912,16 +912,25 @@ its nominal value. A successful handler execution resets the delay. This is a
 receive-loop delay, not a retry of the same delivery, a circuit breaker, or a
 second scheduling system.
 
+Recoverable Service Bus connection failures recreate the receiver after a
+bounded delay. Authentication, authorization, missing-entity, and
+disabled-entity failures are fatal configuration/security conditions: the
+worker logs only their exception type and terminates instead of reconnecting
+indefinitely.
+
 The worker renews a PeekLock for at most five minutes and processes one message
 at a time. Upload-completion handling must remain short. Malware scanning, OCR,
 extraction, chunking, embeddings, RAG, and other long-running work must be
 scheduled outside the upload-completion delivery.
 
-On graceful SIGTERM or SIGINT, the worker stops receiving and attempts to
-abandon an in-flight message so another replica can receive it promptly. That
-shutdown abandon does not trigger the failure cooldown. Lock loss or any
-complete, abandon, or dead-letter settlement failure is never reported as
-successful processing.
+On graceful SIGTERM or SIGINT, the worker stops receiving and gives an
+in-flight handler up to ten seconds to finish. Successful work completed within
+that bound is completed normally. Handler failure is abandoned immediately; if
+the grace period expires, the handler is cancelled and the worker attempts to
+abandon the message so another replica can receive it promptly. Shutdown
+abandon does not trigger the failure cooldown. Lock loss or any complete,
+abandon, or dead-letter settlement failure is never reported as successful
+processing.
 
 Phase 13 stores no transport-level delivery receipt and constructs no database
 resource. Its worker entrypoint fails closed until Phase 14 supplies a real

@@ -10,9 +10,7 @@ from nexus.config.file_worker_settings import FileWorkerSettings
 
 def _settings(**changes: object) -> FileWorkerSettings:
     values = {
-        "azure_service_bus_fully_qualified_namespace": (
-            "nexus.servicebus.windows.net"
-        ),
+        "azure_service_bus_fully_qualified_namespace": ("nexus.servicebus.windows.net"),
         "azure_service_bus_queue_name": "file-upload-completions",
         "azure_event_grid_expected_source": (
             "/subscriptions/test/resourceGroups/nexus/providers/"
