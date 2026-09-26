@@ -60,6 +60,7 @@ describe("FileDownloadButton", () => {
 
   it("shows a busy state and prevents duplicate requests", async () => {
     const user = userEvent.setup();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const grant = deferred<{ url: string; expiresAt: string }>();
     apiMocks.requestFileDownload.mockReturnValue(grant.promise);
 
@@ -78,6 +79,9 @@ describe("FileDownloadButton", () => {
       url: URL,
       expiresAt: "2026-09-26T15:05:00Z",
     });
+    expect(
+      await screen.findByRole("button", { name: "Download" }),
+    ).toBeEnabled();
   });
 
   it("shows a safe error without rendering provider details", async () => {
