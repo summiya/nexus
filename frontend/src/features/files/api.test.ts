@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureApiAuthentication } from "../../services/api/client";
 import { NexusApiError } from "../../services/api/error";
-import { initiateFileUpload, listFiles, requestFileDownload } from "./api";
+import { deleteFile, initiateFileUpload, listFiles, requestFileDownload } from "./api";
 
 const expiresAt = "2026-09-25T10:10:00Z";
 const signedUrl =
@@ -336,6 +336,66 @@ describe("File download API", () => {
       requestFileDownload("11111111-1111-4111-8111-111111111111"),
     ).rejects.toEqual(
       new Error("The File service returned an invalid response."),
+    );
+  });
+});
+
+
+describe("File delete API", () => {
+  it("sends DELETE and accepts 204", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    await expect(
+      deleteFile("11111111-1111-4111-8111-111111111111"),
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/files/11111111-1111-4111-8111-111111111111",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("treats 404 as an already-completed deletion", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "NOT_FOUND",
+            message: "The requested resource was not found.",
+          },
+        },
+        404,
+      ),
+    );
+
+    await expect(
+      deleteFile("11111111-1111-4111-8111-111111111111"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("propagates non-404 failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        {
+          error: {
+            code: "SERVICE_UNAVAILABLE",
+            message: "The file could not be deleted.",
+          },
+        },
+        503,
+      ),
+    );
+
+    await expect(
+      deleteFile("11111111-1111-4111-8111-111111111111"),
+    ).rejects.toEqual(
+      new NexusApiError(
+        "The file could not be deleted.",
+        503,
+        "SERVICE_UNAVAILABLE",
+      ),
     );
   });
 });
