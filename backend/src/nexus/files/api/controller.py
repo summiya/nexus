@@ -17,6 +17,7 @@ from nexus.files.api.pagination import decode_file_cursor, encode_file_cursor
 from nexus.files.api.schemas import (
     FileDownloadResponseBody,
     FileMetadataResponseBody,
+    FileMetadataStorageStatus,
     InitiateFileUploadRequestBody,
     InitiateFileUploadResponseBody,
     ListFilesResponseBody,
@@ -150,7 +151,7 @@ def _to_file_metadata(file: File) -> FileMetadataResponseBody:
         original_name=file.original_name,
         mime_type=file.mime_type,
         size_bytes=file.size_bytes,
-        storage_status=file.storage_status,
+        storage_status=FileMetadataStorageStatus(file.storage_status.value),
         created_at=file.created_at,
         updated_at=file.updated_at,
     )
