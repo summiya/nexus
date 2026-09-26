@@ -108,8 +108,12 @@ def _attachment_content_disposition(original_name: str) -> str:
 
 def _ascii_filename_fallback(original_name: str) -> str:
     normalized = unicodedata.normalize("NFKD", original_name)
-    ascii_name = normalized.encode("ascii", "ignore").decode("ascii").strip()
-    return ascii_name or "download"
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
+    safe_name = "".join(
+        character if " " <= character <= "~" else "_"
+        for character in ascii_name
+    ).strip()
+    return safe_name or "download"
 
 
 def _response_content_type(mime_type: str) -> str:
