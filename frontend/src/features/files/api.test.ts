@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureApiAuthentication } from "../../services/api/client";
 import { NexusApiError } from "../../services/api/error";
-import { deleteFile, initiateFileUpload, listFiles, requestFileDownload } from "./api";
+import {
+  deleteFile,
+  initiateFileUpload,
+  listFiles,
+  requestFileDownload,
+} from "./api";
 
 const expiresAt = "2026-09-25T10:10:00Z";
 const signedUrl =
@@ -339,7 +344,6 @@ describe("File download API", () => {
     );
   });
 });
-
 
 describe("File delete API", () => {
   it("sends DELETE and accepts 204", async () => {
