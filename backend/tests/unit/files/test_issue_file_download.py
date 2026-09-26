@@ -60,8 +60,6 @@ class FakeDownloadGrantIssuer:
         return DownloadGrant(url=URL, expires_at=expires_at)
 
 
-
-
 class FakePermissionChecker:
     def __init__(self, *, allowed: bool = True) -> None:
         self.allowed = allowed
@@ -213,8 +211,6 @@ def test_get_file_security_failures_propagate_without_grant(code: ErrorCode) -> 
     assert issuer.calls == []
 
 
-
-
 def test_download_other_organization_is_not_found_without_grant() -> None:
     file = _file()
     issuer = FakeDownloadGrantIssuer()
@@ -283,7 +279,6 @@ def test_provider_failure_returns_safe_error_without_bearer_link() -> None:
     assert captured.value.code is ErrorCode.SERVICE_UNAVAILABLE
     assert URL not in str(captured.value)
     assert file.storage_key not in str(captured.value)
-
 
 
 class RecordingLogger:
