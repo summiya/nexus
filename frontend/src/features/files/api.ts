@@ -29,7 +29,10 @@ const fileMetadataSchema = z
 
 const fileDownloadGrantSchema = z
   .object({
-    url: z.string().url(),
+    url: z
+      .string()
+      .url()
+      .refine((value) => new URL(value).protocol === "https:"),
     expires_at: timestampSchema,
   })
   .strict();
