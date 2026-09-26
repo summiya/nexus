@@ -17,11 +17,7 @@ function startBrowserDownload(url: string): void {
   }
 }
 
-export function FileDownloadButton({
-  filePublicId,
-}: {
-  filePublicId: string;
-}) {
+export function FileDownloadButton({ filePublicId }: { filePublicId: string }) {
   const [isRequesting, setIsRequesting] = useState(false);
   const [hasError, setHasError] = useState(false);
 
