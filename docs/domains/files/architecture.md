@@ -1033,9 +1033,9 @@ for recovery, quarantine, or deletion.
 ## Defender malware scanning and File availability
 
 Phase 15 uses Microsoft Defender for Storage on-upload malware scanning as the
-managed security scanner. Defender publishes scan results to a dedicated Event
-Grid custom topic; Nexus routes those events into the existing File Service Bus
-queue and handles them in the existing File worker process. Blob index-tag scan
+managed security scanner. Defender publishes scan results to a dedicated Event Grid custom topic; Nexus
+routes those events into a dedicated malware-result Service Bus queue while the
+existing File worker process consumes both queues with shared resources. Blob index-tag scan
 result writes are disabled, so File availability does not trust mutable Blob tags.
 
 The Azure infrastructure mapper validates the expected custom-topic resource ID,
