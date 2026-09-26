@@ -8,7 +8,7 @@ import pytest
 
 import nexus.files.application.issue_file_download as download_module
 from nexus.errors import ErrorCode, NexusError
-from nexus.files.application import IssueFileDownload
+from nexus.files.application import GetFile, IssueFileDownload
 from nexus.files.domain import File, FileStorageStatus
 from nexus.files.ports import DownloadGrant, DownloadGrantError
 
@@ -58,6 +58,63 @@ class FakeDownloadGrantIssuer:
         if self.error is not None:
             raise self.error
         return DownloadGrant(url=URL, expires_at=expires_at)
+
+
+
+
+class FakePermissionChecker:
+    def __init__(self, *, allowed: bool = True) -> None:
+        self.allowed = allowed
+        self.calls: list[tuple[UUID, UUID, str]] = []
+
+    async def has_permission(
+        self,
+        *,
+        organization_public_id: UUID,
+        user_public_id: UUID,
+        permission_key: str,
+    ) -> bool:
+        self.calls.append(
+            (organization_public_id, user_public_id, permission_key)
+        )
+        return self.allowed
+
+
+class TenantScopedPersistence:
+    def __init__(self, file: File) -> None:
+        self.file = file
+        self.calls: list[tuple[UUID, UUID]] = []
+
+    async def get_file(
+        self,
+        *,
+        organization_public_id: UUID,
+        file_public_id: UUID,
+    ) -> File | None:
+        self.calls.append((organization_public_id, file_public_id))
+        if (
+            organization_public_id != self.file.organization_public_id
+            or file_public_id != self.file.public_id
+        ):
+            return None
+        return self.file
+
+
+def _service_with_real_get_file(
+    file: File,
+    issuer: FakeDownloadGrantIssuer,
+    *,
+    permissions: FakePermissionChecker,
+) -> IssueFileDownload:
+    return IssueFileDownload(
+        get_file=GetFile(
+            persistence=TenantScopedPersistence(file),  # type: ignore[arg-type]
+            permission_checker=permissions,  # type: ignore[arg-type]
+        ),
+        download_grant_issuer=issuer,  # type: ignore[arg-type]
+        grant_ttl=timedelta(minutes=5),
+        clock=lambda: NOW,
+    )
 
 
 def _file(status: FileStorageStatus = FileStorageStatus.AVAILABLE) -> File:
@@ -153,6 +210,59 @@ def test_get_file_security_failures_propagate_without_grant(code: ErrorCode) -> 
         )
 
     assert captured.value.code is code
+    assert issuer.calls == []
+
+
+
+
+def test_download_other_organization_is_not_found_without_grant() -> None:
+    file = _file()
+    issuer = FakeDownloadGrantIssuer()
+    permissions = FakePermissionChecker()
+
+    with pytest.raises(NexusError) as captured:
+        asyncio.run(
+            _service_with_real_get_file(
+                file,
+                issuer,
+                permissions=permissions,
+            ).execute(
+                organization_public_id=uuid4(),
+                user_public_id=file.created_by_user_public_id,
+                file_public_id=file.public_id,
+            )
+        )
+
+    assert captured.value.code is ErrorCode.NOT_FOUND
+    assert issuer.calls == []
+
+
+def test_download_requires_files_read_permission_before_file_lookup() -> None:
+    file = _file()
+    issuer = FakeDownloadGrantIssuer()
+    permissions = FakePermissionChecker(allowed=False)
+
+    with pytest.raises(NexusError) as captured:
+        asyncio.run(
+            _service_with_real_get_file(
+                file,
+                issuer,
+                permissions=permissions,
+            ).execute(
+                organization_public_id=file.organization_public_id,
+                user_public_id=file.created_by_user_public_id,
+                file_public_id=file.public_id,
+            )
+        )
+
+    assert captured.value.code is ErrorCode.FORBIDDEN
+    assert permissions.calls == [
+        (
+            file.organization_public_id,
+            file.created_by_user_public_id,
+            "files.read",
+        )
+    ]
     assert issuer.calls == []
 
 
