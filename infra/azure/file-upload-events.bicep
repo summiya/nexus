@@ -125,9 +125,7 @@ module malwareScanTopic './modules/file-malware-scan-topic.bicep' = {
   name: 'nexus-file-malware-scan-topic'
   scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
   params: {
-    deadLetterContainerName: deadLetterContainerName
     location: storageAccount.location
-    malwareScanCapGBPerMonth: malwareScanCapGBPerMonth
     malwareScanTopicName: malwareScanTopicName
     storageAccountName: storageAccountName
   }
@@ -195,6 +193,20 @@ module malwareScanSubscription './modules/file-malware-scan-subscription.bicep' 
     malwareScanTopicName: malwareScanTopic.outputs.topicName
     queueResourceId: serviceBus.outputs.malwareScanQueueResourceId
   }
+}
+
+module defenderMalwareScanning './modules/file-malware-scan-defender.bicep' = {
+  name: 'nexus-file-malware-scanning'
+  scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
+  params: {
+    deadLetterContainerName: deadLetterContainerName
+    malwareScanCapGBPerMonth: malwareScanCapGBPerMonth
+    malwareScanTopicResourceId: malwareScanTopic.outputs.topicResourceId
+    storageAccountName: storageAccountName
+  }
+  dependsOn: [
+    malwareScanSubscription
+  ]
 }
 
 output eventSubscriptionResourceId string = eventSubscription.outputs.eventSubscriptionResourceId
