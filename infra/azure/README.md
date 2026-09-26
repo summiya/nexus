@@ -269,7 +269,10 @@ lifecycle markers as the sole orphan detector.
 
 Before unrestricted public upload traffic is enabled, Nexus must have an
 approved reconciliation design and operational schedule for sufficiently old
-committed objects that lack legitimate File state. Reconciliation must classify
+committed objects that lack legitimate File state. The release gate must also
+include PENDING-age monitoring and alerting because a File can remain PENDING
+indefinitely when the Defender scan cap is exhausted, Defender is disabled, or
+its scan-result delivery is dead-lettered. Reconciliation must classify
 each candidate for recovery, quarantine, or deletion. At large scale, use an
 inventory or change-driven mechanism rather than frequent full-container scans.
 
@@ -283,7 +286,11 @@ must account for the retention window.
 ## Defender for Storage malware results
 
 Phase 15 enables Microsoft Defender for Storage on-upload malware scanning for
-the configured storage account. The existing storage-account Event Grid system
+the configured storage account. `defenderForStorageSettings/current` is an
+account-wide resource, and this template uses
+`overrideSubscriptionLevelSettings: true`. The Nexus File storage account
+should therefore be dedicated to the File capability so this deployment does
+not unexpectedly override Defender settings for unrelated storage workloads. The existing storage-account Event Grid system
 topic must be in the same resource group as the storage account so Defender can
 use the single system topic allowed for that source and sends every scan result to the dedicated
 `malwareScanTopicName` Event Grid custom topic. That topic uses its
@@ -296,7 +303,11 @@ Sender assignment before traffic is enabled.
 
 Nexus configures `blobScanResultsOptions: None`. File security state therefore
 does not depend on Blob index tags, and Defender result-tag writes cannot alter
-the Phase 14 ETag comparison. The worker must receive
+the Phase 14 ETag comparison. The malware-result custom topic also sets
+`disableLocalAuth: true`; Defender publishing must succeed through Microsoft
+Entra/RBAC only. Controlled validation must prove the Defender publisher can
+still emit scan results with local authentication disabled and that no topic
+access key is required or accepted for Nexus operation. The worker must receive
 `AZURE_MALWARE_SCAN_EXPECTED_TOPIC` equal to the deployed
 `malwareScanTopicResourceId` output.
 
@@ -308,7 +319,10 @@ not-scanned results to `FAILED`.
 
 Defender results and BlobCreated events are unordered. They use separate queues
 so an early scan result cannot repeatedly redeliver ahead of and starve the
-BlobCreated registration message. If a valid scan result still arrives before
+BlobCreated registration message. Scan results for uploads that Phase 14
+permanently rejected have no File row to update; those malware messages will
+retry and can eventually dead-letter. That is expected DLQ noise and should be
+distinguished from unexpected processing failures. If a valid scan result still arrives before
 Phase 14 has registered the File row, its consumer abandons it for retry. Redelivery of the same terminal result is idempotent. A contradictory
 terminal result is dead-lettered as `INVALID_MALWARE_SCAN_RESULT`.
 
@@ -324,21 +338,13 @@ after evidence is captured.
 
 The validation run must prove:
 
-1. `PutBlob` and `PutBlockList` produce CloudEvents 1.0 messages.
-2. BlobDeleted, another container, and another key namespace do not route.
-3. The exact emitted Event Grid source is captured for Phase 11 configuration.
-4. Event Grid Managed Identity can send and unauthorized identities cannot.
-5. With storage account A configured, selecting a system topic whose source is
+1. Defender can publish malware scan results to the custom Event Grid topic
+   with `disableLocalAuth: true`, using the expected RBAC-authorized identity,
+   and Nexus requires no topic access key.\n3. `PutBlob` and `PutBlockList` produce CloudEvents 1.0 messages.\n3. BlobDeleted, another container, and another key namespace do not route.\n4. The exact emitted Event Grid source is captured for Phase 11 configuration.\n5. Event Grid Managed Identity can send and unauthorized identities cannot.\n6. With storage account A configured, selecting a system topic whose source is
    storage account B fails closed before creating either the queue sender or
    dead-letter Blob role assignment. Retain deployment and role-assignment
-   evidence for this negative case.
-6. `aeg-output-event-id` is present.
-7. Reproduced Event Grid redelivery retains the same Service Bus `MessageId`.
-8. Forced Event Grid delivery failure creates a dead-letter object.
-9. That dead-letter Blob does not create another File completion message.
-10. Queue, DLQ, Event Grid failure, CPU, memory, and throttling metrics are
-   visible.
-11. First deployment behavior is recorded, including any transient Event Grid
+   evidence for this negative case.\n7. `aeg-output-event-id` is present.\n8. Reproduced Event Grid redelivery retains the same Service Bus `MessageId`.\n9. Forced Event Grid delivery failure creates a dead-letter object.\n10. That dead-letter Blob does not create another File completion message.\n11. Queue, DLQ, Event Grid failure, CPU, memory, and throttling metrics are
+   visible.\n12. First deployment behavior is recorded, including any transient Event Grid
     authorization failure, RBAC propagation wait, and successful idempotent
     redeployment.
 
