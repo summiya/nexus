@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 from datetime import datetime
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
