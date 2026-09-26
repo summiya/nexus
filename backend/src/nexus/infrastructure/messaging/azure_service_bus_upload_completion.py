@@ -24,9 +24,10 @@ from azure.servicebus.exceptions import (
     ServiceBusError,
 )
 
-from nexus.files.application import FileWorkerEvent
 from nexus.files.ports import (
+    MalwareScanResultEvent,
     MalwareScanResultRejectedError,
+    UploadCompletionEvent,
     UploadCompletionRejectedError,
 )
 from nexus.infrastructure.storage import (
@@ -64,6 +65,9 @@ logger = get_logger(__name__)
 
 class InvalidUploadCompletionMessageBody(ValueError):
     """A Service Bus body cannot be decoded as one supported File event object."""
+
+
+type FileWorkerEvent = UploadCompletionEvent | MalwareScanResultEvent
 
 
 class FileWorkerEventMapper(Protocol):
