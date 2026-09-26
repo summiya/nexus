@@ -231,9 +231,9 @@ def test_invalid_creator_organization_relationship_is_rejected(
 
     with pytest.raises(FileReferenceError):
         asyncio.run(
-            _persistence(
-                persistence_async_session_factory
-            ).register_completed_upload(_file(organization_id, other_user_id))
+            _persistence(persistence_async_session_factory).register_completed_upload(
+                _file(organization_id, other_user_id)
+            )
         )
 
     assert _stored_rows(migrated_engine) == []

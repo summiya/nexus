@@ -383,6 +383,22 @@ def test_properties_normalize_only_expected_surrounding_etag_quotes() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("malformed_etag", [None, "", 123, ["0x8D123"]])
+def test_properties_reject_malformed_etags(malformed_etag: object) -> None:
+    async def scenario() -> None:
+        fake_client = FakeContainerClient()
+        fake_client.properties.etag = malformed_etag
+        adapter = adapter_for(fake_client)
+
+        with pytest.raises(ObjectStorageError) as captured:
+            await adapter.get_object_properties(storage_key="opaque-key")
+
+        assert str(captured.value) == "The object storage operation failed."
+        assert isinstance(captured.value.__cause__, (TypeError, ValueError))
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     ("provider_error", "expected_error"),
     [

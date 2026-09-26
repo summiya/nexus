@@ -32,7 +32,9 @@ class FakeStorage:
         self.error: Exception | None = None
         self.calls: list[str] = []
 
-    async def get_object_properties(self, *, storage_key: str) -> StoredObjectProperties:
+    async def get_object_properties(
+        self, *, storage_key: str
+    ) -> StoredObjectProperties:
         self.calls.append(storage_key)
         if self.error is not None:
             raise self.error
@@ -233,8 +235,7 @@ def test_invalid_protected_context_is_permanently_rejected() -> None:
         asyncio.run(service.handle(_event()))
 
     assert (
-        captured.value.reason
-        is UploadCompletionRejectionReason.INVALID_UPLOAD_CONTEXT
+        captured.value.reason is UploadCompletionRejectionReason.INVALID_UPLOAD_CONTEXT
     )
     assert persistence.files == []
 

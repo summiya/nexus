@@ -141,7 +141,12 @@ class AzureBlobObjectStorage:
 
 
 def _normalize_entity_tag(value: object) -> str:
-    entity_tag = str(value)
-    if len(entity_tag) >= 2 and entity_tag.startswith('"') and entity_tag.endswith('"'):
-        return entity_tag[1:-1]
-    return entity_tag
+    if not isinstance(value, str) or not value:
+        raise ValueError("entity tag is invalid")
+
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        normalized = value[1:-1]
+        if not normalized:
+            raise ValueError("entity tag is invalid")
+        return normalized
+    return value
