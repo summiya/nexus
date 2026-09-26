@@ -6,6 +6,7 @@ from nexus.files.application.initiate_upload import (
     InitiatedFileUpload,
     InitiateFileUpload,
 )
+from nexus.files.application.issue_file_download import IssueFileDownload
 from nexus.files.application.list_files import (
     DEFAULT_FILE_PAGE_SIZE,
     MAX_FILE_PAGE_SIZE,
@@ -28,6 +29,7 @@ __all__ = [
     "FilePageCursor",
     "GetFile",
     "InitiateFileUpload",
+    "IssueFileDownload",
     "InitiatedFileUpload",
     "ListFiles",
     "UploadIntentPolicy",
