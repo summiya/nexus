@@ -9,10 +9,12 @@ from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.files.api.dependencies import (
     GetFileDep,
     InitiateFileUploadDep,
+    IssueFileDownloadDep,
     ListFilesDep,
 )
 from nexus.files.api.pagination import decode_file_cursor, encode_file_cursor
 from nexus.files.api.schemas import (
+    FileDownloadResponseBody,
     FileMetadataResponseBody,
     InitiateFileUploadRequestBody,
     InitiateFileUploadResponseBody,
@@ -82,6 +84,29 @@ async def initiate_file_upload(
             ),
             expires_at=result.grant.expires_at,
         ),
+    )
+
+
+@router.post(
+    "/{file_public_id}/download",
+    response_model=FileDownloadResponseBody,
+    status_code=status.HTTP_200_OK,
+)
+async def initiate_file_download(
+    file_public_id: UUID,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: IssueFileDownloadDep,
+) -> FileDownloadResponseBody:
+    grant = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        file_public_id=file_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return FileDownloadResponseBody(
+        url=grant.url,
+        expires_at=grant.expires_at,
     )
 
 
