@@ -60,7 +60,9 @@ describe("FileDownloadButton", () => {
 
   it("shows a busy state and prevents duplicate requests", async () => {
     const user = userEvent.setup();
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      () => undefined,
+    );
     const grant = deferred<{ url: string; expiresAt: string }>();
     apiMocks.requestFileDownload.mockReturnValue(grant.promise);
 
