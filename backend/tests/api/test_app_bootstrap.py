@@ -210,6 +210,7 @@ def test_conversation_composition_receives_database_session_factory() -> None:
 def test_file_composition_receives_shared_runtime_dependencies() -> None:
     database = TrackingDatabase()
     issuer = Mock(spec=UploadGrantIssuer)
+    download_issuer = Mock(spec=DownloadGrantIssuer)
     app = create_test_app(
         build_settings(
             file_upload_max_size_bytes=123_456,
@@ -217,6 +218,7 @@ def test_file_composition_receives_shared_runtime_dependencies() -> None:
         ),
         database=database,
         upload_grant_issuer=issuer,
+        download_grant_issuer=download_issuer,
     )
 
     with TestClient(app):
@@ -226,6 +228,10 @@ def test_file_composition_receives_shared_runtime_dependencies() -> None:
         assert service.upload_grant_issuer is issuer
         assert isinstance(service.context_protector, AesGcmUploadContextProtector)
         assert service.grant_ttl.total_seconds() == 900
+        assert (
+            app.state.container.files.issue_download.download_grant_issuer
+            is download_issuer
+        )
 
 
 def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
