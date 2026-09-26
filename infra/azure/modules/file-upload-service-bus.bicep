@@ -34,6 +34,9 @@ param duplicateDetectionHistoryTimeWindow string
 @description('System-assigned principal ID of the explicitly selected Event Grid system topic.')
 param eventGridPrincipalId string
 
+@description('System-assigned principal ID of the Defender malware scan result Event Grid topic.')
+param malwareScanTopicPrincipalId string
+
 @description('Optional user-assigned File worker principal. Empty creates no receiver role assignment.')
 param fileWorkerPrincipalId string = ''
 
@@ -110,6 +113,16 @@ resource eventGridSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01
   scope: queue
   properties: {
     principalId: eventGridPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataSenderRoleDefinitionId
+  }
+}
+
+resource malwareScanTopicSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(queue.id, malwareScanTopicPrincipalId, serviceBusDataSenderRoleDefinitionId)
+  scope: queue
+  properties: {
+    principalId: malwareScanTopicPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: serviceBusDataSenderRoleDefinitionId
   }
