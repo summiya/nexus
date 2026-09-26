@@ -1,0 +1,44 @@
+name: Phase 20 temporary formatter
+
+on:
+  push:
+    branches:
+      - feat/files-phase-20-21-delete
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.event.head_commit.message != 'Apply requested Phase 20 formatting'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/files-phase-20-21-delete
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run backend formatter
+        run: |
+          python -m pip install ruff==0.16.7
+          cd backend
+          ruff format src tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Run frontend formatter
+        run: |
+          cd frontend
+          npm ci
+          npm run format
+      - name: Commit formatter output and remove temporary workflow
+        run: |
+          rm .github/workflows/phase20-format-temp.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply requested Phase 20 formatting"
+          git push
