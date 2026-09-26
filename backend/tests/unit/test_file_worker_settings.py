@@ -21,6 +21,10 @@ def _settings(**changes: object) -> FileWorkerSettings:
             "/subscriptions/test/resourceGroups/nexus/providers/"
             "Microsoft.Storage/storageAccounts/nexus"
         ),
+        "azure_malware_scan_expected_topic": (
+            "/subscriptions/test/resourceGroups/nexus/providers/"
+            "Microsoft.EventGrid/topics/nexus-file-malware-scan-results"
+        ),
         "azure_storage_container": "nexus-files",
         "azure_storage_account_url": "https://nexus.blob.core.windows.net",
         **changes,
@@ -32,6 +36,7 @@ def test_worker_settings_have_narrow_safe_defaults() -> None:
     settings = _settings()
 
     assert settings.file_upload_completion_source == "azure-primary"
+    assert settings.file_malware_scan_source == "azure-defender-storage"
     assert settings.file_worker_max_lock_renewal_seconds == 300
     assert settings.log_level == "INFO"
     assert settings.file_upload_max_size_bytes == 536_870_912
@@ -78,6 +83,7 @@ def test_worker_settings_require_event_source_queue_and_container() -> None:
     for field_name in (
         "azure_service_bus_queue_name",
         "azure_event_grid_expected_source",
+        "azure_malware_scan_expected_topic",
         "azure_storage_container",
     ):
         with pytest.raises(ValidationError):
