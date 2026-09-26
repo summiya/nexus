@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+import nexus.files.application.issue_file_download as download_module
 from nexus.errors import ErrorCode, NexusError
 from nexus.files.application import IssueFileDownload
 from nexus.files.domain import File, FileStorageStatus
@@ -172,3 +173,40 @@ def test_provider_failure_returns_safe_error_without_bearer_link() -> None:
     assert captured.value.code is ErrorCode.SERVICE_UNAVAILABLE
     assert URL not in str(captured.value)
     assert file.storage_key not in str(captured.value)
+
+
+
+class RecordingLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+
+def test_download_logs_only_safe_hashed_correlation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file = _file()
+    issuer = FakeDownloadGrantIssuer()
+    logger = RecordingLogger()
+    monkeypatch.setattr(download_module, "logger", logger)
+
+    asyncio.run(
+        _service(file, issuer).execute(
+            organization_public_id=file.organization_public_id,
+            user_public_id=file.created_by_user_public_id,
+            file_public_id=file.public_id,
+        )
+    )
+
+    serialized = repr(logger.events)
+    assert "file_download_grant_issued" in serialized
+    assert "correlation" in serialized
+    assert URL not in serialized
+    assert file.storage_key not in serialized
+    assert str(file.public_id) not in serialized
+    assert str(file.organization_public_id) not in serialized
