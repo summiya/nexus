@@ -37,6 +37,11 @@ class FileWorkerSettings(BaseSettings):
         max_length=255,
     )
     azure_service_bus_queue_name: str = Field(min_length=1, max_length=260)
+    azure_service_bus_malware_scan_queue_name: str = Field(
+        default="file-malware-scan-results",
+        min_length=1,
+        max_length=260,
+    )
     azure_service_bus_managed_identity_client_id: UUID | None = None
     azure_event_grid_expected_source: str = Field(min_length=1, max_length=1024)
     azure_malware_scan_expected_topic: str = Field(min_length=1, max_length=2048)
@@ -60,6 +65,7 @@ class FileWorkerSettings(BaseSettings):
 
     @field_validator(
         "azure_service_bus_queue_name",
+        "azure_service_bus_malware_scan_queue_name",
         "azure_event_grid_expected_source",
         "azure_malware_scan_expected_topic",
         "azure_storage_container",
