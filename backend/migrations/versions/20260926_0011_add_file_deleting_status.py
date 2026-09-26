@@ -26,8 +26,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute(
-        "UPDATE files SET storage_status = 'failed' "
-        "WHERE storage_status = 'deleting'"
+        "UPDATE files SET storage_status = 'failed' WHERE storage_status = 'deleting'"
     )
     op.drop_constraint("ck_files_storage_status", "files", type_="check")
     op.create_check_constraint(
