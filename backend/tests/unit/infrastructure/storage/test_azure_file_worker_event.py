@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import cast
-
 from nexus.files.ports import MalwareScanResultEvent, UploadCompletionEvent
 from nexus.infrastructure.storage import (
     AzureBlobCreatedEventMapper,
