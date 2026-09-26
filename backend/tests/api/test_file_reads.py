@@ -61,9 +61,7 @@ class FakeGetFileService:
         user_public_id: UUID,
         file_public_id: UUID,
     ) -> File:
-        self.calls.append(
-            (organization_public_id, user_public_id, file_public_id)
-        )
+        self.calls.append((organization_public_id, user_public_id, file_public_id))
         if self.error is not None:
             raise self.error
         return self.file

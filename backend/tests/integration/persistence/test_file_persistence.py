@@ -243,7 +243,6 @@ def test_create_file_transaction_settles_before_cancellation_propagates(
         assert stored_file is not None
 
 
-
 def test_list_files_is_newest_first_and_tenant_scoped(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],

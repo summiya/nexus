@@ -28,9 +28,7 @@ class FakePermissionChecker:
         user_public_id: UUID,
         permission_key: str,
     ) -> bool:
-        self.calls.append(
-            (organization_public_id, user_public_id, permission_key)
-        )
+        self.calls.append((organization_public_id, user_public_id, permission_key))
         if self.error is not None:
             raise self.error
         return self.allowed
