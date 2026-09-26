@@ -67,7 +67,11 @@ export function FileLibrary() {
   const navigating = files.isFetching || files.isPlaceholderData;
 
   function goNext() {
-    if (page?.nextCursor === null || page?.nextCursor === undefined || navigating) {
+    if (
+      page?.nextCursor === null ||
+      page?.nextCursor === undefined ||
+      navigating
+    ) {
       return;
     }
     setCursorHistory((history) => [...history, currentCursor]);
