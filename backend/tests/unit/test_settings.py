@@ -443,7 +443,6 @@ def test_file_upload_context_key_is_redacted_from_settings_representation() -> N
     assert key not in str(settings)
 
 
-
 @pytest.mark.parametrize("ttl", [0, -1, 901])
 def test_file_download_grant_ttl_must_remain_short(ttl: int) -> None:
     with pytest.raises(ValidationError):

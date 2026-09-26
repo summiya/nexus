@@ -291,7 +291,6 @@ def test_openapi_exposes_only_metadata_read_endpoints() -> None:
     assert status_schema["enum"] == ["pending", "available", "failed"]
 
 
-
 class FakeDeleteFileService:
     def __init__(self) -> None:
         self.error: NexusError | None = None
@@ -352,7 +351,6 @@ def test_delete_endpoint_preserves_safe_errors(
     assert "azure" not in response.text.lower()
 
 
-
 class FakeIssueFileDownloadService:
     def __init__(self) -> None:
         self.error: NexusError | None = None
@@ -365,9 +363,7 @@ class FakeIssueFileDownloadService:
         user_public_id: UUID,
         file_public_id: UUID,
     ) -> DownloadGrant:
-        self.calls.append(
-            (organization_public_id, user_public_id, file_public_id)
-        )
+        self.calls.append((organization_public_id, user_public_id, file_public_id))
         if self.error is not None:
             raise self.error
         return DownloadGrant(

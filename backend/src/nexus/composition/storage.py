@@ -197,9 +197,8 @@ async def build_storage_composition(
     container_name, connection_string, account_url = _azure_configuration(settings)
     account_name: str | None = None
     if (
-        (upload_grant_issuer is None or download_grant_issuer is None)
-        and account_url is not None
-    ):
+        upload_grant_issuer is None or download_grant_issuer is None
+    ) and account_url is not None:
         account_name = (settings.azure_storage_account_name or "").strip()
         if not account_name:
             raise StorageConfigurationError(

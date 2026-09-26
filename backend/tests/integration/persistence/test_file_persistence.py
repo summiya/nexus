@@ -421,7 +421,9 @@ def test_prepare_file_deletion_marks_every_visible_status_deleting_and_hides_it(
     assert file.public_id not in {item.public_id for item in listed}
     with Session(migrated_engine) as session:
         status_value = session.scalar(
-            select(FileModel.storage_status).where(FileModel.public_id == file.public_id)
+            select(FileModel.storage_status).where(
+                FileModel.public_id == file.public_id
+            )
         )
     assert status_value == FileStorageStatus.DELETING.value
 

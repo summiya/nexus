@@ -70,7 +70,6 @@ class ListFilesResponseBody(BaseModel):
     next_cursor: str | None
 
 
-
 class FileDownloadResponseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
