@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 import nexus.files.ports as file_ports
-from nexus.files.ports import UploadCompletionEvent
+from nexus.files.ports import UploadCompletionEvent, UploadCompletionHandler
 
 TIMESTAMP = datetime(2026, 9, 25, tzinfo=UTC)
 
@@ -37,6 +37,7 @@ def test_upload_completion_event_has_exact_provider_neutral_contract() -> None:
     ]
     assert not hasattr(event, "reported_content_type")
     assert file_ports.UploadCompletionEvent is UploadCompletionEvent
+    assert file_ports.UploadCompletionHandler is UploadCompletionHandler
 
 
 def test_upload_completion_event_is_immutable_and_hides_values_from_repr() -> None:

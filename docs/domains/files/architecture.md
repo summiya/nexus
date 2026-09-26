@@ -774,10 +774,14 @@ entity_tag
 reported_size_bytes
 ```
 
-Delivery identity is `(source, event_id)`. `source` is a stable Nexus namespace
-such as `azure-primary` or `reconciliation`, not an Azure resource identifier
-that application code interprets. `entity_tag` is an opaque object-version
-identity. `reported_size_bytes` is provider-reported information and is never a
+`(source, event_id)` is a stable logging and correlation identity. It is not a
+durable correctness or deduplication boundary. `source` is a stable Nexus
+namespace such as `azure-primary` or `reconciliation`, not an Azure resource
+identifier that application code interprets. Correctness across Event Grid
+delivery, Service Bus redelivery, DLQ replay, and reconciliation depends on the
+Phase 14 File business-identity and immutable-ownership checks required by
+`INV-REL-004`. `entity_tag` is an opaque object-version identity.
+`reported_size_bytes` is provider-reported information and is never a
 substitute for later measurement of the current object.
 
 `occurred_at` is diagnostic, audit, and secondary consistency information. It
@@ -856,8 +860,8 @@ The queue enables a ten-minute duplicate-detection window. Event Grid's
 Service Bus internal `MessageId` is expected to remain stable across redelivery,
 and `aeg-output-event-id` carries the Event Grid event ID. Controlled Azure
 validation must verify that behavior before it is relied on operationally.
-Duplicate detection is only load reduction; Phase 13 remains responsible for
-delivery and business idempotency.
+Duplicate detection is only load reduction. Phase 13 provides safe transport
+settlement, while Phase 14 business idempotency provides correctness.
 
 Event Grid retries for at most 30 attempts or 24 hours and then uses the private
 `event-grid-deadletter` container. That container is outside the configured
@@ -894,10 +898,56 @@ UploadContext, secrets, or internal details in DLQ reason text. Temporary
 storage, database, Key Vault, and network failures may use retry/abandon
 behavior.
 
+The Phase 13 worker accepts only AMQP `DATA` message bodies containing a
+strictly decoded JSON object. Nexus limits the aggregate body to 64 KiB
+(65,536 bytes), independently of the larger Service Bus queue limit. Invalid
+UTF-8, JSON, body form, or size is immediately dead-lettered with the fixed
+reason `INVALID_MESSAGE_BODY`.
+
+Unexpected application-handler failures are explicitly abandoned. After an
+abandon attempt, the worker waits before receiving another message using a
+process-local jittered exponential delay: two seconds nominal initially,
+doubling to a 60-second cap, with every actual wait between one-half and all of
+its nominal value. A successful handler execution resets the delay. This is a
+receive-loop delay, not a retry of the same delivery, a circuit breaker, or a
+second scheduling system.
+
+Recoverable Service Bus connection failures recreate the receiver after a
+bounded delay. Authentication, authorization, missing-entity, and
+disabled-entity failures are fatal configuration/security conditions: the
+worker logs only their exception type and terminates instead of reconnecting
+indefinitely.
+
+The worker renews a PeekLock for at most five minutes and processes one message
+at a time. Upload-completion handling must remain short. Malware scanning, OCR,
+extraction, chunking, embeddings, RAG, and other long-running work must be
+scheduled outside the upload-completion delivery.
+
+On graceful SIGTERM or SIGINT, the worker stops receiving and gives an
+in-flight handler up to ten seconds to finish. Successful work completed within
+that bound is completed normally. Handler failure is abandoned immediately; if
+the grace period expires, the handler is cancelled and the worker attempts to
+abandon the message so another replica can receive it promptly. Shutdown
+abandon does not trigger the failure cooldown. Lock loss or any complete,
+abandon, or dead-letter settlement failure is never reported as successful
+processing.
+
+Phase 13 stores no transport-level delivery receipt and constructs no database
+resource. Its worker entrypoint fails closed until Phase 14 supplies a real
+`UploadCompletionHandler`. Phase 14 must perform slow external work without a
+database transaction, then apply the File business effect in one short
+transaction protected by `INV-REL-004`.
+
 Service Bus DLQ messages do not observe TTL and are not automatically removed.
 Phase 13 operations must therefore define inspection, safe replay, and explicit
-purge procedures and alert on DLQ size. Phase 12 implements none of that worker
-or settlement behavior; it records the non-negotiable operational boundary.
+purge procedures and alert on DLQ size. A valid message exhausted by a prolonged
+dependency outage may be replayed only after the dependency is healthy and the
+operator has confirmed the bounded body is a legitimate original delivery.
+Replay must preserve the original event body and correlation identity; Phase 14
+business idempotency makes repeated delivery safe. Permanently invalid messages
+remain quarantined for investigation and must not be replayed unchanged. Phase
+12 implements none of that worker or settlement behavior; it records the
+non-negotiable operational boundary.
 
 Event delivery is assumed to be at least once and unordered. Redelivery,
 worker restart, and concurrent workers are normal. Correctness cannot depend on

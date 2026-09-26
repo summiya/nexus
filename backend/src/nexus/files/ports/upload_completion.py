@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 from nexus.files.domain import is_canonical_file_storage_key
 
@@ -69,4 +70,16 @@ class UploadCompletionEvent:
             raise ValueError("reported_size_bytes must not be negative")
 
 
-__all__ = ["UploadCompletionEvent"]
+class UploadCompletionHandler(Protocol):
+    """Apply one committed-upload event at the File application boundary.
+
+    The Phase 14 implementation must perform slow external work, including
+    Blob access, Key Vault calls, and UploadContext decryption, without
+    holding a database transaction. It must then apply the File business
+    effect in one short database transaction protected by INV-REL-004.
+    """
+
+    async def handle(self, event: UploadCompletionEvent) -> None: ...
+
+
+__all__ = ["UploadCompletionEvent", "UploadCompletionHandler"]
