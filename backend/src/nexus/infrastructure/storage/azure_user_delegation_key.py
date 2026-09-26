@@ -11,8 +11,6 @@ from azure.core.exceptions import AzureError
 from azure.storage.blob import UserDelegationKey
 from azure.storage.blob.aio import BlobServiceClient
 
-from nexus.files.ports import UploadGrantError
-
 _KEY_START_SKEW = timedelta(minutes=15)
 _TARGET_KEY_LIFETIME = timedelta(hours=1)
 _REFRESH_MARGIN = timedelta(minutes=5)
