@@ -64,7 +64,7 @@ export function FileLibrary() {
   const files = useFilesQuery(currentCursor);
   const page = files.data;
   const items = page?.items ?? [];
-  const navigating = files.isFetching || files.isPlaceholderData;
+  const navigating = files.isPlaceholderData;
 
   function goNext() {
     if (
@@ -108,14 +108,25 @@ export function FileLibrary() {
       ) : files.isError ? (
         <div className="file-library-error">
           <p role="alert">Files are temporarily unavailable.</p>
-          <button
-            className="text-button"
-            disabled={files.isFetching}
-            type="button"
-            onClick={() => void files.refetch()}
-          >
-            {files.isFetching ? "Retrying…" : "Retry"}
-          </button>
+          <div className="file-library-error-actions">
+            {cursorHistory.length > 0 ? (
+              <button
+                className="text-button"
+                type="button"
+                onClick={goPrevious}
+              >
+                Previous
+              </button>
+            ) : null}
+            <button
+              className="text-button"
+              disabled={files.isFetching}
+              type="button"
+              onClick={() => void files.refetch()}
+            >
+              {files.isFetching ? "Retrying…" : "Retry"}
+            </button>
+          </div>
         </div>
       ) : items.length === 0 ? (
         <div className="file-library-empty">
@@ -138,7 +149,7 @@ export function FileLibrary() {
               <FileRow key={file.publicId} file={file} />
             ))}
           </ul>
-          {files.isFetching ? (
+          {files.isPlaceholderData ? (
             <p className="file-library-fetching" role="status">
               Loading page…
             </p>
