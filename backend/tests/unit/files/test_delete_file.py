@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+import nexus.files.application.delete_file as delete_module
 from nexus.errors import ErrorCode, NexusError
 from nexus.files.application import DeleteFile
 from nexus.files.ports import (
@@ -227,8 +228,6 @@ class RecordingLogger:
 def test_delete_logs_only_safe_hashed_correlation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import nexus.files.application.delete_file as delete_module
-
     persistence = FakePersistence()
     storage = FakeStorage()
     logger = RecordingLogger()
