@@ -48,6 +48,7 @@ SETTINGS_ENV_KEYS = [
     "CONVERSATION_MESSAGE_MAX_LENGTH",
     "FILE_UPLOAD_MAX_SIZE_BYTES",
     "FILE_UPLOAD_GRANT_TTL_SECONDS",
+    "FILE_DOWNLOAD_GRANT_TTL_SECONDS",
     "FILE_UPLOAD_CONTEXT_KEY",
     "STORAGE_PROVIDER",
     "AZURE_STORAGE_CONTAINER",
@@ -124,6 +125,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.conversation_message_max_length == 32_000
     assert settings.file_upload_max_size_bytes == 536_870_912
     assert settings.file_upload_grant_ttl_seconds == 600
+    assert settings.file_download_grant_ttl_seconds == 300
     assert (
         settings.file_upload_context_key.get_secret_value()
         == DEVELOPMENT_FILE_UPLOAD_CONTEXT_KEY
@@ -439,3 +441,10 @@ def test_file_upload_context_key_is_redacted_from_settings_representation() -> N
 
     assert key not in repr(settings)
     assert key not in str(settings)
+
+
+
+@pytest.mark.parametrize("ttl", [0, -1, 901])
+def test_file_download_grant_ttl_must_remain_short(ttl: int) -> None:
+    with pytest.raises(ValidationError):
+        build_settings(file_download_grant_ttl_seconds=ttl)
