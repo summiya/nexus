@@ -15,6 +15,7 @@ from azure.servicebus import ServiceBusReceivedMessage, ServiceBusReceiveMode
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
 from azure.servicebus.amqp import AmqpMessageBodyType
 from azure.servicebus.exceptions import (
+    MessageAlreadySettled,
     MessageLockLostError,
     MessagingEntityDisabledError,
     MessagingEntityNotFoundError,
@@ -303,7 +304,7 @@ class AzureServiceBusUploadCompletionWorker:
     ) -> _ProcessingOutcome:
         try:
             await receiver.complete_message(message)
-        except (ServiceBusError, MessageLockLostError) as exc:
+        except (ServiceBusError, MessageLockLostError, MessageAlreadySettled) as exc:
             logger.warning(
                 "file_upload_completion_complete_failed",
                 correlation=correlation,
@@ -332,7 +333,7 @@ class AzureServiceBusUploadCompletionWorker:
                 reason=reason,
                 error_description=description,
             )
-        except (ServiceBusError, MessageLockLostError) as exc:
+        except (ServiceBusError, MessageLockLostError, MessageAlreadySettled) as exc:
             logger.warning(
                 "file_upload_completion_dead_letter_failed",
                 correlation=correlation,
@@ -356,7 +357,7 @@ class AzureServiceBusUploadCompletionWorker:
     ) -> None:
         try:
             await receiver.abandon_message(message)
-        except (ServiceBusError, MessageLockLostError) as exc:
+        except (ServiceBusError, MessageLockLostError, MessageAlreadySettled) as exc:
             logger.warning(
                 "file_upload_completion_abandon_failed",
                 correlation=correlation,
@@ -376,7 +377,7 @@ class AzureServiceBusUploadCompletionWorker:
     ) -> None:
         try:
             await asyncio.shield(receiver.abandon_message(message))
-        except (ServiceBusError, MessageLockLostError) as exc:
+        except (ServiceBusError, MessageLockLostError, MessageAlreadySettled) as exc:
             logger.warning(
                 "file_upload_completion_shutdown_abandon_failed",
                 correlation=correlation,

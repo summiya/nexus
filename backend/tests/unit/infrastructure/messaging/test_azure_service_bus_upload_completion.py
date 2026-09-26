@@ -5,12 +5,13 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Self, cast
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from azure.servicebus import ServiceBusReceivedMessage
 from azure.servicebus.amqp import AmqpMessageBodyType
 from azure.servicebus.exceptions import (
+    MessageAlreadySettled,
     MessagingEntityDisabledError,
     MessagingEntityNotFoundError,
     ServiceBusAuthenticationError,
@@ -580,6 +581,100 @@ def test_settlement_failures_are_not_reported_as_success() -> None:
         )
 
         assert len(handler.events) == 1
+        assert receiver.complete_calls == []
+
+    asyncio.run(scenario())
+
+
+def test_already_settled_complete_does_not_stop_receive_loop() -> None:
+    async def scenario() -> None:
+        stop_event = asyncio.Event()
+        receiver = FakeReceiver(
+            [[_message()], [_message()]],
+            stop_event=stop_event,
+        )
+        receiver.complete_message = AsyncMock(
+            side_effect=[
+                MessageAlreadySettled(message="sensitive settlement detail"),
+                None,
+            ]
+        )
+        handler = RecordingHandler()
+
+        await _worker(receiver, handler).run(stop_event)
+
+        assert len(handler.events) == 2
+        assert receiver.complete_message.await_count == 2
+
+    asyncio.run(scenario())
+
+
+def test_already_settled_dead_letter_does_not_stop_receive_loop() -> None:
+    async def scenario() -> None:
+        stop_event = asyncio.Event()
+        invalid_message = FakeMessage((b"not-json",))
+        receiver = FakeReceiver(
+            [[invalid_message], [_message()]],
+            stop_event=stop_event,
+        )
+        receiver.dead_letter_message = AsyncMock(
+            side_effect=MessageAlreadySettled(message="sensitive settlement detail")
+        )
+        handler = RecordingHandler()
+
+        await _worker(receiver, handler).run(stop_event)
+
+        assert len(handler.events) == 1
+        assert receiver.dead_letter_message.await_count == 1
+        assert len(receiver.complete_calls) == 1
+
+    asyncio.run(scenario())
+
+
+def test_already_settled_failure_abandon_does_not_stop_receive_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        stop_event = asyncio.Event()
+        receiver = FakeReceiver(
+            [[_message()], [_message()]],
+            stop_event=stop_event,
+        )
+        receiver.abandon_message = AsyncMock(
+            side_effect=MessageAlreadySettled(message="sensitive settlement detail")
+        )
+        handler = RecordingHandler([RuntimeError("temporary failure"), None])
+
+        async def skip_delay(_stop: asyncio.Event, _delay: float) -> bool:
+            return False
+
+        monkeypatch.setattr(worker_module, "_wait_for_stop", skip_delay)
+
+        await _worker(receiver, handler).run(stop_event)
+
+        assert len(handler.events) == 2
+        assert receiver.abandon_message.await_count == 1
+        assert len(receiver.complete_calls) == 1
+
+    asyncio.run(scenario())
+
+
+def test_already_settled_shutdown_abandon_exits_cleanly() -> None:
+    async def scenario() -> None:
+        receiver = FakeReceiver([[_message()]])
+        receiver.abandon_message = AsyncMock(
+            side_effect=MessageAlreadySettled(message="sensitive settlement detail")
+        )
+        handler = ControlledHandler(failure=RuntimeError("temporary failure"))
+        stop_event = asyncio.Event()
+        worker_task = asyncio.create_task(_worker(receiver, handler).run(stop_event))
+
+        await handler.started.wait()
+        stop_event.set()
+        handler.release.set()
+        await worker_task
+
+        assert receiver.abandon_message.await_count == 1
         assert receiver.complete_calls == []
 
     asyncio.run(scenario())
