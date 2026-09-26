@@ -37,6 +37,9 @@ def test_worker_settings_have_narrow_safe_defaults() -> None:
 
     assert settings.file_upload_completion_source == "azure-primary"
     assert settings.file_malware_scan_source == "azure-defender-storage"
+    assert settings.azure_service_bus_malware_scan_queue_name == (
+        "file-malware-scan-results"
+    )
     assert settings.file_worker_max_lock_renewal_seconds == 300
     assert settings.log_level == "INFO"
     assert settings.file_upload_max_size_bytes == 536_870_912
