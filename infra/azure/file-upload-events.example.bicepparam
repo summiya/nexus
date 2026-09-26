@@ -20,7 +20,12 @@ param systemTopicName = 'nexus-storage-events'
 param systemTopicResourceId = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/nexus-production-storage/providers/Microsoft.EventGrid/systemTopics/nexus-storage-events'
 param eventSubscriptionName = 'nexus-file-upload-completions'
 
-// Phase 13 does not deploy a worker identity. When the worker is activated,
+param malwareScanTopicName = 'nexus-file-malware-scan-results'
+param malwareScanEventSubscriptionName = 'nexus-file-malware-scan-results'
+// Explicit cost/safety limit for the example deployment. Review per environment.
+param malwareScanCapGBPerMonth = 500
+
+// The routing template does not deploy a worker identity. When the worker is activated,
 // pass its user-assigned Managed Identity principal ID to create queue-scoped
 // Azure Service Bus Data Receiver access.
 param fileWorkerPrincipalId = ''
