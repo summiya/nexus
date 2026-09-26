@@ -113,6 +113,8 @@ def _ascii_filename_fallback(original_name: str) -> str:
         character if " " <= character <= "~" else "_"
         for character in ascii_name
     ).strip()
+    if safe_name.startswith(".") and len(safe_name) > 1:
+        return f"download{safe_name}"
     return safe_name or "download"
 
 
