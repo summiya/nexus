@@ -129,7 +129,6 @@ module malwareScanTopic './modules/file-malware-scan-topic.bicep' = {
   params: {
     location: storageAccount.location
     malwareScanTopicName: malwareScanTopicName
-    storageAccountName: storageAccountName
   }
 }
 
