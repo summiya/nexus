@@ -14,7 +14,7 @@ function formatFileSize(sizeBytes: number | null): string {
 
   const units = ["KB", "MB", "GB", "TB"] as const;
   let value = sizeBytes / 1024;
-  let unit = units[0];
+  let unit: (typeof units)[number] = units[0];
 
   for (const candidate of units) {
     unit = candidate;
