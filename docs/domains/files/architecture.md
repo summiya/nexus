@@ -1229,10 +1229,12 @@ removal. Once the row is fully removed, a later DELETE returns not found.
 
 DELETING rows are reconciliation targets. A future reconciliation process may
 resume the same idempotent sequence for abandoned DELETING rows; this phase does
-not introduce a scheduler, queue, or new worker solely for deletion. Late
-malware scan results for DELETING or already-missing Files are expected races:
-they are safely correlated, acknowledged as no-ops, and must not become state
-conflicts or dead-letter traffic.
+not introduce a scheduler, queue, or new worker solely for deletion. Late malware scan results for DELETING Files are an expected race: they are
+safely correlated and acknowledged as no-ops. A missing File row is different:
+when the scanned Blob still exists, registration may simply not have committed
+yet, so FileNotReadyError remains retryable. A fully deleted File is naturally
+a no-op because Blob verification sees the already-missing Blob before any File
+state transition is attempted.
 
 The Azure adapter reuses the existing `ObjectStorage.delete_object` behavior.
 Azure Blob not-found responses are accepted as successful deletion. No new Azure
