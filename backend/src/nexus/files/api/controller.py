@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.files.api.dependencies import (
+    DeleteFileDep,
     GetFileDep,
     InitiateFileUploadDep,
     IssueFileDownloadDep,
@@ -108,6 +109,23 @@ async def initiate_file_download(
         url=grant.url,
         expires_at=grant.expires_at,
     )
+
+
+@router.delete(
+    "/{file_public_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_file(
+    file_public_id: UUID,
+    auth_context: CurrentAuthContextDep,
+    service: DeleteFileDep,
+) -> Response:
+    await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        file_public_id=file_public_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{file_public_id}", response_model=FileMetadataResponseBody)
