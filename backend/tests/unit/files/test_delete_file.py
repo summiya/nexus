@@ -35,13 +35,13 @@ class FakePermissionChecker:
 
 
 class FakePersistence:
-    def __init__(self) -> None:
+    def __init__(self, events: list[str] | None = None) -> None:
         self.target: FileDeletionTarget | None = FileDeletionTarget(
             storage_key=STORAGE_KEY
         )
         self.prepare_error: Exception | None = None
         self.finalize_error: Exception | None = None
-        self.events: list[str] = []
+        self.events = events if events is not None else []
 
     async def prepare_file_deletion(
         self,
@@ -70,9 +70,9 @@ class FakePersistence:
 
 
 class FakeStorage:
-    def __init__(self) -> None:
+    def __init__(self, events: list[str] | None = None) -> None:
         self.error: Exception | None = None
-        self.events: list[str] = []
+        self.events = events if events is not None else []
 
     async def delete_object(self, *, storage_key: str) -> None:
         assert storage_key == STORAGE_KEY
@@ -99,8 +99,9 @@ def _ids() -> tuple[UUID, UUID, UUID]:
 
 
 def test_blob_is_deleted_before_metadata_row() -> None:
-    persistence = FakePersistence()
-    storage = FakeStorage()
+    events: list[str] = []
+    persistence = FakePersistence(events)
+    storage = FakeStorage(events)
     organization_id, user_id, file_id = _ids()
 
     asyncio.run(
@@ -111,8 +112,7 @@ def test_blob_is_deleted_before_metadata_row() -> None:
         )
     )
 
-    assert persistence.events == ["prepare", "finalize"]
-    assert storage.events == ["storage"]
+    assert events == ["prepare", "storage", "finalize"]
 
 
 def test_storage_failure_leaves_deleting_and_retry_completes() -> None:
@@ -211,3 +211,41 @@ def test_missing_permission_is_forbidden_before_prepare() -> None:
     assert persistence.events == []
     assert storage.events == []
     assert permissions.calls == [(organization_id, user_id, "files.delete")]
+
+
+class RecordingLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        self.events.append((event, kwargs))
+
+
+def test_delete_logs_only_safe_hashed_correlation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import nexus.files.application.delete_file as delete_module
+
+    persistence = FakePersistence()
+    storage = FakeStorage()
+    logger = RecordingLogger()
+    monkeypatch.setattr(delete_module, "logger", logger)
+    organization_id, user_id, file_id = _ids()
+
+    asyncio.run(
+        _service(persistence, storage).execute(
+            organization_public_id=organization_id,
+            user_public_id=user_id,
+            file_public_id=file_id,
+        )
+    )
+
+    serialized = repr(logger.events)
+    assert "file_deleted" in serialized
+    assert "correlation" in serialized
+    assert STORAGE_KEY not in serialized
+    assert str(organization_id) not in serialized
+    assert str(file_id) not in serialized
