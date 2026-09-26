@@ -9,6 +9,7 @@ from pydantic import Field, HttpUrl, SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from nexus.config.settings import (
+    DEFAULT_FILE_UPLOAD_MAX_SIZE_BYTES,
     ROOT_ENV_FILE,
     validate_file_upload_context_key,
 )
@@ -24,7 +25,10 @@ class FileWorkerSettings(BaseSettings):
     log_level: str = "INFO"
     app_env: str = "development"
     database_url: str = Field(min_length=1)
-    file_upload_max_size_bytes: int = Field(default=536_870_912, gt=0)
+    file_upload_max_size_bytes: int = Field(
+        default=DEFAULT_FILE_UPLOAD_MAX_SIZE_BYTES,
+        gt=0,
+    )
     file_upload_context_key: SecretStr
     file_worker_database_pool_size: int = Field(default=2, ge=1, le=20)
     file_worker_database_max_overflow: int = Field(default=0, ge=0, le=20)

@@ -23,7 +23,7 @@ resource fileContainer 'Microsoft.Storage/storageAccounts/blobServices/container
   parent: blobService
 }
 
-var storageBlobDataReaderRoleDefinitionId = tenantResourceId(
+var storageBlobDataReaderRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
 )
