@@ -39,10 +39,16 @@ class FileWorkerSettings(BaseSettings):
     azure_service_bus_queue_name: str = Field(min_length=1, max_length=260)
     azure_service_bus_managed_identity_client_id: UUID | None = None
     azure_event_grid_expected_source: str = Field(min_length=1, max_length=1024)
+    azure_malware_scan_expected_topic: str = Field(min_length=1, max_length=2048)
     azure_storage_container: str = Field(min_length=1, max_length=63)
     azure_storage_account_url: HttpUrl
     file_upload_completion_source: str = Field(
         default="azure-primary",
+        min_length=1,
+        max_length=1024,
+    )
+    file_malware_scan_source: str = Field(
+        default="azure-defender-storage",
         min_length=1,
         max_length=1024,
     )
@@ -55,8 +61,10 @@ class FileWorkerSettings(BaseSettings):
     @field_validator(
         "azure_service_bus_queue_name",
         "azure_event_grid_expected_source",
+        "azure_malware_scan_expected_topic",
         "azure_storage_container",
         "file_upload_completion_source",
+        "file_malware_scan_source",
     )
     @classmethod
     def reject_blank_or_padded_text(cls, value: str) -> str:
