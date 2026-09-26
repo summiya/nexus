@@ -15,7 +15,6 @@ export interface InitiatedFileUpload {
   upload: UploadGrant;
 }
 
-
 export const FILE_LIBRARY_PAGE_SIZE = 50;
 
 export type FileStorageStatus = "pending" | "available" | "failed";
