@@ -8,8 +8,11 @@ param serviceBusResourceGroupName string
 @description('Globally unique Service Bus Premium namespace name.')
 param serviceBusNamespaceName string
 
-@description('Shared queue for committed Nexus File upload events.')
+@description('Queue for committed Nexus File upload events.')
 param queueName string = 'file-upload-completions'
+
+@description('Queue for Defender malware scan result events.')
+param malwareScanQueueName string = 'file-malware-scan-results'
 
 @description('Immutable Premium namespace partition count. Nexus launches with one partition.')
 @allowed([
@@ -132,6 +135,7 @@ module serviceBus './modules/file-upload-service-bus.bicep' = {
     malwareScanTopicPrincipalId: malwareScanTopic.outputs.topicPrincipalId
     fileWorkerPrincipalId: fileWorkerPrincipalId
     location: storageAccount.location
+    malwareScanQueueName: malwareScanQueueName
     messagingUnits: messagingUnits
     namespaceName: serviceBusNamespaceName
     premiumMessagingPartitions: premiumMessagingPartitions
@@ -183,7 +187,7 @@ module malwareScanSubscription './modules/file-malware-scan-subscription.bicep' 
     deadLetterStorageAccountId: deadLetterStorage.outputs.storageAccountId
     eventSubscriptionName: malwareScanEventSubscriptionName
     malwareScanTopicName: malwareScanTopic.outputs.topicName
-    queueResourceId: serviceBus.outputs.queueResourceId
+    queueResourceId: serviceBus.outputs.malwareScanQueueResourceId
   }
 }
 
@@ -191,6 +195,7 @@ output eventSubscriptionResourceId string = eventSubscription.outputs.eventSubsc
 output malwareScanEventSubscriptionResourceId string = malwareScanSubscription.outputs.eventSubscriptionResourceId
 output malwareScanTopicResourceId string = malwareScanTopic.outputs.topicResourceId
 output fileUploadQueueResourceId string = serviceBus.outputs.queueResourceId
+output malwareScanQueueResourceId string = serviceBus.outputs.malwareScanQueueResourceId
 output eventGridDeadLetterContainerResourceId string = deadLetterStorage.outputs.containerResourceId
 output premiumPartitionCount int = premiumMessagingPartitions
 output messagingUnitCapacity int = messagingUnits
