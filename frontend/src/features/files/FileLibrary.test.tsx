@@ -87,7 +87,7 @@ describe("FileLibrary", () => {
 
   it("keeps current rows visible and disables navigation during page fetch", async () => {
     const user = userEvent.setup();
-    render(<FileLibrary />);
+    const { rerender } = render(<FileLibrary />);
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(useFilesQuery).toHaveBeenLastCalledWith("cursor-2");
@@ -95,20 +95,17 @@ describe("FileLibrary", () => {
     queryMock.state.data = firstPage;
     queryMock.state.isFetching = true;
     queryMock.state.isPlaceholderData = true;
+    rerender(<FileLibrary />);
 
-    render(<FileLibrary />);
-
-    expect(screen.getAllByText("report.pdf").length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "Previous" }).at(-1)).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "Next" }).at(-1)).toBeDisabled();
-    expect(screen.getAllByRole("status").at(-1)).toHaveTextContent(
-      "Loading page",
-    );
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading page");
   });
 
   it("uses backend cursors for next and restores the prior cursor", async () => {
     const user = userEvent.setup();
-    render(<FileLibrary />);
+    const { rerender } = render(<FileLibrary />);
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(useFilesQuery).toHaveBeenLastCalledWith("cursor-2");
@@ -123,12 +120,9 @@ describe("FileLibrary", () => {
       ],
       nextCursor: null,
     };
-
-    const { rerender } = render(<FileLibrary />);
     rerender(<FileLibrary />);
 
-    const previousButtons = screen.getAllByRole("button", { name: "Previous" });
-    await user.click(previousButtons[previousButtons.length - 1]);
+    await user.click(screen.getByRole("button", { name: "Previous" }));
     expect(useFilesQuery).toHaveBeenLastCalledWith(null);
   });
 });
