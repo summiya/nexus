@@ -59,8 +59,8 @@ describe("File queries", () => {
       { cursor: "cursor-2", limit: 25 },
       expect.any(AbortSignal),
     );
-    expect(
-      queryClient.getQueryData(fileKeys.page("cursor-2", 25)),
-    ).toEqual(page);
+    expect(queryClient.getQueryData(fileKeys.page("cursor-2", 25))).toEqual(
+      page,
+    );
   });
 });
