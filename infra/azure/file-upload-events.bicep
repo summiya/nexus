@@ -67,6 +67,9 @@ param duplicateDetectionHistoryTimeWindow string = 'PT10M'
 @description('Maximum queue capacity in MiB. The Phase 12 baseline is 80 GiB.')
 param queueMaxSizeInMegabytes int = 81920
 
+@description('Optional user-assigned Managed Identity principal for the future File worker. Empty creates no receiver assignment.')
+param fileWorkerPrincipalId string = ''
+
 var expectedSystemTopicResourceId = resourceId(
   systemTopicSubscriptionId,
   systemTopicResourceGroupName,
@@ -105,6 +108,7 @@ module serviceBus './modules/file-upload-service-bus.bicep' = {
   scope: resourceGroup(serviceBusResourceGroupName)
   params: {
     eventGridPrincipalId: trustedEventGridPrincipalId
+    fileWorkerPrincipalId: fileWorkerPrincipalId
     location: storageAccount.location
     messagingUnits: messagingUnits
     namespaceName: serviceBusNamespaceName

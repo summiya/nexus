@@ -34,9 +34,17 @@ param duplicateDetectionHistoryTimeWindow string
 @description('System-assigned principal ID of the explicitly selected Event Grid system topic.')
 param eventGridPrincipalId string
 
+@description('Optional user-assigned File worker principal. Empty creates no receiver role assignment.')
+param fileWorkerPrincipalId string = ''
+
 var serviceBusDataSenderRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '69a216fc-b8fb-44d8-bc22-1f3c2cd27a39'
+)
+
+var serviceBusDataReceiverRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '4f6d3b9b-027b-4f4c-9142-0e5a2a2247e0'
 )
 
 var messagingUnitsAreMultiple = messagingUnits % premiumMessagingPartitions == 0
@@ -104,6 +112,16 @@ resource eventGridSenderRole 'Microsoft.Authorization/roleAssignments@2022-04-01
     principalId: eventGridPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: serviceBusDataSenderRoleDefinitionId
+  }
+}
+
+resource fileWorkerReceiverRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(trim(fileWorkerPrincipalId))) {
+  name: guid(queue.id, fileWorkerPrincipalId, serviceBusDataReceiverRoleDefinitionId)
+  scope: queue
+  properties: {
+    principalId: fileWorkerPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: serviceBusDataReceiverRoleDefinitionId
   }
 }
 

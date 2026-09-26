@@ -11,7 +11,10 @@ from nexus.files.ports.storage import (
     ObjectStorageError,
     ObjectStorageNotFoundError,
 )
-from nexus.files.ports.upload_completion import UploadCompletionEvent
+from nexus.files.ports.upload_completion import (
+    UploadCompletionEvent,
+    UploadCompletionHandler,
+)
 from nexus.files.ports.upload_context import (
     UPLOAD_CONTEXT_MAX_LENGTH,
     UploadContextProtectionError,
@@ -33,6 +36,7 @@ __all__ = [
     "ObjectStorageError",
     "ObjectStorageNotFoundError",
     "UploadCompletionEvent",
+    "UploadCompletionHandler",
     "UploadContextProtectionError",
     "UploadContextProtector",
     "UploadGrant",

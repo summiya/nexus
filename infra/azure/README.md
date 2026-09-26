@@ -1,18 +1,18 @@
 # Nexus File Upload Event Routing
 
 This directory contains the EPIC 05 Phase 12 Azure infrastructure for routing
-committed Nexus File blobs into a durable queue. It intentionally stops before
-the Service Bus worker:
+committed Nexus File blobs into a durable queue. The worker is deployed as a
+separate process:
 
 ```text
 File Blob container
     -> Event Grid system topic
     -> Nexus File event subscription
     -> Service Bus queue
-    -> STOP (Phase 13)
+    -> dedicated Phase 13 worker (deployed separately)
 ```
 
-No template in this directory creates a worker, database receipt table, Redis
+No template in this directory creates a worker, database resource, Redis
 resource, or application runtime dependency.
 
 ## Launch topology and capacity
@@ -168,9 +168,24 @@ Service Bus `MessageId` to an internal system ID that Microsoft documents as
 stable across redelivery of the same event; `aeg-output-event-id` retains the
 original Event Grid event ID.
 
-Duplicate detection is load reduction only. Phase 13 correctness must still
-enforce `(source, event_id)`, complete File business identity, immutable
-ownership, and database invariants.
+Duplicate detection is load reduction only. `(source, event_id)` is transport
+correlation, not a correctness boundary. Phase 14 must enforce complete File
+business identity, immutable ownership, and `INV-REL-004` across redelivery,
+DLQ replay, and reconciliation.
+
+## File worker authorization
+
+Phase 13 recommends a user-assigned Managed Identity for the independently
+scaled File worker. `fileWorkerPrincipalId` is optional because this routing
+deployment does not create that identity. When it is empty, no worker role is
+created. When the worker deployment has provisioned the identity, rerun the
+same idempotent deployment with its principal ID to grant only Azure Service
+Bus Data Receiver on `file-upload-completions`.
+
+The worker must reach the default-deny namespace through an approved private
+network path, preferably VNet integration with a Service Bus private endpoint
+and private DNS. Do not enable local authentication or broaden public network
+access for worker convenience.
 
 For one partition, uniqueness is `MessageId`. If a later namespace uses more
 partitions, uniqueness is `MessageId + PartitionKey`. Nexus supplies no tenant
@@ -197,9 +212,13 @@ failures:
   not process it.
 
 Service Bus DLQ messages do not observe TTL and do not expire automatically.
-Before Phase 13 is released, operations must define inspection, safe replay,
-and explicit purge procedures and alert on DLQ size. Do not let an unbounded DLQ
-become silent operational storage.
+Before the Phase 13 worker is activated, operations must define inspection,
+safe replay, explicit purge procedures, and DLQ-size alerting. A valid message
+that exhausted delivery during a prolonged dependency outage may be replayed
+only after recovery is verified, preserving its original event body and
+correlation identity. Phase 14 business idempotency must make that redelivery
+safe. Permanently invalid messages remain quarantined and must not be replayed
+unchanged. Do not let an unbounded DLQ become silent operational storage.
 
 Retain Event Grid dead-letter objects for 30 days after the originating failure
 is resolved, unless the incident/audit policy requires longer. An account-wide
@@ -219,6 +238,19 @@ metrics without producing one page per message. Do not copy raw event payloads,
 SAS data, protected UploadContext ciphertext, secrets, or provider details into
 the reason. Temporary Azure Storage, PostgreSQL, Key Vault, and network
 failures may follow retry/abandon semantics.
+
+The Phase 13 consumer accepts only AMQP DATA byte sections containing a JSON
+object, with a Nexus aggregate body limit of 64 KiB (65,536 bytes). This is
+smaller than and independent of the queue limit. Unsupported body forms,
+invalid UTF-8/JSON, and oversized bodies are immediately dead-lettered with
+`INVALID_MESSAGE_BODY`.
+
+Unexpected handler failures are explicitly abandoned. Before receiving again,
+the worker uses a process-local jittered exponential delay whose nominal values
+start at two seconds and double to a 60-second cap; each actual delay remains
+between one-half and all of its nominal value. Successful handling resets the
+delay. Graceful shutdown instead abandons an in-flight message without applying
+this cooldown.
 
 ## Orphan reconciliation and release gate
 
@@ -274,6 +306,13 @@ validation. If an operator needs queue read access, add both narrow temporary
 RBAC and a temporary IP/network rule for the validation source. Record the rule
 identifier and removal evidence in the runbook. Remove both immediately after
 validation; keep local authentication disabled throughout.
+
+Before production worker activation, use the pinned Python `azure-servicebus`
+SDK during this controlled run to capture a real BlobCreated delivery's
+`ServiceBusReceivedMessage.body_type`, DATA-section shape, and encoded size.
+Verify that it is `AmqpMessageBodyType.DATA`, contains byte sections, and is
+accepted by the Nexus 64-KiB DATA-only decoder. If the real delivery differs,
+review the contract instead of silently loosening the decoder.
 
 ## Deployment outline
 
