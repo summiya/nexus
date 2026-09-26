@@ -285,8 +285,8 @@ must account for the retention window.
 Phase 15 enables Microsoft Defender for Storage on-upload malware scanning for
 the configured storage account and sends every scan result to the dedicated
 `malwareScanTopicName` Event Grid custom topic. That topic uses its
-system-assigned Managed Identity to deliver into the existing File Service Bus
-queue. The same identity receives narrow write access to the Event Grid
+system-assigned Managed Identity to deliver into the dedicated
+`file-malware-scan-results` Service Bus queue. The same identity receives narrow write access to the Event Grid
 dead-letter container.
 
 Nexus configures `blobScanResultsOptions: None`. File security state therefore
@@ -301,9 +301,10 @@ receiving another unsuccessful scan result must never make a File available.
 The application maps a clean result to `AVAILABLE` and malicious, error, or
 not-scanned results to `FAILED`.
 
-Defender results and BlobCreated events are unordered. If a valid scan result
-arrives before Phase 14 has registered the File row, the worker abandons it for
-retry. Redelivery of the same terminal result is idempotent. A contradictory
+Defender results and BlobCreated events are unordered. They use separate queues
+so an early scan result cannot repeatedly redeliver ahead of and starve the
+BlobCreated registration message. If a valid scan result still arrives before
+Phase 14 has registered the File row, its consumer abandons it for retry. Redelivery of the same terminal result is idempotent. A contradictory
 terminal result is dead-lettered as `INVALID_MALWARE_SCAN_RESULT`.
 
 ## Controlled Azure validation
