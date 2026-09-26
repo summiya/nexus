@@ -1,6 +1,7 @@
 """File HTTP request and response schemas."""
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexus.files.domain import (
     MAX_MIME_TYPE_LENGTH,
     MAX_ORIGINAL_NAME_LENGTH,
-    FileStorageStatus,
 )
 from nexus.files.ports import UPLOAD_CONTEXT_MAX_LENGTH
 
@@ -43,6 +43,14 @@ class InitiateFileUploadResponseBody(BaseModel):
     upload: UploadInstructionsResponseBody
 
 
+class FileMetadataStorageStatus(StrEnum):
+    """Public File statuses; internal DELETING is intentionally excluded."""
+
+    PENDING = "pending"
+    AVAILABLE = "available"
+    FAILED = "failed"
+
+
 class FileMetadataResponseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,7 +58,7 @@ class FileMetadataResponseBody(BaseModel):
     original_name: str
     mime_type: str
     size_bytes: int | None
-    storage_status: FileStorageStatus
+    storage_status: FileMetadataStorageStatus
     created_at: datetime
     updated_at: datetime
 
