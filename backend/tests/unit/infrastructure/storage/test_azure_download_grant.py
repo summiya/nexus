@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+import base64
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from azure.storage.blob import BlobSasPermissions, UserDelegationKey
@@ -32,13 +34,27 @@ class FakeBlobServiceClient:
 
 
 class FakeKeyProvider:
-    def __init__(self) -> None:
+    def __init__(self, key: UserDelegationKey | None = None) -> None:
         self.calls: list[datetime] = []
-        self.key = cast(UserDelegationKey, object())
+        self.key = key if key is not None else cast(UserDelegationKey, object())
 
     async def get_key(self, *, expires_at: datetime) -> UserDelegationKey:
         self.calls.append(expires_at)
         return self.key
+
+
+
+
+def _real_delegation_key() -> UserDelegationKey:
+    key = UserDelegationKey()
+    key.signed_oid = "11111111-1111-4111-8111-111111111111"
+    key.signed_tid = "22222222-2222-4222-8222-222222222222"
+    key.signed_start = (NOW - timedelta(minutes=15)).isoformat()
+    key.signed_expiry = (NOW + timedelta(hours=1)).isoformat()
+    key.signed_service = "b"
+    key.signed_version = "2026-04-06"
+    key.value = base64.b64encode(b"nexus-test-signing-key-material").decode()
+    return key
 
 
 def _issuer(
@@ -173,3 +189,27 @@ def test_ascii_control_characters_cannot_enter_content_disposition(
     disposition = cast(str, calls[0]["content_disposition"])
     assert "\r" not in disposition
     assert "\n" not in disposition
+
+
+
+def test_real_sdk_emits_read_only_blob_https_sas() -> None:
+    client = FakeBlobServiceClient()
+    provider = FakeKeyProvider(_real_delegation_key())
+
+    grant = asyncio.run(
+        _issuer(client, provider).issue_download_grant(
+            storage_key="files/0123456789abcdef0123456789abcdef",
+            original_name="report.pdf",
+            mime_type="application/pdf",
+            expires_at=EXPIRY,
+        )
+    )
+
+    query = parse_qs(urlsplit(grant.url).query, keep_blank_values=True)
+    assert query["sp"] == ["r"]
+    assert query["spr"] == ["https"]
+    assert query["sr"] == ["b"]
+    assert query["rscd"] == ['attachment; filename="report.pdf"']
+    assert query["rsct"] == ["application/pdf"]
+    assert date.fromisoformat(query["sv"][0]) >= date(2026, 4, 6)
+    assert query["sig"][0]
