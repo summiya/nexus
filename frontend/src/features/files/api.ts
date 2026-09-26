@@ -32,7 +32,7 @@ const fileDownloadGrantSchema = z
     url: z
       .string()
       .url()
-      .refine((value) => new URL(value).protocol === "https:"),
+      .refine((value) => value.startsWith("https://")),
     expires_at: timestampSchema,
   })
   .strict();
