@@ -3,6 +3,7 @@ using './file-upload-events.bicep'
 param serviceBusResourceGroupName = 'nexus-production-messaging'
 param serviceBusNamespaceName = 'replace-with-globally-unique-namespace'
 param queueName = 'file-upload-completions'
+param malwareScanQueueName = 'file-malware-scan-results'
 
 // Immutable launch choice: one Premium partition with one total Messaging Unit.
 param premiumMessagingPartitions = 1
