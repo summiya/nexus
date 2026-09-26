@@ -681,7 +681,6 @@ p {
   }
 }
 
-
 .files-page {
   display: grid;
   gap: 1.5rem;
@@ -713,7 +712,9 @@ p {
 .file-library-column-headings,
 .file-library-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(5rem, 0.7fr) minmax(8rem, 1fr) minmax(7rem, 0.8fr);
+  grid-template-columns:
+    minmax(0, 2fr) minmax(5rem, 0.7fr) minmax(8rem, 1fr)
+    minmax(7rem, 0.8fr);
   gap: 1rem;
   align-items: center;
 }
