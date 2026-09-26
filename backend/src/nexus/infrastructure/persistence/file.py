@@ -96,6 +96,24 @@ class SqlAlchemyFilePersistence(FilePersistence):
             )
         )
 
+    async def list_files(
+        self,
+        *,
+        organization_public_id: UUID,
+        before_created_at: datetime | None,
+        before_public_id: UUID | None,
+        limit: int,
+    ) -> tuple[File, ...]:
+        return await self._run_read(
+            lambda session: queries.list_files(
+                session,
+                organization_public_id=organization_public_id,
+                before_created_at=before_created_at,
+                before_public_id=before_public_id,
+                limit=limit,
+            )
+        )
+
     async def _run_read(
         self,
         operation: Callable[[AsyncSession], Awaitable[T]],

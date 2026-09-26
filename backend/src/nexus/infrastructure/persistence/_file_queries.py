@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
@@ -78,6 +78,50 @@ async def get_file(
 
     model, stored_organization_public_id, creator_public_id = row
     return _to_file(model, stored_organization_public_id, creator_public_id)
+
+
+async def list_files(
+    session: AsyncSession,
+    *,
+    organization_public_id: UUID,
+    before_created_at: datetime | None,
+    before_public_id: UUID | None,
+    limit: int,
+) -> tuple[File, ...]:
+    """Return one newest-first tenant-scoped keyset page."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if (before_created_at is None) != (before_public_id is None):
+        raise ValueError("File pagination cursor must be complete")
+
+    statement = (
+        select(FileModel, Organization.public_id, User.public_id)
+        .join(Organization, FileModel.organization_id == Organization.id)
+        .join(
+            User,
+            (User.id == FileModel.created_by_user_id)
+            & (User.organization_id == FileModel.organization_id),
+        )
+        .where(Organization.public_id == organization_public_id)
+    )
+    if before_created_at is not None and before_public_id is not None:
+        statement = statement.where(
+            tuple_(FileModel.created_at, FileModel.public_id)
+            < tuple_(before_created_at, before_public_id)
+        )
+
+    rows = (
+        await session.execute(
+            statement.order_by(
+                FileModel.created_at.desc(),
+                FileModel.public_id.desc(),
+            ).limit(limit)
+        )
+    ).all()
+    return tuple(
+        _to_file(model, stored_organization_public_id, creator_public_id)
+        for model, stored_organization_public_id, creator_public_id in rows
+    )
 
 
 async def files_matching_identity(

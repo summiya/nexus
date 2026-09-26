@@ -10,6 +10,7 @@ from nexus.files.ports import UploadGrant
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
+from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 
 
@@ -60,3 +61,7 @@ def test_file_composition_builds_upload_service_from_shared_dependencies() -> No
     assert service.upload_grant_issuer is issuer
     assert isinstance(service.context_protector, AesGcmUploadContextProtector)
     assert service.grant_ttl == timedelta(seconds=900)
+    assert isinstance(composition.list_files.persistence, SqlAlchemyFilePersistence)
+    assert isinstance(composition.get_file.persistence, SqlAlchemyFilePersistence)
+    assert composition.list_files.permission_checker is service.permission_checker
+    assert composition.get_file.permission_checker is service.permission_checker

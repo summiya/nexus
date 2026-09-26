@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -241,3 +241,128 @@ def test_create_file_transaction_settles_before_cancellation_propagates(
             select(FileModel).where(FileModel.public_id == file.public_id)
         )
         assert stored_file is not None
+
+
+def test_list_files_is_newest_first_and_tenant_scoped(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    other_organization_id, other_user_id = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    oldest = _file(
+        organization_id,
+        user_id,
+        public_id=UUID(int=1),
+        created_at=TIMESTAMP,
+        updated_at=TIMESTAMP,
+    )
+    newest = _file(
+        organization_id,
+        user_id,
+        public_id=UUID(int=2),
+        created_at=TIMESTAMP + timedelta(seconds=2),
+        updated_at=TIMESTAMP + timedelta(seconds=2),
+    )
+    middle = _file(
+        organization_id,
+        user_id,
+        public_id=UUID(int=3),
+        created_at=TIMESTAMP + timedelta(seconds=1),
+        updated_at=TIMESTAMP + timedelta(seconds=1),
+    )
+    other = _file(
+        other_organization_id,
+        other_user_id,
+        public_id=UUID(int=4),
+        created_at=TIMESTAMP + timedelta(seconds=3),
+        updated_at=TIMESTAMP + timedelta(seconds=3),
+    )
+    for item in (oldest, newest, middle, other):
+        asyncio.run(persistence.create_file(item))
+
+    listed = asyncio.run(
+        persistence.list_files(
+            organization_public_id=organization_id,
+            before_created_at=None,
+            before_public_id=None,
+            limit=10,
+        )
+    )
+
+    assert [item.public_id for item in listed] == [
+        newest.public_id,
+        middle.public_id,
+        oldest.public_id,
+    ]
+
+
+def test_list_files_keyset_cursor_handles_equal_timestamps_without_overlap(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    created_at = TIMESTAMP
+    files = tuple(
+        _file(
+            organization_id,
+            user_id,
+            public_id=UUID(int=value),
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        for value in (1, 2, 3, 4)
+    )
+    for item in files:
+        asyncio.run(persistence.create_file(item))
+
+    first_page = asyncio.run(
+        persistence.list_files(
+            organization_public_id=organization_id,
+            before_created_at=None,
+            before_public_id=None,
+            limit=2,
+        )
+    )
+    second_page = asyncio.run(
+        persistence.list_files(
+            organization_public_id=organization_id,
+            before_created_at=first_page[-1].created_at,
+            before_public_id=first_page[-1].public_id,
+            limit=2,
+        )
+    )
+
+    assert [item.public_id for item in first_page] == [UUID(int=4), UUID(int=3)]
+    assert [item.public_id for item in second_page] == [UUID(int=2), UUID(int=1)]
+    assert set(first_page).isdisjoint(second_page)
+
+
+def test_list_files_returns_bounded_page_without_count_query(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    for value in range(1, 6):
+        asyncio.run(
+            persistence.create_file(
+                _file(
+                    organization_id,
+                    user_id,
+                    public_id=UUID(int=value),
+                )
+            )
+        )
+
+    listed = asyncio.run(
+        persistence.list_files(
+            organization_public_id=organization_id,
+            before_created_at=None,
+            before_public_id=None,
+            limit=3,
+        )
+    )
+
+    assert len(listed) == 3
