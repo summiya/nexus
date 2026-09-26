@@ -171,7 +171,8 @@ describe("FileLibrary", () => {
     };
     apiMocks.listFiles
       .mockResolvedValueOnce(firstPage)
-      .mockResolvedValueOnce(secondPage);
+      .mockResolvedValueOnce(secondPage)
+      .mockResolvedValueOnce(firstPage);
     renderLibrary();
 
     await screen.findByText("report.pdf");
@@ -180,7 +181,10 @@ describe("FileLibrary", () => {
     await user.click(screen.getByRole("button", { name: "Previous" }));
 
     await waitFor(() => {
-      expect(apiMocks.listFiles.mock.calls.some(([input]) => input.cursor === null)).toBe(true);
+      expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
+        { cursor: null, limit: 50 },
+        expect.any(AbortSignal),
+      );
     });
     expect(await screen.findByText("report.pdf")).toBeInTheDocument();
   });
