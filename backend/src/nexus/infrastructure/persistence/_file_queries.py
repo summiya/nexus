@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
@@ -106,13 +106,8 @@ async def list_files(
     )
     if before_created_at is not None and before_public_id is not None:
         statement = statement.where(
-            or_(
-                FileModel.created_at < before_created_at,
-                and_(
-                    FileModel.created_at == before_created_at,
-                    FileModel.public_id < before_public_id,
-                ),
-            )
+            tuple_(FileModel.created_at, FileModel.public_id)
+            < tuple_(before_created_at, before_public_id)
         )
 
     rows = (
