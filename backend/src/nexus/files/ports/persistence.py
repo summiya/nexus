@@ -25,6 +25,10 @@ class FileReferenceError(Exception):
     """A required File organization or creator reference is invalid."""
 
 
+class FileDeletionInProgressError(Exception):
+    """A malware result arrived while the File is being deleted."""
+
+
 class FileIdentityConflictError(Exception):
     """Stored File identities or immutable ownership conflict."""
 
@@ -90,6 +94,7 @@ class FilePersistence(Protocol):
 
 
 __all__ = [
+    "FileDeletionInProgressError",
     "FileDeletionTarget",
     "FileIdentityConflictError",
     "FileNotReadyError",
