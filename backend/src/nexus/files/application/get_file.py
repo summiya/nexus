@@ -7,7 +7,7 @@ from uuid import UUID
 
 from nexus.authorization import PermissionChecker
 from nexus.errors import ErrorCode, NexusError
-from nexus.files.application.list_files import _authorize_files_read
+from nexus.files.application.read_access import authorize_files_read
 from nexus.files.domain import File
 from nexus.files.ports import FilePersistence, FilePersistenceError
 
@@ -26,7 +26,7 @@ class GetFile:
         user_public_id: UUID,
         file_public_id: UUID,
     ) -> File:
-        await _authorize_files_read(
+        await authorize_files_read(
             self.permission_checker,
             organization_public_id=organization_public_id,
             user_public_id=user_public_id,
