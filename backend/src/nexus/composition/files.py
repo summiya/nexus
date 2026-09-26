@@ -15,10 +15,10 @@ from nexus.files.application import (
     UploadIntentPolicy,
 )
 from nexus.files.ports import UploadGrantIssuer
-from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
+from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 
 
