@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { apiRequest } from "../../services/api/client";
+import { NexusApiError } from "../../services/api/error";
 import {
   FILE_LIBRARY_PAGE_SIZE,
   MAX_UPLOAD_CONTEXT_LENGTH,
@@ -160,4 +161,22 @@ export async function requestFileDownload(
     url: parsed.data.url,
     expiresAt: parsed.data.expires_at,
   };
+}
+
+
+export async function deleteFile(
+  filePublicId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    await apiRequest<void>(`/files/${filePublicId}`, {
+      method: "DELETE",
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof NexusApiError && error.status === 404) {
+      return;
+    }
+    throw error;
+  }
 }
