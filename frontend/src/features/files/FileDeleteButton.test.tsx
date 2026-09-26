@@ -84,9 +84,7 @@ describe("FileDeleteButton", () => {
     expect(apiMocks.deleteFile).toHaveBeenCalledOnce();
 
     resolve();
-    expect(
-      await screen.findByRole("button", { name: "Delete" }),
-    ).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Delete" })).toBeEnabled();
   });
 
   it("invalidates File list queries after success", async () => {
