@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from nexus.authorization import PermissionChecker, PermissionCheckError
+from nexus.authorization import PermissionChecker
 from nexus.errors import ErrorCode, NexusError
+from nexus.files.application.read_access import authorize_files_read
 from nexus.files.domain import File
 from nexus.files.ports import FilePersistence, FilePersistenceError
 
-FILES_READ_PERMISSION = "files.read"
 DEFAULT_FILE_PAGE_SIZE = 50
 MAX_FILE_PAGE_SIZE = 100
 
@@ -58,7 +58,7 @@ class ListFiles:
                 f"File page limit must be between 1 and {MAX_FILE_PAGE_SIZE}"
             )
 
-        await _authorize_files_read(
+        await authorize_files_read(
             self.permission_checker,
             organization_public_id=organization_public_id,
             user_public_id=user_public_id,
@@ -89,38 +89,10 @@ class ListFiles:
         return FilePage(items=items, next_cursor=next_cursor)
 
 
-async def _authorize_files_read(
-    permission_checker: PermissionChecker,
-    *,
-    organization_public_id: UUID,
-    user_public_id: UUID,
-) -> None:
-    try:
-        allowed = await permission_checker.has_permission(
-            organization_public_id=organization_public_id,
-            user_public_id=user_public_id,
-            permission_key=FILES_READ_PERMISSION,
-        )
-    except PermissionCheckError as exc:
-        raise NexusError(
-            ErrorCode.SERVICE_UNAVAILABLE,
-            "Authorization is temporarily unavailable.",
-            retryable=True,
-        ) from exc
-
-    if not allowed:
-        raise NexusError(
-            ErrorCode.FORBIDDEN,
-            "You are not allowed to perform this action.",
-        )
-
-
 __all__ = [
     "DEFAULT_FILE_PAGE_SIZE",
-    "FILES_READ_PERMISSION",
     "MAX_FILE_PAGE_SIZE",
     "FilePage",
     "FilePageCursor",
     "ListFiles",
-    "_authorize_files_read",
 ]
