@@ -34,7 +34,6 @@ export interface FilePage {
   nextCursor: string | null;
 }
 
-
 export interface FileDownloadGrant {
   url: string;
   expiresAt: string;
