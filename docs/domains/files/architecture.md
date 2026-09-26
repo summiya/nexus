@@ -1108,6 +1108,30 @@ checksums, provider URLs, Blob metadata, or credentials. PENDING and FAILED
 Files may be visible as metadata to an authorized caller, but content-serving
 and download paths must continue to serve only AVAILABLE Files.
 
+## Files Library frontend contract
+
+Phase 17 consumes the Phase 16 File metadata API with backend-driven cursor
+pagination. The frontend treats the cursor as opaque, keeps only the small local
+history required for Previous/Next navigation, and never reconstructs a cursor
+from File metadata.
+
+The Files frontend validates successful API responses with strict Zod schemas.
+This is intentionally fail closed: unknown response fields and unknown
+`storage_status` values cause the Library to show its safe error state instead
+of silently rendering an unsupported contract. Backend response additions and
+new File storage-status values therefore require a compatible frontend to be
+deployed before or together with the backend change.
+
+Page navigation uses React Query v5 `placeholderData: keepPreviousData`. The
+current rows remain visible while the next or previous cursor page is loading,
+and navigation controls are disabled while placeholder/fetching data is active.
+The Library does not use offset pagination, infinite scrolling, total-count
+queries, polling, or frontend-generated cursors.
+
+Pending Files are presented as an expected security-verification state with
+visible explanatory copy ("Being checked for security"), rather than as a
+generic broken/loading state.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
