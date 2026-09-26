@@ -280,6 +280,32 @@ retention period and upload/storage operations can incur charges. Phase 12 does
 not add a custom uncommitted-block cleanup process; capacity and cost reviews
 must account for the retention window.
 
+## Defender for Storage malware results
+
+Phase 15 enables Microsoft Defender for Storage on-upload malware scanning for
+the configured storage account and sends every scan result to the dedicated
+`malwareScanTopicName` Event Grid custom topic. That topic uses its
+system-assigned Managed Identity to deliver into the existing File Service Bus
+queue. The same identity receives narrow write access to the Event Grid
+dead-letter container.
+
+Nexus configures `blobScanResultsOptions: None`. File security state therefore
+does not depend on Blob index tags, and Defender result-tag writes cannot alter
+the Phase 14 ETag comparison. The worker must receive
+`AZURE_MALWARE_SCAN_EXPECTED_TOPIC` equal to the deployed
+`malwareScanTopicResourceId` output.
+
+`malwareScanCapGBPerMonth` is explicit. Choose it from expected workload and
+cost controls; `-1` means unlimited. Reaching the configured scanning cap or
+receiving another unsuccessful scan result must never make a File available.
+The application maps a clean result to `AVAILABLE` and malicious, error, or
+not-scanned results to `FAILED`.
+
+Defender results and BlobCreated events are unordered. If a valid scan result
+arrives before Phase 14 has registered the File row, the worker abandons it for
+retry. Redelivery of the same terminal result is idempotent. A contradictory
+terminal result is dead-lettered as `INVALID_MALWARE_SCAN_RESULT`.
+
 ## Controlled Azure validation
 
 Ordinary CI compiles Bicep without Azure credentials. It does not prove Azure
@@ -366,11 +392,10 @@ Phase 14 deliberately does not delete rejected Blobs. They remain in the File
 container and accumulate until reconciliation classifies them for recovery,
 quarantine, or deletion.
 
-Before enabling Defender for Storage on the File storage account, controlled
-validation must prove that Defender index-tag writes do not change the Blob
-ETag observed by Event Grid and Blob properties. If they do, Phase 14 will
-classify every pre-tag event as stale, and Defender must not be enabled until
-that interaction has an approved design.
+Phase 15 disables Defender Blob index-tag result writes. Controlled validation
+must instead prove safe and EICAR-style test uploads produce the expected
+malware result event, preserve the scanned Blob ETag, reach the File queue, and
+drive the expected AVAILABLE or FAILED transition.
 
 ## Operational metrics and gates
 
