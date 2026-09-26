@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.files.domain import File, FileStorageStatus
 from nexus.files.ports import (
+    FileDeletionInProgressError,
     FileDeletionTarget,
     FileIdentityConflictError,
     FileNotReadyError,
@@ -206,7 +207,7 @@ class SqlAlchemyFilePersistence(FilePersistence):
         if current_status is target_status:
             return
         if current_status is FileStorageStatus.DELETING:
-            return
+            raise FileDeletionInProgressError("File is being deleted")
         if current_status is not FileStorageStatus.PENDING:
             raise FileStateConflictError("File malware state conflicts")
         await queries.update_file_storage_status(
