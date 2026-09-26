@@ -287,6 +287,8 @@ def test_openapi_exposes_only_metadata_read_endpoints() -> None:
         "created_at",
         "updated_at",
     }
+    status_schema = schemas["FileMetadataStorageStatus"]
+    assert status_schema["enum"] == ["pending", "available", "failed"]
 
 
 
