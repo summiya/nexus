@@ -9,7 +9,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Generic, Protocol, TypeVar, cast
+from typing import Any, Protocol, cast
 
 from azure.servicebus import ServiceBusReceivedMessage, ServiceBusReceiveMode
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
@@ -69,31 +69,20 @@ class InvalidUploadCompletionMessageBody(ValueError):
 
 type FileWorkerEvent = UploadCompletionEvent | MalwareScanResultEvent
 
-EventT = TypeVar("EventT", UploadCompletionEvent, MalwareScanResultEvent)
-MapperEventT_co = TypeVar(
-    "MapperEventT_co",
-    UploadCompletionEvent,
-    MalwareScanResultEvent,
-    covariant=True,
-)
-HandlerEventT_contra = TypeVar(
-    "HandlerEventT_contra",
-    UploadCompletionEvent,
-    MalwareScanResultEvent,
-    contravariant=True,
-)
-
-
-class FileWorkerEventMapper(Protocol[MapperEventT_co]):
+class FileWorkerEventMapper[
+    MapperEventT: (UploadCompletionEvent, MalwareScanResultEvent)
+](Protocol):
     """Map one decoded provider payload into one provider-neutral File event."""
 
-    def map_event(self, payload: Mapping[str, object]) -> MapperEventT_co: ...
+    def map_event(self, payload: Mapping[str, object]) -> MapperEventT: ...
 
 
-class FileWorkerEventHandler(Protocol[HandlerEventT_contra]):
+class FileWorkerEventHandler[
+    HandlerEventT: (UploadCompletionEvent, MalwareScanResultEvent)
+](Protocol):
     """Apply one provider-neutral File worker event."""
 
-    async def handle(self, event: HandlerEventT_contra) -> None: ...
+    async def handle(self, event: HandlerEventT) -> None: ...
 
 
 class _ProcessingOutcome(Enum):
@@ -142,7 +131,9 @@ def decode_upload_completion_body(
 
 
 @dataclass(frozen=True)
-class AzureServiceBusUploadCompletionWorker(Generic[EventT]):
+class AzureServiceBusUploadCompletionWorker[
+    EventT: (UploadCompletionEvent, MalwareScanResultEvent)
+]:
     """Receive, map, dispatch, and settle one File event at a time."""
 
     client: ServiceBusClient
