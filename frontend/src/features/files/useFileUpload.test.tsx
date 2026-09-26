@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fileMocks = vi.hoisted(() => ({
   initiateFileUpload: vi.fn(),
+  listFiles: vi.fn(),
   uploadGrantedFile: vi.fn(),
 }));
 
 vi.mock("./api", () => ({
   initiateFileUpload: fileMocks.initiateFileUpload,
+  listFiles: fileMocks.listFiles,
 }));
 vi.mock("./upload", () => ({
   uploadGrantedFile: fileMocks.uploadGrantedFile,
