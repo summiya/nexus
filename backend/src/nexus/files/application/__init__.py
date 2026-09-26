@@ -1,6 +1,7 @@
 """File application policies."""
 
 from nexus.files.application.apply_malware_scan_result import ApplyMalwareScanResult
+from nexus.files.application.delete_file import DeleteFile
 from nexus.files.application.get_file import GetFile
 from nexus.files.application.initiate_upload import (
     InitiatedFileUpload,
@@ -25,6 +26,7 @@ __all__ = [
     "DEFAULT_FILE_PAGE_SIZE",
     "MAX_FILE_PAGE_SIZE",
     "ApplyMalwareScanResult",
+    "DeleteFile",
     "FilePage",
     "FilePageCursor",
     "GetFile",
