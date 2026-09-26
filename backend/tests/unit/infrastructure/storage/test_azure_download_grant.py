@@ -147,3 +147,29 @@ def test_missing_mime_falls_back_to_octet_stream(
     )
 
     assert calls[0]["content_type"] == "application/octet-stream"
+
+
+
+def test_ascii_control_characters_cannot_enter_content_disposition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def signer(**kwargs: object) -> str:
+        calls.append(kwargs)
+        return "sig=REDACTED"
+
+    monkeypatch.setattr(azure_download_grant, "generate_blob_sas", signer)
+
+    asyncio.run(
+        _issuer(FakeBlobServiceClient(), FakeKeyProvider()).issue_download_grant(
+            storage_key="files/0123456789abcdef0123456789abcdef",
+            original_name="report\r\nInjected: value.pdf",
+            mime_type="application/pdf",
+            expires_at=EXPIRY,
+        )
+    )
+
+    disposition = cast(str, calls[0]["content_disposition"])
+    assert "\r" not in disposition
+    assert "\n" not in disposition
