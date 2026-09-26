@@ -572,6 +572,7 @@ def test_composition_exposes_only_port_and_private_cleanup_callback() -> None:
         assert set(vars(composition)) == {
             "object_storage",
             "upload_grant_issuer",
+            "download_grant_issuer",
             "_close_callback",
         }
         await composition.close()
