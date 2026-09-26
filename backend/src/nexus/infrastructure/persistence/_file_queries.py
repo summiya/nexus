@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import or_, select, tuple_, update
+from sqlalchemy import delete, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
-from nexus.files.ports import FileReferenceError
+from nexus.files.ports import FileDeletionTarget, FileReferenceError
 from nexus.infrastructure.persistence.models.file import File as FileModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
@@ -70,6 +70,7 @@ async def get_file(
             .where(
                 Organization.public_id == organization_public_id,
                 FileModel.public_id == file_public_id,
+                FileModel.storage_status != FileStorageStatus.DELETING.value,
             )
         )
     ).one_or_none()
@@ -102,7 +103,10 @@ async def list_files(
             (User.id == FileModel.created_by_user_id)
             & (User.organization_id == FileModel.organization_id),
         )
-        .where(Organization.public_id == organization_public_id)
+        .where(
+            Organization.public_id == organization_public_id,
+            FileModel.storage_status != FileStorageStatus.DELETING.value,
+        )
     )
     if before_created_at is not None and before_public_id is not None:
         statement = statement.where(
@@ -121,6 +125,62 @@ async def list_files(
     return tuple(
         _to_file(model, stored_organization_public_id, creator_public_id)
         for model, stored_organization_public_id, creator_public_id in rows
+    )
+
+
+async def prepare_file_deletion(
+    session: AsyncSession,
+    *,
+    organization_public_id: UUID,
+    file_public_id: UUID,
+    updated_at: datetime,
+) -> FileDeletionTarget | None:
+    """Lock one tenant File, mark it DELETING, and return its storage identity."""
+    row = (
+        await session.execute(
+            select(FileModel.id, FileModel.storage_key, FileModel.storage_status)
+            .join(Organization, FileModel.organization_id == Organization.id)
+            .where(
+                Organization.public_id == organization_public_id,
+                FileModel.public_id == file_public_id,
+            )
+            .with_for_update()
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+
+    file_id, storage_key, storage_status = row
+    if storage_status != FileStorageStatus.DELETING.value:
+        await session.execute(
+            update(FileModel)
+            .where(FileModel.id == file_id)
+            .values(
+                storage_status=FileStorageStatus.DELETING.value,
+                updated_at=updated_at,
+            )
+        )
+    return FileDeletionTarget(storage_key=storage_key)
+
+
+async def delete_file_record(
+    session: AsyncSession,
+    *,
+    organization_public_id: UUID,
+    file_public_id: UUID,
+) -> None:
+    """Remove one tenant File only after it has entered DELETING."""
+    organization_id = (
+        select(Organization.id)
+        .where(Organization.public_id == organization_public_id)
+        .scalar_subquery()
+    )
+    await session.execute(
+        delete(FileModel).where(
+            FileModel.organization_id == organization_id,
+            FileModel.public_id == file_public_id,
+            FileModel.storage_status == FileStorageStatus.DELETING.value,
+        )
     )
 
 
