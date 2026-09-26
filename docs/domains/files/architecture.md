@@ -1063,7 +1063,21 @@ opposite terminal result   -> permanent conflict
 ```
 
 The database transition locks the File row by `storage_key` and applies the
-state change in one short transaction. Phase 15 adds no custom antivirus,
+state change in one short transaction. A malicious File remains stored with
+status `FAILED`; Phase 15 does not delete or quarantine the Blob. Any download
+or content-serving path must authorize and serve only Files whose storage status
+is `AVAILABLE`.
+
+A File can remain `PENDING` indefinitely if Defender scanning is capped or
+disabled, or if the scan result is never successfully delivered. Production
+reconciliation therefore requires PENDING-age metrics and alerting rather than
+assuming every PENDING row will eventually transition.
+
+Scan results can also arrive for Blob uploads that Phase 14 rejected before a
+File row was created. Those scan messages cannot resolve a File, will retry, and
+may ultimately reach the malware-result DLQ. That is expected operational noise
+for rejected uploads and should be classified separately from unexpected
+malware-processing failures. Phase 15 adds no custom antivirus,
 quarantine/delete workflow, MIME sniffing, checksum persistence, Document
 processing, OCR, chunks, embeddings, or RAG.
 
