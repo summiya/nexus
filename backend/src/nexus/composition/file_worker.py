@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from asyncio import CancelledError
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from azure.identity.aio import ManagedIdentityCredential
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
@@ -185,17 +186,12 @@ async def _close_partial_resources(
 
 
 def _storage_account_name(account_url: str) -> str:
-    host = account_url.removeprefix("https://").split("/", 1)[0]
-    suffix = ".blob.core.windows.net"
-    if not host.endswith(suffix):
-        raise FileWorkerConfigurationError(
-            "Azure storage account URL is not a canonical Blob service URL"
-        )
-    account_name = host.removesuffix(suffix)
+    host = urlsplit(account_url).hostname
+    if host is None or "." not in host:
+        raise ValueError("Azure storage account URL is invalid")
+    account_name = host.split(".", 1)[0]
     if not account_name:
-        raise FileWorkerConfigurationError(
-            "Azure storage account URL is not a canonical Blob service URL"
-        )
+        raise ValueError("Azure storage account URL is invalid")
     return account_name
 
 
