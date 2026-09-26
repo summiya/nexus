@@ -414,6 +414,7 @@ def test_lifespan_closes_application_owned_resources(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
@@ -451,6 +452,7 @@ def test_lifespan_closes_storage_and_database_when_authentication_cleanup_fails(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
@@ -489,6 +491,7 @@ def test_lifespan_disposes_database_when_storage_cleanup_fails(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> FailingTrackingStorageComposition:
         del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
@@ -526,6 +529,7 @@ def test_storage_composition_failure_cleans_earlier_owned_resources(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         del settings, object_storage, upload_grant_issuer, download_grant_issuer
         raise RuntimeError("storage composition failed")
@@ -565,6 +569,7 @@ def test_file_composition_failure_closes_all_earlier_owned_resources(
         *,
         object_storage: ObjectStorage | None = None,
         upload_grant_issuer: UploadGrantIssuer | None = None,
+        download_grant_issuer: DownloadGrantIssuer | None = None,
     ) -> TrackingStorageComposition:
         del settings, object_storage, upload_grant_issuer, download_grant_issuer
         return storage
