@@ -43,7 +43,6 @@ class InitiateFileUploadResponseBody(BaseModel):
     upload: UploadInstructionsResponseBody
 
 
-
 class FileMetadataResponseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
