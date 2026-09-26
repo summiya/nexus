@@ -82,7 +82,7 @@ def test_aes_gcm_context_round_trip_preserves_values() -> None:
 
 
 def test_protected_context_hides_plaintext_and_fits_metadata_budget() -> None:
-    context = _context(original_name="x" * 255, mime_type="y" * 255)
+    context = _context(original_name="文" * 255, mime_type="y" * 255)
 
     protected = _protector().protect(context)
 

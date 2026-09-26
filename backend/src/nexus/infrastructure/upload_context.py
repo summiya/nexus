@@ -75,6 +75,7 @@ class AesGcmUploadContextProtector(UploadContextProtector):
     def protect(self, context: UploadContext) -> str:
         payload = json.dumps(
             _context_payload(context),
+            ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
