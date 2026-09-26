@@ -1124,7 +1124,9 @@ deployed before or together with the backend change.
 
 Page navigation uses React Query v5 `placeholderData: keepPreviousData`. The
 current rows remain visible while the next or previous cursor page is loading,
-and navigation controls are disabled while placeholder/fetching data is active.
+and navigation controls are disabled while placeholder page data is active.
+Unrelated background refetches, such as the one triggered after an upload,
+remain silent and do not disable pagination.
 The Library does not use offset pagination, infinite scrolling, total-count
 queries, polling, or frontend-generated cursors.
 
