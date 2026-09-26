@@ -59,6 +59,10 @@ def _settings() -> FileWorkerSettings:
         azure_service_bus_fully_qualified_namespace=("nexus.servicebus.windows.net"),
         azure_service_bus_queue_name="file-upload-completions",
         azure_event_grid_expected_source="/subscriptions/source",
+        azure_malware_scan_expected_topic=(
+            "/subscriptions/test/resourceGroups/nexus/providers/"
+            "Microsoft.EventGrid/topics/nexus-file-malware-scan-results"
+        ),
         azure_storage_container="nexus-files",
         azure_storage_account_url="https://nexus.blob.core.windows.net",
     )
