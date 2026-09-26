@@ -117,6 +117,7 @@ module malwareScanTopic './modules/file-malware-scan-topic.bicep' = {
   scope: resourceGroup(storageSubscriptionId, storageResourceGroupName)
   params: {
     deadLetterContainerName: deadLetterContainerName
+    location: storageAccount.location
     malwareScanCapGBPerMonth: malwareScanCapGBPerMonth
     malwareScanTopicName: malwareScanTopicName
     storageAccountName: storageAccountName
