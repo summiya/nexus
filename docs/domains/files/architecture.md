@@ -1134,6 +1134,71 @@ Pending Files are presented as an expected security-verification state with
 visible explanatory copy ("Being checked for security"), rather than as a
 generic broken/loading state.
 
+## Authorized direct File downloads
+
+Phases 18 and 19 implement authorized direct downloads without proxying File
+bytes through FastAPI. The caller uses the authenticated Nexus API to request a
+short-lived download capability for one File, then the browser transfers the
+bytes directly from Blob Storage.
+
+The application boundary is provider-neutral:
+
+```text
+IssueFileDownload
+        ↓
+DownloadGrantIssuer
+        ↑
+AzureUserDelegationDownloadGrantIssuer
+```
+
+The API requires the existing `files.read` permission and performs the same
+organization-scoped File lookup used by metadata reads. Missing or cross-tenant
+Files return the same not-found response. Only `AVAILABLE` Files receive a
+download grant; `PENDING` and `FAILED` Files return a conflict response and
+never expose storage identity.
+
+Download grants are short-lived bearer capabilities. The default lifetime is
+five minutes and is bounded by configuration. The link has no early-revocation
+mechanism; access ends at SAS expiry. Nexus therefore never stores, logs,
+prefetches, caches, or renders the generated URL, and the grant endpoint uses
+`Cache-Control: private, no-store`.
+
+Azure download and upload issuers share one cached User Delegation Key provider,
+including the existing key start-time skew and refresh behavior. Download grants
+reuse the API identity's existing File-storage permissions documented for direct
+Blob access: Storage Blob Data Contributor on the File container and Storage
+Blob Delegator at storage-account scope. Phase 18 adds no RBAC role or role
+assignment.
+
+The Blob SAS is scoped to one exact object, grants read permission only, and is
+HTTPS-only. Its signed response headers force
+`Content-Disposition: attachment`. Unicode filenames use an ASCII fallback
+plus RFC 5987 `filename*=UTF-8''...` encoding. The response `Content-Type`
+comes from the MIME type originally declared by the user and stored on the
+File; forced attachment, not MIME trust, is the control that prevents HTML,
+SVG, or other active content from being intentionally rendered inline by the
+download flow.
+
+Frontend download behavior is imperative rather than query-cached:
+
+```text
+AVAILABLE File
+    ↓
+POST /files/{file_public_id}/download
+    ↓
+short-lived bearer URL
+    ↓
+temporary <a> appended to document.body
+    ↓
+click()
+    ↓
+remove <a>
+```
+
+The URL exists only long enough to start browser navigation. It is not stored
+in React state, React Query, local/session storage, visible DOM text, or
+analytics. PENDING and FAILED rows do not render a Download action.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
@@ -1274,7 +1339,7 @@ Later phases own:
 - committed-Blob event dead-letter handling and reconciliation;
 - upload-initiation abuse protection, rate limiting, or quota enforcement;
 - upload and management APIs;
-- download and delete use cases and APIs;
+- delete use cases and APIs;
 - retention and object cleanup;
 - Document processing, chunks, embeddings, and RAG;
 - richer frontend File workflows such as multi-file upload, drag-and-drop,
