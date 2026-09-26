@@ -178,7 +178,6 @@ describe("File upload initiation API", () => {
   });
 });
 
-
 describe("File Library API", () => {
   it("requests the first page without a cursor and maps strict metadata", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -219,7 +218,9 @@ describe("File Library API", () => {
     );
   });
 
-  it("passes the backend cursor unchanged and supports null file size", async () => {
+  it(
+    "passes the backend cursor unchanged and supports null file size",
+    async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({
         items: [
@@ -240,11 +241,12 @@ describe("File Library API", () => {
     const page = await listFiles({ cursor: "opaque cursor/+", limit: 25 });
 
     expect(page.items[0]?.sizeBytes).toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8000/api/v1/files?limit=25&cursor=opaque+cursor%2F%2B",
-      expect.any(Object),
-    );
-  });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/files?limit=25&cursor=opaque+cursor%2F%2B",
+        expect.any(Object),
+      );
+    },
+  );
 
   it.each([
     {
