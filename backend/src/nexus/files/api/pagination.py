@@ -52,7 +52,7 @@ def decode_file_cursor(value: str | None) -> FilePageCursor | None:
         if not isinstance(created_at_value, str) or not isinstance(
             public_id_value, str
         ):
-            raise ValueError
+            raise TypeError
         created_at = datetime.fromisoformat(created_at_value)
         public_id = UUID(public_id_value)
         return FilePageCursor(created_at=created_at, public_id=public_id)
