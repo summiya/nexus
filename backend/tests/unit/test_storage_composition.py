@@ -14,8 +14,16 @@ from nexus.composition.storage import (
     build_storage_composition,
 )
 from nexus.config.settings import Settings
-from nexus.files.ports import StoredObjectProperties, UploadGrant, UploadGrantError
-from nexus.infrastructure.storage import AzureBlobObjectStorage
+from nexus.files.ports import (
+    DownloadGrant,
+    StoredObjectProperties,
+    UploadGrant,
+    UploadGrantError,
+)
+from nexus.infrastructure.storage import (
+    AzureBlobObjectStorage,
+    AzureUserDelegationDownloadGrantIssuer,
+)
 from nexus.infrastructure.storage.azure_upload_grant import (
     AzureUserDelegationUploadGrantIssuer,
 )
@@ -50,6 +58,22 @@ class StubObjectStorage:
     async def _empty_stream(self) -> AsyncIterator[bytes]:
         if False:
             yield b""
+
+
+class StubDownloadGrantIssuer:
+    async def issue_download_grant(
+        self,
+        *,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        expires_at: datetime,
+    ) -> DownloadGrant:
+        del original_name, mime_type
+        return DownloadGrant(
+            url=f"https://storage.example/{storage_key}?sig=download",
+            expires_at=expires_at,
+        )
 
 
 class StubUploadGrantIssuer:
@@ -281,6 +305,15 @@ def test_root_https_account_url_uses_system_assigned_managed_identity(
             AzureUserDelegationUploadGrantIssuer,
         )
         assert composition.upload_grant_issuer._service_client is service_client
+        assert isinstance(
+            composition.download_grant_issuer,
+            AzureUserDelegationDownloadGrantIssuer,
+        )
+        assert composition.download_grant_issuer._service_client is service_client
+        assert (
+            composition.upload_grant_issuer._delegation_key_provider
+            is composition.download_grant_issuer._delegation_key_provider
+        )
 
         await composition.close()
         assert service_client.close_calls == 1
@@ -332,6 +365,7 @@ def test_explicit_issuer_does_not_require_account_name(
 ) -> None:
     async def scenario() -> None:
         issuer = StubUploadGrantIssuer()
+        download_issuer = StubDownloadGrantIssuer()
         composition = await build_storage_composition(
             build_settings(
                 app_env="production",
@@ -339,9 +373,11 @@ def test_explicit_issuer_does_not_require_account_name(
                 azure_storage_account_name=account_name,
             ),
             upload_grant_issuer=issuer,
+            download_grant_issuer=download_issuer,
         )
 
         assert composition.upload_grant_issuer is issuer
+        assert composition.download_grant_issuer is download_issuer
         assert len(FakeBlobServiceClient.instances) == 1
         await composition.close()
 
