@@ -9,7 +9,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Protocol, cast
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 from azure.servicebus import ServiceBusReceivedMessage, ServiceBusReceiveMode
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
@@ -69,17 +69,31 @@ class InvalidUploadCompletionMessageBody(ValueError):
 
 type FileWorkerEvent = UploadCompletionEvent | MalwareScanResultEvent
 
+EventT = TypeVar("EventT", UploadCompletionEvent, MalwareScanResultEvent)
+MapperEventT_co = TypeVar(
+    "MapperEventT_co",
+    UploadCompletionEvent,
+    MalwareScanResultEvent,
+    covariant=True,
+)
+HandlerEventT_contra = TypeVar(
+    "HandlerEventT_contra",
+    UploadCompletionEvent,
+    MalwareScanResultEvent,
+    contravariant=True,
+)
 
-class FileWorkerEventMapper(Protocol):
-    """Map one decoded provider payload into a File worker event."""
 
-    def map_event(self, payload: Mapping[str, object]) -> FileWorkerEvent: ...
+class FileWorkerEventMapper(Protocol[MapperEventT_co]):
+    """Map one decoded provider payload into one provider-neutral File event."""
+
+    def map_event(self, payload: Mapping[str, object]) -> MapperEventT_co: ...
 
 
-class FileWorkerEventHandler(Protocol):
+class FileWorkerEventHandler(Protocol[HandlerEventT_contra]):
     """Apply one provider-neutral File worker event."""
 
-    async def handle(self, event: FileWorkerEvent) -> None: ...
+    async def handle(self, event: HandlerEventT_contra) -> None: ...
 
 
 class _ProcessingOutcome(Enum):
@@ -128,13 +142,13 @@ def decode_upload_completion_body(
 
 
 @dataclass(frozen=True)
-class AzureServiceBusUploadCompletionWorker:
+class AzureServiceBusUploadCompletionWorker(Generic[EventT]):
     """Receive, map, dispatch, and settle one File event at a time."""
 
     client: ServiceBusClient
     queue_name: str
-    mapper: FileWorkerEventMapper
-    handler: FileWorkerEventHandler
+    mapper: FileWorkerEventMapper[EventT]
+    handler: FileWorkerEventHandler[EventT]
     auto_lock_renewer: AutoLockRenewer
     jitter: Callable[[float, float], float] = field(
         default=random.uniform,
