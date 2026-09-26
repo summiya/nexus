@@ -163,7 +163,6 @@ export async function requestFileDownload(
   };
 }
 
-
 export async function deleteFile(
   filePublicId: string,
   signal?: AbortSignal,
