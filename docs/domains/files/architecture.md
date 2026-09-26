@@ -1199,6 +1199,66 @@ The URL exists only long enough to start browser navigation. It is not stored
 in React state, React Query, local/session storage, visible DOM text, or
 analytics. PENDING and FAILED rows do not render a Download action.
 
+## Authorized File deletion
+
+Phases 20 and 21 delete File metadata and binary storage through a resumable
+three-step lifecycle:
+
+```text
+short database transaction
+    visible File -> DELETING
+        ↓ commit
+Blob Storage delete
+        ↓
+short database transaction
+    delete File row
+```
+
+The API requires `files.delete` and uses organization-scoped persistence so a
+File owned by another organization is indistinguishable from a missing File.
+PENDING, AVAILABLE, and FAILED Files may all enter DELETING. A DELETING File is
+immediately excluded from metadata reads, lists, and download authorization, but
+the deletion path can still find it so a repeated DELETE resumes cleanup.
+
+No database transaction is held while Blob Storage is called, and metadata is
+never removed before the Blob deletion succeeds. Object deletion is idempotent:
+an already-missing Blob counts as success. Storage failures and metadata-finalize
+failures surface as retryable service-unavailable errors and leave the File in
+DELETING. A later DELETE repeats the storage delete safely and then retries row
+removal. Once the row is fully removed, a later DELETE returns not found.
+
+DELETING rows are reconciliation targets. A future reconciliation process may
+resume the same idempotent sequence for abandoned DELETING rows; this phase does
+not introduce a scheduler, queue, or new worker solely for deletion. Late
+malware scan results for DELETING or already-missing Files are expected races:
+they are safely correlated, acknowledged as no-ops, and must not become state
+conflicts or dead-letter traffic.
+
+The Azure adapter reuses the existing `ObjectStorage.delete_object` behavior.
+Azure Blob not-found responses are accepted as successful deletion. No new Azure
+role assignment is required: the API identity's existing Storage Blob Data
+Contributor role on the File container includes Blob deletion. If Blob soft
+delete is enabled on the storage account, Azure may retain deleted Blob data for
+the configured retention period even after Nexus has removed the File row; that
+provider retention behavior is separate from Nexus metadata lifecycle.
+
+File remains the ownership root for binary content. When Document extraction,
+chunks, embeddings, and RAG persistence are introduced, their deletion must
+cascade from File deletion before the File row is finalized, without weakening
+the invariant that binary storage is not orphaned by deleting File metadata
+first.
+
+Deletion logs contain only fixed event names and hashed correlations. File
+names, storage keys, provider URLs, SAS values, and raw provider errors are not
+logged.
+
+Frontend deletion requires an explicit confirmation naming the File. While the
+request is active the row action is disabled and failures use fixed safe copy.
+A successful response, including an already-missing 404 interpreted by the
+client as the desired end state, invalidates all File list queries. If the
+refreshed non-first page becomes empty, the library returns to its prior stored
+cursor rather than manufacturing a cursor client-side.
+
 ## Future upload and verification lifecycle
 
 Phases 5 and 6 define the provider-neutral preparation boundaries. The current
