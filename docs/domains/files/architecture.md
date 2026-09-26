@@ -1272,8 +1272,8 @@ Later phases own:
 - committed-Blob event dead-letter handling and reconciliation;
 - upload-initiation abuse protection, rate limiting, or quota enforcement;
 - upload and management APIs;
-- list, download, and delete use cases and APIs;
+- download and delete use cases and APIs;
 - retention and object cleanup;
 - Document processing, chunks, embeddings, and RAG;
-- richer frontend File workflows such as listing, multi-file upload,
-  drag-and-drop, and resumability.
+- richer frontend File workflows such as multi-file upload, drag-and-drop,
+  and resumability.
