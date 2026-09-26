@@ -11,7 +11,7 @@ import pytest
 from nexus.composition import file_worker as composition_module
 from nexus.composition.file_worker import build_file_worker_composition
 from nexus.config.file_worker_settings import FileWorkerSettings
-from nexus.files.application import HandleFileWorkerEvent
+from nexus.files.application import ApplyMalwareScanResult, VerifyUploadCompletion
 from nexus.infrastructure.persistence.session import Database
 
 DEVELOPMENT_CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
@@ -193,7 +193,13 @@ def test_builds_dedicated_worker_and_closes_owned_resources_once() -> None:
         assert renewer.duration == 300
         assert composition.worker.queue_name == "file-upload-completions"
         assert composition.worker.auto_lock_renewer is renewer
-        assert isinstance(composition.worker.handler, HandleFileWorkerEvent)
+        assert isinstance(composition.worker.handler, VerifyUploadCompletion)
+        assert composition.malware_scan_worker.queue_name == "file-malware-scan-results"
+        assert composition.malware_scan_worker.auto_lock_renewer is renewer
+        assert isinstance(
+            composition.malware_scan_worker.handler,
+            ApplyMalwareScanResult,
+        )
 
         await composition.close()
 
