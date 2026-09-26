@@ -366,3 +366,122 @@ def test_list_files_returns_bounded_page_without_count_query(
     )
 
     assert len(listed) == 3
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        FileStorageStatus.PENDING,
+        FileStorageStatus.AVAILABLE,
+        FileStorageStatus.FAILED,
+    ],
+)
+def test_prepare_file_deletion_marks_every_visible_status_deleting_and_hides_it(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    status: FileStorageStatus,
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    file = _file(
+        organization_id,
+        user_id,
+        storage_status=status,
+        size_bytes=None if status is FileStorageStatus.PENDING else 42,
+    )
+    asyncio.run(persistence.create_file(file))
+
+    target = asyncio.run(
+        persistence.prepare_file_deletion(
+            organization_public_id=organization_id,
+            file_public_id=file.public_id,
+            updated_at=TIMESTAMP + timedelta(minutes=1),
+        )
+    )
+
+    assert target is not None
+    assert target.storage_key == file.storage_key
+    assert (
+        asyncio.run(
+            persistence.get_file(
+                organization_public_id=organization_id,
+                file_public_id=file.public_id,
+            )
+        )
+        is None
+    )
+    listed = asyncio.run(
+        persistence.list_files(
+            organization_public_id=organization_id,
+            before_created_at=None,
+            before_public_id=None,
+            limit=10,
+        )
+    )
+    assert file.public_id not in {item.public_id for item in listed}
+    with Session(migrated_engine) as session:
+        status_value = session.scalar(
+            select(FileModel.storage_status).where(FileModel.public_id == file.public_id)
+        )
+    assert status_value == FileStorageStatus.DELETING.value
+
+
+def test_prepare_file_deletion_is_idempotent_and_finalize_removes_row(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    file = _file(organization_id, user_id)
+    asyncio.run(persistence.create_file(file))
+
+    first = asyncio.run(
+        persistence.prepare_file_deletion(
+            organization_public_id=organization_id,
+            file_public_id=file.public_id,
+            updated_at=TIMESTAMP + timedelta(minutes=1),
+        )
+    )
+    second = asyncio.run(
+        persistence.prepare_file_deletion(
+            organization_public_id=organization_id,
+            file_public_id=file.public_id,
+            updated_at=TIMESTAMP + timedelta(minutes=2),
+        )
+    )
+
+    assert first == second
+    asyncio.run(
+        persistence.delete_file_record(
+            organization_public_id=organization_id,
+            file_public_id=file.public_id,
+        )
+    )
+    with Session(migrated_engine) as session:
+        assert (
+            session.scalar(
+                select(FileModel).where(FileModel.public_id == file.public_id)
+            )
+            is None
+        )
+
+
+def test_prepare_file_deletion_hides_cross_tenant_file(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, user_id = _seed_identity(migrated_engine)
+    other_organization_id, _ = _seed_identity(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    file = _file(organization_id, user_id)
+    asyncio.run(persistence.create_file(file))
+
+    target = asyncio.run(
+        persistence.prepare_file_deletion(
+            organization_public_id=other_organization_id,
+            file_public_id=file.public_id,
+            updated_at=TIMESTAMP + timedelta(minutes=1),
+        )
+    )
+
+    assert target is None
