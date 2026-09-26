@@ -283,11 +283,16 @@ must account for the retention window.
 ## Defender for Storage malware results
 
 Phase 15 enables Microsoft Defender for Storage on-upload malware scanning for
-the configured storage account and sends every scan result to the dedicated
+the configured storage account. The existing storage-account Event Grid system
+topic must be in the same resource group as the storage account so Defender can
+use the single system topic allowed for that source and sends every scan result to the dedicated
 `malwareScanTopicName` Event Grid custom topic. That topic uses its
 system-assigned Managed Identity to deliver into the dedicated
 `file-malware-scan-results` Service Bus queue. The same identity receives narrow write access to the Event Grid
-dead-letter container.
+dead-letter container. Defender provisioning is also expected to grant its
+scanner/service identity the permissions needed to publish scan results to the
+custom topic; controlled deployment must verify the resulting Event Grid Data
+Sender assignment before traffic is enabled.
 
 Nexus configures `blobScanResultsOptions: None`. File security state therefore
 does not depend on Blob index tags, and Defender result-tag writes cannot alter
