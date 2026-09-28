@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from types import MappingProxyType
 from typing import TypeAlias
 from uuid import UUID
 
@@ -12,7 +11,6 @@ from nexus.model_providers.domain.validation import (
     MAX_API_VERSION_LENGTH,
     MAX_CREDENTIAL_REFERENCE_LENGTH,
     MAX_DISPLAY_NAME_LENGTH,
-    MAX_IDENTIFIER_LENGTH,
     MAX_PROVIDER_MODEL_NAME_LENGTH,
     require_bounded_text,
     require_https_url,
@@ -32,11 +30,19 @@ class ProviderType(StrEnum):
     GEMINI = "gemini"
     OPENAI_COMPATIBLE = "openai_compatible"
 
+    @classmethod
+    def _missing_(cls, value: object) -> ProviderType:
+        raise ValueError("Unknown provider type.")
+
 
 class ModelType(StrEnum):
     CHAT = "chat"
     EMBEDDING = "embedding"
     RERANKER = "reranker"
+
+    @classmethod
+    def _missing_(cls, value: object) -> ModelType:
+        raise ValueError("Unknown model type.")
 
 
 class ModelCapability(StrEnum):
@@ -45,13 +51,18 @@ class ModelCapability(StrEnum):
     VISION = "vision"
     STRUCTURED_OUTPUT = "structured_output"
 
-
-_CHAT_CAPABILITIES = frozenset(ModelCapability)
+    @classmethod
+    def _missing_(cls, value: object) -> ModelCapability:
+        raise ValueError("Unknown model capability.")
 
 
 @dataclass(frozen=True)
 class OrganizationProviderId:
     value: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, UUID):
+            raise ValueError("Configured provider identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -60,6 +71,10 @@ class OrganizationProviderId:
 @dataclass(frozen=True)
 class ConfiguredModelId:
     value: UUID
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, UUID):
+            raise ValueError("Configured model identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -169,6 +184,10 @@ class ConfiguredProvider:
     credential_reference: CredentialReference | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.organization_public_id, UUID):
+            raise ValueError("Organization identifier is invalid.")
+        if not isinstance(self.provider_type, ProviderType):
+            raise ValueError("Unknown provider type.")
         object.__setattr__(
             self,
             "display_name",
@@ -196,6 +215,15 @@ class ConfiguredModel:
     enabled: bool = True
 
     def __post_init__(self) -> None:
+        if not isinstance(self.organization_public_id, UUID):
+            raise ValueError("Organization identifier is invalid.")
+        if not isinstance(self.model_type, ModelType):
+            raise ValueError("Unknown model type.")
+        if any(
+            not isinstance(capability, ModelCapability)
+            for capability in self.capabilities
+        ):
+            raise ValueError("Unknown model capability.")
         object.__setattr__(
             self,
             "provider_model_name",
@@ -261,6 +289,8 @@ class ModelProviderConfiguration:
     defaults: DefaultModelSelection = field(default_factory=DefaultModelSelection)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.organization_public_id, UUID):
+            raise ValueError("Organization identifier is invalid.")
         object.__setattr__(self, "providers", tuple(self.providers))
         object.__setattr__(self, "models", tuple(self.models))
         self._validate()
