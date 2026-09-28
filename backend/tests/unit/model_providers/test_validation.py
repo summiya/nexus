@@ -20,7 +20,12 @@ from nexus.model_providers.domain import (
     OrganizationProviderId,
     ProviderType,
 )
-from nexus.model_providers.domain.validation import MAX_URL_LENGTH
+from nexus.model_providers.domain.validation import (
+    MAX_CREDENTIAL_REFERENCE_LENGTH,
+    MAX_DISPLAY_NAME_LENGTH,
+    MAX_PROVIDER_MODEL_NAME_LENGTH,
+    MAX_URL_LENGTH,
+)
 
 
 def _provider(
@@ -442,3 +447,63 @@ def test_unknown_provider_and_model_types_are_rejected(
 ) -> None:
     with pytest.raises(ValueError):
         enum_type(value)
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "value", "message"),
+    [
+        (ProviderType, "vertex_ai", "Unknown provider type."),
+        (ModelType, "completion", "Unknown model type."),
+        (ModelCapability, "audio", "Unknown model capability."),
+    ],
+)
+def test_unknown_enum_values_fail_with_fixed_safe_messages(
+    enum_type: type[ProviderType] | type[ModelType] | type[ModelCapability],
+    value: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=rf"^{message.replace('.', r'\.')}$"):
+        enum_type(value)
+
+
+def test_provider_display_name_is_bounded() -> None:
+    with pytest.raises(ValueError, match=r"^Provider display name is too long\.$"):
+        ConfiguredProvider(
+            organization_public_id=uuid4(),
+            provider_id=OrganizationProviderId(uuid4()),
+            provider_type=ProviderType.OPENAI,
+            display_name="x" * (MAX_DISPLAY_NAME_LENGTH + 1),
+            settings=OpenAISettings(),
+            enabled=True,
+        )
+
+
+def test_model_display_name_is_bounded() -> None:
+    with pytest.raises(ValueError, match=r"^Model display name is too long\.$"):
+        ConfiguredModel(
+            organization_public_id=uuid4(),
+            model_id=ConfiguredModelId(uuid4()),
+            provider_id=OrganizationProviderId(uuid4()),
+            provider_model_name="model",
+            display_name="x" * (MAX_DISPLAY_NAME_LENGTH + 1),
+            model_type=ModelType.CHAT,
+        )
+
+
+def test_provider_model_name_is_bounded() -> None:
+    with pytest.raises(ValueError, match=r"^Provider model name is too long\.$"):
+        ConfiguredModel(
+            organization_public_id=uuid4(),
+            model_id=ConfiguredModelId(uuid4()),
+            provider_id=OrganizationProviderId(uuid4()),
+            provider_model_name="x" * (MAX_PROVIDER_MODEL_NAME_LENGTH + 1),
+            display_name="Model",
+            model_type=ModelType.CHAT,
+        )
+
+
+def test_credential_reference_is_bounded() -> None:
+    from nexus.model_providers.domain import CredentialReference
+
+    with pytest.raises(ValueError, match=r"^Credential reference is too long\.$"):
+        CredentialReference("x" * (MAX_CREDENTIAL_REFERENCE_LENGTH + 1))
