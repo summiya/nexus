@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, assert_never
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -295,7 +295,10 @@ async def set_default(
     await session.execute(
         statement.on_conflict_do_update(
             index_elements=["organization_id", "model_type"],
-            set_={"configured_model_id": record.id},
+            set_={
+                "configured_model_id": record.id,
+                "updated_at": func.now(),
+            },
         )
     )
     return True
@@ -372,11 +375,17 @@ def _to_model(
 
 
 def _settings_to_json(settings: ProviderSettings) -> dict[str, str]:
+    if isinstance(settings, OpenAISettings):
+        return {}
+    if isinstance(settings, AnthropicSettings):
+        return {}
+    if isinstance(settings, GeminiSettings):
+        return {}
     if isinstance(settings, AzureOpenAISettings):
         return {"endpoint": settings.endpoint, "api_version": settings.api_version}
     if isinstance(settings, OpenAICompatibleSettings):
         return {"base_url": settings.base_url}
-    return {}
+    assert_never(settings)
 
 
 def _settings_from_json(
@@ -394,7 +403,9 @@ def _settings_from_json(
             endpoint=settings["endpoint"],
             api_version=settings["api_version"],
         )
-    return OpenAICompatibleSettings(base_url=settings["base_url"])
+    if provider_type is ProviderType.OPENAI_COMPATIBLE:
+        return OpenAICompatibleSettings(base_url=settings["base_url"])
+    assert_never(provider_type)
 
 
 def _credential_value(reference: CredentialReference | None) -> UUID | None:

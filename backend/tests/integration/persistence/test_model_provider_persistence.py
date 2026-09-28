@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,18 +20,25 @@ from nexus.infrastructure.persistence.model_provider import (
 from nexus.infrastructure.persistence.models.model_provider import (
     ConfiguredModel as ConfiguredModelRecord,
 )
+from nexus.infrastructure.persistence.models.model_provider import (
+    OrganizationModelDefault,
+)
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.model_providers.domain import (
     AnthropicSettings,
+    AzureOpenAISettings,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
+    GeminiSettings,
     ModelCapability,
     ModelProviderConfigurationError,
     ModelType,
+    OpenAICompatibleSettings,
     OpenAISettings,
     OrganizationProviderId,
+    ProviderSettings,
     ProviderType,
 )
 from nexus.model_providers.ports import (
@@ -144,6 +152,48 @@ def test_round_trip_returns_valid_domain_aggregate_and_sorted_capabilities(
         )
         assert record is not None
         assert record.capabilities == ["streaming", "tools"]
+
+
+@pytest.mark.parametrize(
+    ("provider_type", "settings"),
+    [
+        (ProviderType.OPENAI, OpenAISettings()),
+        (ProviderType.ANTHROPIC, AnthropicSettings()),
+        (
+            ProviderType.AZURE_OPENAI,
+            AzureOpenAISettings(
+                endpoint="https://models.example.com",
+                api_version="2026-09-01",
+            ),
+        ),
+        (ProviderType.GEMINI, GeminiSettings()),
+        (
+            ProviderType.OPENAI_COMPATIBLE,
+            OpenAICompatibleSettings(base_url="https://compatible.example.com"),
+        ),
+    ],
+)
+def test_every_provider_settings_variant_round_trips(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    provider_type: ProviderType,
+    settings: ProviderSettings,
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = replace(
+        _provider(organization_public_id),
+        provider_type=provider_type,
+        settings=settings,
+    )
+
+    asyncio.run(persistence.create_provider(provider))
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers == (provider,)
 
 
 def test_unknown_and_wrong_tenant_references_are_hidden(
@@ -341,6 +391,51 @@ def test_delete_current_default_model_is_explicitly_restricted(
     assert configuration.providers == (provider,)
     assert configuration.models == (model,)
     assert configuration.defaults.chat == model.model_id
+
+
+def test_changing_existing_default_advances_updated_at(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(organization_public_id)
+    first_model = _chat_model(organization_public_id, provider.provider_id)
+    second_model = _chat_model(organization_public_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(first_model))
+    asyncio.run(persistence.create_model(second_model))
+    asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_public_id,
+            model_type=ModelType.CHAT,
+            model_id=first_model.model_id,
+        )
+    )
+    old_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+    with Session(migrated_engine) as session:
+        default = session.scalar(select(OrganizationModelDefault))
+        assert default is not None
+        default.updated_at = old_timestamp
+        session.commit()
+
+    asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_public_id,
+            model_type=ModelType.CHAT,
+            model_id=second_model.model_id,
+        )
+    )
+
+    with Session(migrated_engine) as session:
+        default = session.scalar(select(OrganizationModelDefault))
+        assert default is not None
+        assert default.updated_at > old_timestamp
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.defaults.chat == second_model.model_id
 
 
 def test_unexpected_integrity_error_remains_persistence_failure(
