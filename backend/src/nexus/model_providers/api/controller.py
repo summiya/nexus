@@ -28,11 +28,10 @@ from nexus.model_providers.api.schemas import (
     UpdateProviderRequestBody,
 )
 from nexus.model_providers.domain import (
-    AzureOpenAISettings,
     ConfiguredProvider,
     ModelProviderConfigurationError,
-    OpenAICompatibleSettings,
     ProviderCredentialSecret,
+    provider_settings_to_mapping,
 )
 
 router = APIRouter(prefix="/model-providers", tags=["model-providers"])
@@ -197,21 +196,11 @@ async def delete_configured_provider(
 
 
 def _to_response(provider: ConfiguredProvider) -> ConfiguredProviderResponseBody:
-    settings: dict[str, str]
-    if isinstance(provider.settings, AzureOpenAISettings):
-        settings = {
-            "endpoint": provider.settings.endpoint,
-            "api_version": provider.settings.api_version,
-        }
-    elif isinstance(provider.settings, OpenAICompatibleSettings):
-        settings = {"base_url": provider.settings.base_url}
-    else:
-        settings = {}
     return ConfiguredProviderResponseBody(
         public_id=provider.provider_id.value,
         provider_type=provider.provider_type,
         display_name=provider.display_name,
-        settings=settings,
+        settings=provider_settings_to_mapping(provider.settings),
         enabled=provider.enabled,
         credential_configured=provider.credential_reference is not None,
     )

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Any, assert_never
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -21,22 +19,18 @@ from nexus.infrastructure.persistence.models.model_provider import (
 )
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.model_providers.domain import (
-    AnthropicSettings,
-    AzureOpenAISettings,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
     DefaultModelSelection,
-    GeminiSettings,
     ModelCapability,
     ModelType,
-    OpenAICompatibleSettings,
-    OpenAISettings,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
-    ProviderSettings,
     ProviderType,
+    provider_settings_from_mapping,
+    provider_settings_to_mapping,
 )
 
 
@@ -139,7 +133,7 @@ async def insert_provider(
             organization_id=organization_id,
             provider_type=provider.provider_type.value,
             display_name=provider.display_name,
-            settings_json=_settings_to_json(provider.settings),
+            settings_json=provider_settings_to_mapping(provider.settings),
             credential_reference=_credential_value(provider.credential_reference),
             enabled=provider.enabled,
         )
@@ -162,7 +156,7 @@ async def update_provider(
         return False
     record.provider_type = provider.provider_type.value
     record.display_name = provider.display_name
-    record.settings_json = _settings_to_json(provider.settings)
+    record.settings_json = provider_settings_to_mapping(provider.settings)
     record.credential_reference = _credential_value(provider.credential_reference)
     record.enabled = provider.enabled
     await session.flush()
@@ -346,7 +340,7 @@ def _to_provider(
         provider_id=OrganizationProviderId(record.public_id),
         provider_type=provider_type,
         display_name=record.display_name,
-        settings=_settings_from_json(provider_type, record.settings_json),
+        settings=provider_settings_from_mapping(provider_type, record.settings_json),
         credential_reference=(
             CredentialReference(record.credential_reference)
             if record.credential_reference is not None
@@ -372,40 +366,6 @@ def _to_model(
         embedding_dimension=record.embedding_dimension,
         enabled=record.enabled,
     )
-
-
-def _settings_to_json(settings: ProviderSettings) -> dict[str, str]:
-    if isinstance(settings, OpenAISettings):
-        return {}
-    if isinstance(settings, AnthropicSettings):
-        return {}
-    if isinstance(settings, GeminiSettings):
-        return {}
-    if isinstance(settings, AzureOpenAISettings):
-        return {"endpoint": settings.endpoint, "api_version": settings.api_version}
-    if isinstance(settings, OpenAICompatibleSettings):
-        return {"base_url": settings.base_url}
-    assert_never(settings)
-
-
-def _settings_from_json(
-    provider_type: ProviderType,
-    settings: Mapping[str, Any],
-) -> ProviderSettings:
-    if provider_type is ProviderType.OPENAI:
-        return OpenAISettings()
-    if provider_type is ProviderType.ANTHROPIC:
-        return AnthropicSettings()
-    if provider_type is ProviderType.GEMINI:
-        return GeminiSettings()
-    if provider_type is ProviderType.AZURE_OPENAI:
-        return AzureOpenAISettings(
-            endpoint=settings["endpoint"],
-            api_version=settings["api_version"],
-        )
-    if provider_type is ProviderType.OPENAI_COMPATIBLE:
-        return OpenAICompatibleSettings(base_url=settings["base_url"])
-    assert_never(provider_type)
 
 
 def _credential_value(reference: CredentialReference | None) -> UUID | None:

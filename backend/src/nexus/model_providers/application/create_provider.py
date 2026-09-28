@@ -11,7 +11,6 @@ from nexus.model_providers.application._shared import (
     NOT_FOUND,
     authorize,
     conflict,
-    provider_settings,
     unavailable,
 )
 from nexus.model_providers.domain import (
@@ -19,6 +18,7 @@ from nexus.model_providers.domain import (
     ModelProviderConfigurationError,
     OrganizationProviderId,
     ProviderType,
+    provider_settings_from_mapping,
 )
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
@@ -55,7 +55,7 @@ class CreateModelProvider:
                 provider_id=OrganizationProviderId(uuid4()),
                 provider_type=provider_type,
                 display_name=display_name,
-                settings=provider_settings(provider_type, settings),
+                settings=provider_settings_from_mapping(provider_type, settings),
                 enabled=enabled,
             )
             await self.persistence.create_provider(provider)
