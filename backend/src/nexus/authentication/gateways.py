@@ -37,17 +37,6 @@ class AuthenticationEmailGateway(Protocol):
         """Send a post-signup welcome email."""
 
 
-class RateLimitError(Exception):
-    """Raised when the rate limiter cannot make a safe decision."""
-
-
-class RateLimiter(Protocol):
-    """Decide whether an authentication action is allowed."""
-
-    async def allow(self, *, key: str, limit: int, window_seconds: int) -> bool:
-        """Return whether the key is allowed within the configured window."""
-
-
 @dataclass(frozen=True)
 class AccessTokenClaims:
     """Public identities encoded in an access token."""

@@ -15,6 +15,10 @@ from nexus.model_providers.application.set_provider_enabled import (
     SetModelProviderEnabled,
 )
 from nexus.model_providers.application.update_provider import UpdateModelProvider
+from nexus.model_providers.application.validate_provider import (
+    ProviderValidationPolicy,
+    ValidateModelProvider,
+)
 
 __all__ = [
     "CreateModelProvider",
@@ -23,7 +27,9 @@ __all__ = [
     "ListModelProviders",
     "ListProviderCatalog",
     "ProviderCatalogItem",
+    "ProviderValidationPolicy",
     "SetModelProviderCredential",
     "SetModelProviderEnabled",
     "UpdateModelProvider",
+    "ValidateModelProvider",
 ]

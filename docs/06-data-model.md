@@ -1064,6 +1064,8 @@ display_name
 settings_json
 credential_reference (nullable opaque UUID)
 enabled
+validation_status
+last_validated_at (nullable)
 created_at
 updated_at
 ```
@@ -1109,6 +1111,12 @@ retain it.
 Provider configuration and enabled-state mutations merge only their requested
 fields into the authoritative provider loaded under the organization lock.
 Omitted configuration fields retain their current stored values.
+
+`validation_status` is one of `unvalidated`, `valid`, `invalid_credentials`,
+`unreachable`, or `unsupported_configuration`. `unvalidated` requires a null
+timestamp; terminal states require a database-generated timestamp. Credential
+or settings changes reset validation, while display-name and enabled-state
+changes preserve it. This stores only current state, not validation history.
 
 ---
 

@@ -13,15 +13,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.infrastructure.persistence import _model_provider_queries as queries
 from nexus.model_providers.domain import (
+    TERMINAL_PROVIDER_VALIDATION_STATUSES,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
     DefaultModelSelection,
+    ModelProviderConfigurationError,
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderSettings,
+    ProviderValidationStatus,
     provider_endpoint_url,
 )
 from nexus.model_providers.ports import (
@@ -126,6 +129,7 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 ),
                 settings=existing.settings if settings is None else settings,
             )
+            settings_changed = replacement.settings != existing.settings
             url_changed = provider_endpoint_url(
                 existing.settings
             ) != provider_endpoint_url(replacement.settings)
@@ -134,6 +138,14 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 replacement,
                 credential_reference=(
                     None if url_changed else existing.credential_reference
+                ),
+                validation_status=(
+                    ProviderValidationStatus.UNVALIDATED
+                    if settings_changed
+                    else existing.validation_status
+                ),
+                last_validated_at=(
+                    None if settings_changed else existing.last_validated_at
                 ),
             )
             updated = _replace_provider(current, replacement)
@@ -204,7 +216,19 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 raise ModelProviderConflictError(
                     "Provider credential configuration changed"
                 )
-            provider = replace(existing, credential_reference=credential_reference)
+            credential_changed = credential_reference != existing.credential_reference
+            provider = replace(
+                existing,
+                credential_reference=credential_reference,
+                validation_status=(
+                    ProviderValidationStatus.UNVALIDATED
+                    if credential_changed
+                    else existing.validation_status
+                ),
+                last_validated_at=(
+                    None if credential_changed else existing.last_validated_at
+                ),
+            )
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
                 providers=_replace_provider(current, provider),
@@ -218,6 +242,46 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
             ):
                 raise ModelProviderReferenceError("Configured provider was not found")
             return provider
+
+        return await self._run_transaction(update)
+
+    async def record_provider_validation(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        expected_settings: ProviderSettings,
+        expected_credential_reference: CredentialReference | None,
+        status: ProviderValidationStatus,
+    ) -> ConfiguredProvider:
+        async def update(session: AsyncSession) -> ConfiguredProvider:
+            organization_id, current = await self._locked_configuration(
+                session,
+                organization_public_id,
+            )
+            existing = _find_provider(current, provider_id)
+            if (
+                existing.settings != expected_settings
+                or existing.credential_reference != expected_credential_reference
+            ):
+                raise ModelProviderConflictError("Provider validation target changed")
+            if status not in TERMINAL_PROVIDER_VALIDATION_STATUSES:
+                raise ModelProviderConfigurationError(
+                    "Provider validation result is invalid."
+                )
+            validated_at = await queries.record_provider_validation(
+                session,
+                organization_id=organization_id,
+                provider_id=provider_id,
+                status=status,
+            )
+            if validated_at is None:
+                raise ModelProviderReferenceError("Configured provider was not found")
+            return replace(
+                existing,
+                validation_status=status,
+                last_validated_at=validated_at,
+            )
 
         return await self._run_transaction(update)
 

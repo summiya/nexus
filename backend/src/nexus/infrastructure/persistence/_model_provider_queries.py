@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -29,6 +30,7 @@ from nexus.model_providers.domain import (
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderType,
+    ProviderValidationStatus,
     provider_settings_from_mapping,
     provider_settings_to_mapping,
 )
@@ -136,6 +138,8 @@ async def insert_provider(
             settings_json=provider_settings_to_mapping(provider.settings),
             credential_reference=_credential_value(provider.credential_reference),
             enabled=provider.enabled,
+            validation_status=provider.validation_status.value,
+            last_validated_at=provider.last_validated_at,
         )
     )
     await session.flush()
@@ -159,8 +163,33 @@ async def update_provider(
     record.settings_json = provider_settings_to_mapping(provider.settings)
     record.credential_reference = _credential_value(provider.credential_reference)
     record.enabled = provider.enabled
+    record.validation_status = provider.validation_status.value
+    record.last_validated_at = provider.last_validated_at
     await session.flush()
     return True
+
+
+async def record_provider_validation(
+    session: AsyncSession,
+    *,
+    organization_id: int,
+    provider_id: OrganizationProviderId,
+    status: ProviderValidationStatus,
+) -> datetime | None:
+    record = await _provider_record(
+        session,
+        organization_id=organization_id,
+        provider_id=provider_id,
+    )
+    if record is None:
+        return None
+    validated_at = await session.scalar(select(func.now()))
+    if validated_at is None:  # pragma: no cover - PostgreSQL now() is non-null
+        return None
+    record.validation_status = status.value
+    record.last_validated_at = validated_at
+    await session.flush()
+    return validated_at
 
 
 async def delete_provider(
@@ -347,6 +376,8 @@ def _to_provider(
             else None
         ),
         enabled=record.enabled,
+        validation_status=ProviderValidationStatus(record.validation_status),
+        last_validated_at=record.last_validated_at,
     )
 
 

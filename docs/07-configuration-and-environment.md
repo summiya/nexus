@@ -173,6 +173,13 @@ When a backend setting is added, update all of the following where applicable:
 
 Model allowlists and Conversation limits are configuration and must be forwarded to the backend container just like database and authentication values.
 
+Provider validation uses one overall timeout plus two Redis-backed limits:
+`MODEL_PROVIDER_VALIDATION_TIMEOUT_SECONDS`, the per-provider request/window
+settings, and the organization-wide request/window settings. The default policy
+is one attempt per provider per five seconds and twenty attempts per
+organization per minute. These values configure application behavior only and
+contain no provider credentials.
+
 ---
 
 ## 9. Frontend configuration

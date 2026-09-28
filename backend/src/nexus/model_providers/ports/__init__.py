@@ -15,6 +15,7 @@ from nexus.model_providers.ports.persistence import (
     ModelProviderReferenceError,
     ProviderUpdateResult,
 )
+from nexus.model_providers.ports.validation import ProviderConfigurationValidator
 
 __all__ = [
     "CredentialNotFoundError",
@@ -26,6 +27,7 @@ __all__ = [
     "ModelProviderPersistence",
     "ModelProviderPersistenceError",
     "ModelProviderReferenceError",
+    "ProviderConfigurationValidator",
     "ProviderUpdateResult",
     "credential_storage_name",
 ]

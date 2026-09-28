@@ -14,6 +14,7 @@ from nexus.model_providers.application import (
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
+    ValidateModelProvider,
 )
 
 
@@ -51,6 +52,10 @@ def get_provider_deleter(container: AppContainerDep) -> DeleteModelProvider:
     return container.model_providers.delete_provider
 
 
+def get_provider_validator(container: AppContainerDep) -> ValidateModelProvider:
+    return container.model_providers.validate_provider
+
+
 ProviderCatalogDep = Annotated[ListProviderCatalog, Depends(get_provider_catalog)]
 ProviderListDep = Annotated[ListModelProviders, Depends(get_provider_list)]
 ProviderDep = Annotated[GetModelProvider, Depends(get_provider)]
@@ -63,6 +68,7 @@ ProviderCredentialSetterDep = Annotated[
     SetModelProviderCredential, Depends(get_provider_credential_setter)
 ]
 ProviderDeleterDep = Annotated[DeleteModelProvider, Depends(get_provider_deleter)]
+ProviderValidatorDep = Annotated[ValidateModelProvider, Depends(get_provider_validator)]
 
 
 __all__ = [
@@ -74,4 +80,5 @@ __all__ = [
     "ProviderEnabledSetterDep",
     "ProviderListDep",
     "ProviderUpdaterDep",
+    "ProviderValidatorDep",
 ]

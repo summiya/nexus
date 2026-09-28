@@ -9,7 +9,7 @@ from typing import cast
 from redis import Redis
 from redis.exceptions import RedisError
 
-from nexus.authentication.gateways import RateLimitError
+from nexus.ports.rate_limit import RateLimitError
 
 _FIXED_WINDOW_RATE_LIMIT_SCRIPT = """
 local current = redis.call("INCR", KEYS[1])

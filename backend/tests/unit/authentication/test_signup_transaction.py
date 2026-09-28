@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from nexus.authentication.gateways import AuthenticationEmailGateway, RateLimiter
+from nexus.authentication.gateways import AuthenticationEmailGateway
 from nexus.authentication.repository import (
     AuthenticationIdentity,
     AuthenticationRepository,
@@ -21,6 +21,7 @@ from nexus.authentication.signup_service import (
     SignupVerificationRequest,
     digest_otp,
 )
+from nexus.ports.rate_limit import RateLimiter
 from nexus.ports.transaction import TransactionManager
 
 NOW = datetime(2026, 9, 21, tzinfo=UTC)

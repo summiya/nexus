@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from nexus.authentication.gateways import RateLimiter
 from nexus.composition.authentication import (
     AuthenticationComposition,
     build_authentication_composition,
@@ -42,7 +41,8 @@ from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.llm.application import ModelPolicy
 from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
 from nexus.llm.ports import LLMGateway
-from nexus.model_providers.ports import CredentialStore
+from nexus.model_providers.ports import CredentialStore, ProviderConfigurationValidator
+from nexus.ports.rate_limit import RateLimiter
 
 
 @dataclass(frozen=True)
@@ -142,6 +142,7 @@ async def build_app_container(
     upload_grant_issuer: UploadGrantIssuer | None = None,
     download_grant_issuer: DownloadGrantIssuer | None = None,
     credential_store: CredentialStore | None = None,
+    provider_configuration_validator: ProviderConfigurationValidator | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
@@ -190,8 +191,11 @@ async def build_app_container(
             credential_store=credential_store,
         )
         model_providers = build_model_provider_composition(
+            app_settings=app_settings,
             session_factory=resolved_database.session_factory,
             credential_store=provider_credentials.store,
+            rate_limiter=authentication.rate_limiter,
+            validator=provider_configuration_validator,
         )
         files = build_file_composition(
             app_settings,

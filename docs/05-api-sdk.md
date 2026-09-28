@@ -2894,6 +2894,7 @@ POST   /api/v1/model-providers
 PUT    /api/v1/model-providers/{provider_public_id}
 PATCH  /api/v1/model-providers/{provider_public_id}/enabled
 PUT    /api/v1/model-providers/{provider_public_id}/credential
+POST   /api/v1/model-providers/{provider_public_id}/validate
 DELETE /api/v1/model-providers/{provider_public_id}
 ```
 
@@ -2901,7 +2902,8 @@ Catalog and configured-provider reads require `model_providers.read`.
 Mutations require `model_providers.manage`. Organization and actor identity
 come exclusively from the authenticated context. Provider read responses
 contain only public ID, provider type, display name, non-secret settings,
-enabled state, and `credential_configured`; credential references, storage
+enabled state, `credential_configured`, `validation_status`, and
+`last_validated_at`; credential references, storage
 locators, and plaintext never leave the backend.
 
 The credential endpoint is write-only. Replacement creates a new opaque
@@ -2915,6 +2917,14 @@ update: `display_name` and `settings` are optional, at least one must be
 provided, and omitted fields retain their authoritative stored values. Clients
 must send only fields the administrator changed; they must not resubmit an
 unchanged settings snapshot from a potentially stale form.
+
+`POST /api/v1/model-providers/{provider_public_id}/validate` requires
+`model_providers.manage`, accepts no body, and returns the normalized status and
+validation timestamp. Invalid credentials, temporary provider unavailability,
+and unsupported configuration are successful validation-operation results.
+Authorization, rate-limit, credential-store, persistence, and stale-result
+failures use the normal Nexus error envelope. Validation is limited both per
+provider and per organization.
 
 ---
 

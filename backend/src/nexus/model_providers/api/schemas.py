@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from nexus.model_providers.domain import (
     MAX_PROVIDER_CREDENTIAL_SECRET_BYTES,
     ProviderType,
+    ProviderValidationStatus,
 )
 from nexus.model_providers.domain.validation import MAX_DISPLAY_NAME_LENGTH
 
@@ -36,6 +38,8 @@ class ConfiguredProviderResponseBody(BaseModel):
     settings: dict[str, str]
     enabled: bool
     credential_configured: bool
+    validation_status: ProviderValidationStatus
+    last_validated_at: datetime | None
 
 
 class ListConfiguredProvidersResponseBody(BaseModel):
@@ -92,6 +96,13 @@ class ProviderCredentialStateResponseBody(BaseModel):
     credential_configured: bool
 
 
+class ProviderValidationResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: ProviderValidationStatus
+    last_validated_at: datetime
+
+
 __all__ = [
     "ConfiguredProviderResponseBody",
     "CreateProviderRequestBody",
@@ -99,6 +110,7 @@ __all__ = [
     "ProviderCatalogItemResponseBody",
     "ProviderCatalogResponseBody",
     "ProviderCredentialStateResponseBody",
+    "ProviderValidationResponseBody",
     "SetProviderCredentialRequestBody",
     "SetProviderEnabledRequestBody",
     "UpdateProviderRequestBody",

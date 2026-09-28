@@ -11,6 +11,7 @@ from sqlalchemy import Engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 PREVIOUS_HEAD = "20260926_0011"
+VALIDATION_PREVIOUS_HEAD = "20260928_0012"
 
 
 def _organization(connection: sa.Connection, slug: str) -> int:
@@ -142,6 +143,82 @@ def test_upgrade_creates_tenant_safe_model_provider_schema(
         "model_type",
         "configured_model_id",
     ]
+
+
+def test_validation_migration_defaults_existing_providers_to_unvalidated(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, VALIDATION_PREVIOUS_HEAD)
+    with engine.begin() as connection:
+        organization_id = _organization(connection, "validation-migration")
+        provider_id = _provider(
+            connection,
+            organization_id=organization_id,
+            display_name="Existing provider",
+        )
+
+    command.upgrade(config, "head")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT validation_status, last_validated_at "
+                "FROM model_providers WHERE id = :provider_id"
+            ),
+            {"provider_id": provider_id},
+        ).one()
+        assert row.validation_status == "unvalidated"
+        assert row.last_validated_at is None
+
+
+def test_validation_constraints_reject_invalid_status_timestamp_combinations(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, "head")
+    with engine.begin() as connection:
+        organization_id = _organization(connection, "validation-constraints")
+        provider_id = _provider(
+            connection,
+            organization_id=organization_id,
+            display_name="Provider",
+        )
+        _expect_integrity(
+            connection,
+            lambda: connection.execute(
+                text(
+                    "UPDATE model_providers SET validation_status = 'invalid' "
+                    "WHERE id = :provider_id"
+                ),
+                {"provider_id": provider_id},
+            ),
+        )
+        _expect_integrity(
+            connection,
+            lambda: connection.execute(
+                text(
+                    "UPDATE model_providers SET validation_status = 'valid' "
+                    "WHERE id = :provider_id"
+                ),
+                {"provider_id": provider_id},
+            ),
+        )
+
+
+def test_validation_migration_downgrade_removes_validation_columns(
+    migrated_database: tuple[Config, Engine],
+) -> None:
+    config, engine = migrated_database
+    command.upgrade(config, "head")
+
+    command.downgrade(config, VALIDATION_PREVIOUS_HEAD)
+
+    columns = {
+        column["name"] for column in inspect(engine).get_columns("model_providers")
+    }
+    assert "validation_status" not in columns
+    assert "last_validated_at" not in columns
 
 
 def test_database_rejects_reused_non_null_credential_reference(

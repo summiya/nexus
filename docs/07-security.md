@@ -1324,10 +1324,15 @@ Changing an Azure OpenAI endpoint or OpenAI-compatible base URL invalidates the
 stored credential reference so an administrator cannot redirect a write-only
 credential to a different server. Domain URL validation is intentionally
 syntax-only to preserve future explicitly authorized private-provider support.
-Before Phase 5 makes provider calls, its outbound boundary must resolve and
-revalidate every address and default to globally routable addresses only,
+Provider validation resolves every address within the same overall timeout as
+the connection and response-header operation and defaults to globally routable addresses only,
 including protection against alternate IP encodings, mapped IPv6, metadata
-addresses, shared address space, and DNS rebinding. Phase 8 runtime calls must
+addresses, shared address space, and DNS rebinding. The connection is pinned to
+an approved address while preserving the original TLS/Host identity;
+environment proxies and redirects are disabled. Credentials are sent only in
+headers, response bodies are never parsed, and generic `403` responses are not
+assumed to prove an invalid credential because Azure OpenAI firewall policy can
+also return that status. Phase 8 runtime calls must
 retain that enforcement.
 
 Before unrestricted production use, restrict Key Vault networking/private

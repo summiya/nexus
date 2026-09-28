@@ -43,6 +43,7 @@ from nexus.model_providers.domain import (
     OrganizationProviderId,
     ProviderSettings,
     ProviderType,
+    ProviderValidationStatus,
 )
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
@@ -378,6 +379,184 @@ def test_provider_credential_reference_compare_and_set_rejects_stale_reference(
     )
     assert configuration is not None
     assert configuration.providers[0].credential_reference == winning_reference
+
+
+def test_validation_round_trips_and_connection_changes_reset_it(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = replace(
+        _provider(organization_public_id, credential_reference=reference),
+        provider_type=ProviderType.AZURE_OPENAI,
+        settings=AzureOpenAISettings(
+            endpoint="https://models.example.com",
+            api_version="2026-01-01",
+        ),
+    )
+    asyncio.run(persistence.create_provider(provider))
+
+    validated = asyncio.run(
+        persistence.record_provider_validation(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            expected_settings=provider.settings,
+            expected_credential_reference=reference,
+            status=ProviderValidationStatus.VALID,
+        )
+    )
+
+    assert validated.validation_status is ProviderValidationStatus.VALID
+    assert validated.last_validated_at is not None
+    updated = asyncio.run(
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name=None,
+            settings=AzureOpenAISettings(
+                endpoint="https://models.example.com",
+                api_version="2026-02-01",
+            ),
+        )
+    ).provider
+    assert updated.validation_status is ProviderValidationStatus.UNVALIDATED
+    assert updated.last_validated_at is None
+
+
+def test_display_and_enabled_changes_preserve_validation(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(
+        organization_public_id,
+        credential_reference=reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+    validated = asyncio.run(
+        persistence.record_provider_validation(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            expected_settings=provider.settings,
+            expected_credential_reference=reference,
+            status=ProviderValidationStatus.VALID,
+        )
+    )
+
+    renamed = asyncio.run(
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name="Renamed",
+            settings=None,
+        )
+    ).provider
+    disabled = asyncio.run(
+        persistence.set_provider_enabled(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            enabled=False,
+        )
+    )
+
+    assert renamed.validation_status is ProviderValidationStatus.VALID
+    assert renamed.last_validated_at == validated.last_validated_at
+    assert disabled.validation_status is ProviderValidationStatus.VALID
+    assert disabled.last_validated_at == validated.last_validated_at
+
+
+def test_stale_validation_result_cannot_validate_new_credential(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    old_reference = CredentialReference(uuid4())
+    new_reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(
+        organization_public_id,
+        credential_reference=old_reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(
+        persistence.set_provider_credential_reference(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            expected_credential_reference=old_reference,
+            credential_reference=new_reference,
+        )
+    )
+
+    with pytest.raises(ModelProviderConflictError):
+        asyncio.run(
+            persistence.record_provider_validation(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                expected_settings=provider.settings,
+                expected_credential_reference=old_reference,
+                status=ProviderValidationStatus.VALID,
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers[0].credential_reference == new_reference
+    assert (
+        configuration.providers[0].validation_status
+        is ProviderValidationStatus.UNVALIDATED
+    )
+
+
+def test_concurrent_validation_and_credential_change_never_leave_new_credential_valid(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    old_reference = CredentialReference(uuid4())
+    new_reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(
+        organization_public_id,
+        credential_reference=old_reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+
+    async def race() -> tuple[object, object]:
+        results = await asyncio.gather(
+            persistence.record_provider_validation(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                expected_settings=provider.settings,
+                expected_credential_reference=old_reference,
+                status=ProviderValidationStatus.VALID,
+            ),
+            persistence.set_provider_credential_reference(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                expected_credential_reference=old_reference,
+                credential_reference=new_reference,
+            ),
+            return_exceptions=True,
+        )
+        return results[0], results[1]
+
+    _validation_result, credential_result = asyncio.run(race())
+
+    assert isinstance(credential_result, ConfiguredProvider)
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    current = configuration.providers[0]
+    assert current.credential_reference == new_reference
+    assert current.validation_status is ProviderValidationStatus.UNVALIDATED
+    assert current.last_validated_at is None
 
 
 def test_concurrent_credential_reference_switch_allows_exactly_one_winner(

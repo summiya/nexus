@@ -15,6 +15,7 @@ from nexus.model_providers.api.dependencies import (
     ProviderEnabledSetterDep,
     ProviderListDep,
     ProviderUpdaterDep,
+    ProviderValidatorDep,
 )
 from nexus.model_providers.api.schemas import (
     ConfiguredProviderResponseBody,
@@ -23,6 +24,7 @@ from nexus.model_providers.api.schemas import (
     ProviderCatalogItemResponseBody,
     ProviderCatalogResponseBody,
     ProviderCredentialStateResponseBody,
+    ProviderValidationResponseBody,
     SetProviderCredentialRequestBody,
     SetProviderEnabledRequestBody,
     UpdateProviderRequestBody,
@@ -181,6 +183,30 @@ async def set_configured_provider_credential(
     )
 
 
+@router.post(
+    "/{provider_public_id}/validate",
+    response_model=ProviderValidationResponseBody,
+)
+async def validate_configured_provider(
+    provider_public_id: UUID,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderValidatorDep,
+) -> ProviderValidationResponseBody:
+    provider = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+    )
+    if provider.last_validated_at is None:  # guarded by the domain contract
+        raise RuntimeError("Recorded provider validation has no timestamp")
+    response.headers["Cache-Control"] = "no-store"
+    return ProviderValidationResponseBody(
+        status=provider.validation_status,
+        last_validated_at=provider.last_validated_at,
+    )
+
+
 @router.delete("/{provider_public_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_configured_provider(
     provider_public_id: UUID,
@@ -203,6 +229,8 @@ def _to_response(provider: ConfiguredProvider) -> ConfiguredProviderResponseBody
         settings=provider_settings_to_mapping(provider.settings),
         enabled=provider.enabled,
         credential_configured=provider.credential_reference is not None,
+        validation_status=provider.validation_status,
+        last_validated_at=provider.last_validated_at,
     )
 
 
