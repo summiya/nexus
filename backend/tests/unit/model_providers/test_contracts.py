@@ -15,10 +15,10 @@ from nexus.model_providers.domain import (
     DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
-    OrganizationModelProviderConfiguration,
     ModelType,
     OpenAICompatibleSettings,
     OpenAISettings,
+    OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderType,
 )
