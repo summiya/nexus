@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
+from nexus.model_providers.domain.errors import ModelProviderConfigurationError
 from nexus.model_providers.domain.validation import (
     MAX_API_VERSION_LENGTH,
     MAX_DISPLAY_NAME_LENGTH,
@@ -30,7 +31,7 @@ class ProviderType(StrEnum):
 
     @classmethod
     def _missing_(cls, value: object) -> ProviderType:
-        raise ValueError("Unknown provider type.")
+        raise ModelProviderConfigurationError("Unknown provider type.")
 
 
 class ModelType(StrEnum):
@@ -40,7 +41,7 @@ class ModelType(StrEnum):
 
     @classmethod
     def _missing_(cls, value: object) -> ModelType:
-        raise ValueError("Unknown model type.")
+        raise ModelProviderConfigurationError("Unknown model type.")
 
 
 class ModelCapability(StrEnum):
@@ -51,7 +52,7 @@ class ModelCapability(StrEnum):
 
     @classmethod
     def _missing_(cls, value: object) -> ModelCapability:
-        raise ValueError("Unknown model capability.")
+        raise ModelProviderConfigurationError("Unknown model capability.")
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class OrganizationProviderId:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise TypeError("Configured provider identifier is invalid.")
+            raise ModelProviderConfigurationError("Configured provider identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -72,7 +73,7 @@ class ConfiguredModelId:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise TypeError("Configured model identifier is invalid.")
+            raise ModelProviderConfigurationError("Configured model identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -86,7 +87,7 @@ class CredentialReference:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise TypeError("Credential reference is invalid.")
+            raise ModelProviderConfigurationError("Credential reference is invalid.")
 
     def __repr__(self) -> str:
         return "CredentialReference(<redacted>)"
@@ -176,16 +177,18 @@ class ConfiguredProvider:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise TypeError("Organization identifier is invalid.")
+            raise ModelProviderConfigurationError("Organization identifier is invalid.")
         if not isinstance(self.provider_id, OrganizationProviderId):
-            raise TypeError("Configured provider identifier is invalid.")
+            raise ModelProviderConfigurationError("Configured provider identifier is invalid.")
         if not isinstance(self.provider_type, ProviderType):
-            raise TypeError("Unknown provider type.")
+            raise ModelProviderConfigurationError("Unknown provider type.")
+        if type(self.enabled) is not bool:
+            raise ModelProviderConfigurationError("Provider enabled flag must be a bool.")
         if self.credential_reference is not None and not isinstance(
             self.credential_reference,
             CredentialReference,
         ):
-            raise TypeError("Credential reference is invalid.")
+            raise ModelProviderConfigurationError("Credential reference is invalid.")
         object.__setattr__(
             self,
             "display_name",
@@ -197,7 +200,7 @@ class ConfiguredProvider:
         )
         expected = _EXPECTED_SETTINGS[self.provider_type]
         if not isinstance(self.settings, expected):
-            raise TypeError("Provider settings do not match provider type.")
+            raise ModelProviderConfigurationError("Provider settings do not match provider type.")
 
 
 @dataclass(frozen=True)
@@ -221,18 +224,20 @@ class ConfiguredModel:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise TypeError("Organization identifier is invalid.")
+            raise ModelProviderConfigurationError("Organization identifier is invalid.")
         if not isinstance(self.model_id, ConfiguredModelId):
-            raise TypeError("Configured model identifier is invalid.")
+            raise ModelProviderConfigurationError("Configured model identifier is invalid.")
         if not isinstance(self.provider_id, OrganizationProviderId):
-            raise TypeError("Configured provider identifier is invalid.")
+            raise ModelProviderConfigurationError("Configured provider identifier is invalid.")
         if not isinstance(self.model_type, ModelType):
-            raise TypeError("Unknown model type.")
+            raise ModelProviderConfigurationError("Unknown model type.")
+        if type(self.enabled) is not bool:
+            raise ModelProviderConfigurationError("Model enabled flag must be a bool.")
         if any(
             not isinstance(capability, ModelCapability)
             for capability in self.capabilities
         ):
-            raise TypeError("Unknown model capability.")
+            raise ModelProviderConfigurationError("Unknown model capability.")
         object.__setattr__(
             self,
             "provider_model_name",
@@ -257,21 +262,26 @@ class ConfiguredModel:
     def _validate_type_contract(self) -> None:
         if self.model_type is ModelType.CHAT:
             if self.embedding_dimension is not None:
-                raise ValueError("Chat models cannot declare an embedding dimension.")
+                raise ModelProviderConfigurationError("Chat models cannot declare an embedding dimension.")
             return
 
         if self.capabilities:
-            raise ValueError(
+            raise ModelProviderConfigurationError(
                 f"{self.model_type.value.capitalize()} models cannot declare chat capabilities."
             )
 
         if self.model_type is ModelType.EMBEDDING:
-            if self.embedding_dimension is None or self.embedding_dimension <= 0:
-                raise ValueError("Embedding dimension must be positive.")
+            if (
+                type(self.embedding_dimension) is not int
+                or self.embedding_dimension <= 0
+            ):
+                raise ModelProviderConfigurationError(
+                    "Embedding dimension must be a positive integer."
+                )
             return
 
         if self.embedding_dimension is not None:
-            raise ValueError("Reranker models cannot declare an embedding dimension.")
+            raise ModelProviderConfigurationError("Reranker models cannot declare an embedding dimension.")
 
 
 @dataclass(frozen=True)
@@ -285,11 +295,11 @@ class DefaultModelSelection:
             value is not None and not isinstance(value, ConfiguredModelId)
             for value in (self.chat, self.embedding, self.reranker)
         ):
-            raise ValueError("Default model identifier is invalid.")
+            raise ModelProviderConfigurationError("Default model identifier is invalid.")
 
     def for_type(self, model_type: ModelType) -> ConfiguredModelId | None:
         if not isinstance(model_type, ModelType):
-            raise TypeError("Unknown model type.")
+            raise ModelProviderConfigurationError("Unknown model type.")
         if model_type is ModelType.CHAT:
             return self.chat
         if model_type is ModelType.EMBEDDING:
@@ -308,36 +318,36 @@ class OrganizationModelProviderConfiguration:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise TypeError("Organization identifier is invalid.")
+            raise ModelProviderConfigurationError("Organization identifier is invalid.")
         if not isinstance(self.defaults, DefaultModelSelection):
-            raise TypeError("Default model selection is invalid.")
+            raise ModelProviderConfigurationError("Default model selection is invalid.")
         object.__setattr__(self, "providers", tuple(self.providers))
         object.__setattr__(self, "models", tuple(self.models))
         if any(
             not isinstance(provider, ConfiguredProvider) for provider in self.providers
         ):
-            raise TypeError("Configured provider is invalid.")
+            raise ModelProviderConfigurationError("Configured provider is invalid.")
         if any(not isinstance(model, ConfiguredModel) for model in self.models):
-            raise TypeError("Configured model is invalid.")
+            raise ModelProviderConfigurationError("Configured model is invalid.")
         self._validate()
 
     def _validate(self) -> None:
         providers: dict[OrganizationProviderId, ConfiguredProvider] = {}
         for provider in self.providers:
             if provider.organization_public_id != self.organization_public_id:
-                raise ValueError("Provider belongs to a different organization.")
+                raise ModelProviderConfigurationError("Provider belongs to a different organization.")
             if provider.provider_id in providers:
-                raise ValueError("Configured provider identifier must be unique.")
+                raise ModelProviderConfigurationError("Configured provider identifier must be unique.")
             providers[provider.provider_id] = provider
 
         models: dict[ConfiguredModelId, ConfiguredModel] = {}
         for model in self.models:
             if model.organization_public_id != self.organization_public_id:
-                raise ValueError("Model belongs to a different organization.")
+                raise ModelProviderConfigurationError("Model belongs to a different organization.")
             if model.model_id in models:
-                raise ValueError("Configured model identifier must be unique.")
+                raise ModelProviderConfigurationError("Configured model identifier must be unique.")
             if model.provider_id not in providers:
-                raise ValueError("Configured model references an unknown provider.")
+                raise ModelProviderConfigurationError("Configured model references an unknown provider.")
             models[model.model_id] = model
 
         self._validate_default(
@@ -372,21 +382,21 @@ class OrganizationModelProviderConfiguration:
 
         model = models.get(model_id)
         if model is None:
-            raise ValueError("Default model does not exist.")
+            raise ModelProviderConfigurationError("Default model does not exist.")
         if not model.enabled:
-            raise ValueError("Default model must be enabled.")
+            raise ModelProviderConfigurationError("Default model must be enabled.")
         if model.model_type is not selected_type:
-            raise ValueError("Default model type does not match selection.")
+            raise ModelProviderConfigurationError("Default model type does not match selection.")
 
         provider = providers[model.provider_id]
         if not provider.enabled:
-            raise ValueError("Default model provider must be enabled.")
+            raise ModelProviderConfigurationError("Default model provider must be enabled.")
 
         if (
             selected_type is ModelType.CHAT
             and ModelCapability.STREAMING not in model.capabilities
         ):
-            raise ValueError("Default chat model must support streaming.")
+            raise ModelProviderConfigurationError("Default chat model must support streaming.")
 
 
 __all__ = [
