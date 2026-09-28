@@ -14,4 +14,6 @@ PERMISSION_CATALOG: dict[str, str] = {
     "files.read": "View files",
     "files.upload": "Upload files",
     "files.delete": "Delete files",
+    "model_providers.read": "View model provider configuration",
+    "model_providers.manage": "Manage model provider configuration",
 }

@@ -105,5 +105,7 @@ def test_initial_permission_catalog_contains_expected_keys() -> None:
         "files.read",
         "files.upload",
         "files.delete",
+        "model_providers.read",
+        "model_providers.manage",
     }
     assert all(description for description in PERMISSION_CATALOG.values())

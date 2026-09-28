@@ -1023,11 +1023,11 @@ Cross-project knowledge sharing requires explicit authorization and should not b
 
 ---
 
-# 23. Entity: Provider
+# 23. Entity: ModelProvider
 
 ## Purpose
 
-Represents an AI/inference provider.
+Represents one organization-owned, non-secret AI provider configuration.
 
 Examples:
 
@@ -1043,79 +1043,101 @@ other compatible provider
 ## Fields
 
 ```text
-id
+id (internal)
+public_id
 organization_id
-name
 provider_type
-base_url
-credential_ref
-status
-configuration_json
+display_name
+settings_json
+credential_reference (nullable opaque UUID)
+enabled
 created_at
 updated_at
-deleted_at
 ```
+
+`settings_json` is strictly provider-specific and non-secret:
+
+```text
+OpenAI / Anthropic / Gemini → {}
+Azure OpenAI               → endpoint, api_version
+OpenAI-compatible          → base_url
+```
+
+An organization may configure multiple instances of the same provider type.
+Provider display names are unique within the organization. A non-null
+`credential_reference` is globally unique so two providers cannot claim the
+same external stored credential.
 
 ## Security
 
-Never store API secrets directly in this table.
+Never store API secrets directly in this table or its JSON settings.
 
 Use:
 
 ```text
-credential_ref → Azure Key Vault
+credential_reference → external secret-management capability
 ```
 
 ---
 
-# 24. Entity: Model
+# 24. Entity: ConfiguredModel and OrganizationModelDefault
 
 ## Purpose
 
-Represents a selectable model exposed through a Provider.
+`ConfiguredModel` represents a selectable model exposed through one configured
+provider. `OrganizationModelDefault` selects at most one default per
+organization and model type.
 
 ## Fields
 
 ```text
-id
+id (internal)
+public_id
 organization_id
 provider_id
-name
-model_identifier
+provider_model_name
+display_name
 model_type
-context_window
-input_price
-output_price
-capabilities_json
-status
+capabilities
+embedding_dimension
+enabled
 created_at
 updated_at
-deleted_at
 ```
 
 ## Types
 
 ```text
 chat
-reasoning
 embedding
-vision
-audio
-image
 reranker
 ```
+
+Chat capabilities are stored as a sorted, de-duplicated PostgreSQL array with
+values from `streaming`, `tools`, `vision`, and `structured_output`.
+Embedding models require a positive dimension; chat and reranker models do not
+store one.
+
+The defaults table uses `(organization_id, model_type)` as its primary key and
+a composite foreign key to a configured model in the same organization with
+the same model type. Provider/model relationships are also protected by a
+composite organization foreign key. Deletion is restricted while dependent
+models or defaults remain.
 
 ## Relationships
 
 ```text
-Provider 1 ─── N Model
-Model 1 ─── N Message
-Model 1 ─── N UsageRecord
-Model 1 ─── N KnowledgeBase
-Model 1 ─── N Agent
+Organization 1 ─── N ModelProvider
+ModelProvider 1 ─── N ConfiguredModel
+Organization 1 ─── 0..3 OrganizationModelDefault
+OrganizationModelDefault N ─── 1 ConfiguredModel
 ```
 
-A Model record represents Nexus configuration, not the actual model weights.
+A configured model record represents Nexus configuration, not model weights.
+Every persistence mutation locks the organization row, rebuilds the complete
+post-change domain aggregate, and writes only when its defaults and enabled
+provider/model relationships remain valid. This serializes concurrent writes
+without exposing SQLAlchemy outside infrastructure.
 
 ---
 

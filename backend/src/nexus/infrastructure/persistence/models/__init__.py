@@ -5,6 +5,11 @@ from nexus.infrastructure.persistence.models.conversation import Conversation
 from nexus.infrastructure.persistence.models.file import File
 from nexus.infrastructure.persistence.models.generation import Generation
 from nexus.infrastructure.persistence.models.message import Message
+from nexus.infrastructure.persistence.models.model_provider import (
+    ConfiguredModel,
+    ModelProvider,
+    OrganizationModelDefault,
+)
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.otp_challenge import OtpChallenge
 from nexus.infrastructure.persistence.models.permission import Permission
@@ -15,11 +20,14 @@ from nexus.infrastructure.persistence.models.user_role import UserRole
 
 __all__ = [
     "AuthSession",
+    "ConfiguredModel",
     "Conversation",
     "File",
     "Generation",
     "Message",
+    "ModelProvider",
     "Organization",
+    "OrganizationModelDefault",
     "OtpChallenge",
     "Permission",
     "Role",
