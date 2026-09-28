@@ -15,7 +15,7 @@ from nexus.model_providers.domain import (
     DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
-    ModelProviderConfiguration,
+    OrganizationModelProviderConfiguration,
     ModelType,
     OpenAICompatibleSettings,
     OpenAISettings,
@@ -139,7 +139,7 @@ def test_multiple_providers_of_same_type_have_distinct_configured_identities() -
     first = _provider(organization_id=organization_id)
     second = _provider(organization_id=organization_id)
 
-    configuration = ModelProviderConfiguration(
+    configuration = OrganizationModelProviderConfiguration(
         organization_public_id=organization_id,
         providers=(first, second),
     )
@@ -188,7 +188,7 @@ def test_valid_model_construction_for_each_model_type(model_type: ModelType) -> 
 
 
 def test_credential_reference_never_exposes_locator_in_repr_or_str() -> None:
-    reference = CredentialReference("kv://org/provider/credential")
+    reference_id = uuid4()\n    reference = CredentialReference(reference_id)
 
     assert "kv://org/provider/credential" not in repr(reference)
     assert "kv://org/provider/credential" not in str(reference)
@@ -208,7 +208,7 @@ def test_configuration_defensively_freezes_sequences() -> None:
     provider = _provider(organization_id=organization_id)
     providers = [provider]
 
-    configuration = ModelProviderConfiguration(
+    configuration = OrganizationModelProviderConfiguration(
         organization_public_id=organization_id,
         providers=providers,
     )
@@ -236,7 +236,7 @@ def test_valid_defaults_reference_configured_model_ids() -> None:
         model_type=ModelType.RERANKER,
     )
 
-    configuration = ModelProviderConfiguration(
+    configuration = OrganizationModelProviderConfiguration(
         organization_public_id=organization_id,
         providers=(provider,),
         models=(chat, embedding, reranker),
