@@ -210,4 +210,3 @@ def test_contracts_are_frozen() -> None:
 
     with pytest.raises(FrozenInstanceError):
         message.content = "changed"  # type: ignore[misc]
-
