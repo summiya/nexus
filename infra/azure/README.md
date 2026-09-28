@@ -1,5 +1,25 @@
 # Nexus File Upload Event Routing
 
+## Provider credential Key Vault
+
+`provider-credentials.bicep` deploys the dedicated model-provider credential
+vault. The module explicitly enables Azure RBAC authorization, soft delete, and
+purge protection, and grants the existing Nexus API Managed Identity only the
+built-in Key Vault Secrets Officer role at vault scope. It does not create or
+store application credentials.
+
+Compile it through `make infra-check`, then deploy it at resource-group scope
+with reviewed values based on `provider-credentials.example.bicepparam`.
+Production supplies `AZURE_KEY_VAULT_URL` and optional user-assigned Managed
+Identity client ID through deployment configuration. Network restriction/private
+endpoints and Key Vault diagnostic audit logging are explicit production
+hardening follow-ups.
+
+The local Fernet adapter is not a production alternative. Generate its
+developer key outside source control using the command documented in
+`.env.example`; Docker Compose consumes that environment value and does not
+provide a usable default.
+
 This directory contains the EPIC 05 Phase 12 Azure infrastructure for routing
 committed Nexus File blobs into a durable queue. The worker is deployed as a
 separate process:

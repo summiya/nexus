@@ -292,6 +292,23 @@ Provider Adapter A  Provider Adapter B
 
 The rest of the platform must not depend on a specific model provider.
 
+### Provider credential storage boundary
+
+Provider credentials cross the application boundary only through the
+provider-neutral `CredentialStore` port. The safe domain value requires an
+explicit reveal operation and always redacts `str()` and `repr()`. Infrastructure
+may use a one-file-per-credential encrypted local adapter in explicit
+development/test environments, or Azure Key Vault with Managed Identity in
+production. The store is optional until a later runtime integration phase has a
+credential consumer; configuring a provider enables strict fail-closed startup
+validation.
+
+Credential storage names are a fixed prefix plus a SHA-256 digest of the
+organization, configured-provider, and credential-reference identities. The
+name is Key Vault-compatible, fixed length, and does not expose tenant IDs.
+Runtime provider credential resolution and any bounded caching belong to Phase
+8 or later runtime-integration work, not this storage-boundary phase.
+
 ---
 
 ## 5.3 Retrieval

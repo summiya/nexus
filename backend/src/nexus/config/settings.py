@@ -3,7 +3,13 @@ import binascii
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import Field, HttpUrl, SecretStr, ValidationInfo, field_validator
+from pydantic import (
+    Field,
+    HttpUrl,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -77,6 +83,25 @@ class Settings(BaseSettings):
     azure_storage_account_url: HttpUrl | None = None
     azure_storage_account_name: str | None = None
     azure_storage_managed_identity_client_id: UUID | None = None
+    credential_store_provider: str | None = None
+    local_credential_store_path: Path | None = None
+    local_credential_store_key: SecretStr | None = None
+    azure_key_vault_url: HttpUrl | None = None
+    azure_key_vault_managed_identity_client_id: UUID | None = None
+
+    @field_validator(
+        "credential_store_provider",
+        "local_credential_store_path",
+        "local_credential_store_key",
+        "azure_key_vault_url",
+        "azure_key_vault_managed_identity_client_id",
+        mode="before",
+    )
+    @classmethod
+    def blank_optional_credential_store_values(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("file_upload_context_key")
     @classmethod

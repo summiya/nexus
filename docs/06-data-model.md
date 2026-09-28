@@ -321,6 +321,19 @@ credential_ref
 
 but MUST NOT contain plaintext secret values.
 
+Provider credentials use three-part scope: organization public ID, configured
+provider ID, and opaque `CredentialReference`. The local development adapter
+persists one Fernet-encrypted file per derived opaque name. Production uses a
+dedicated Azure Key Vault through Managed Identity; plaintext is never stored
+in PostgreSQL.
+
+Key Vault `put` on an active reference creates a new secret version, and older
+versions remain retrievable. This replacement behavior is not the future
+rotation workflow. Rotation must create a new secret under a new
+`CredentialReference`, switch the configured provider to that reference, and
+then delete the old secret (all versions). A deleted reference cannot be reused
+while Key Vault soft-delete retention applies.
+
 ---
 
 # 8. Canonical Domain Hierarchy
@@ -1077,6 +1090,10 @@ Use:
 ```text
 credential_reference → external secret-management capability
 ```
+
+The external capability is optional in application composition until runtime
+credential use is implemented. A later consumer must fail closed if no
+credential store is configured.
 
 ---
 

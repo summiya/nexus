@@ -343,6 +343,8 @@ def test_application_state_exposes_only_the_root_container() -> None:
             "conversations",
             "storage",
             "files",
+            "credential_store",
+            "provider_credentials",
         ):
             assert not hasattr(app.state, legacy_name)
 

@@ -40,6 +40,11 @@ services:
       STORAGE_PROVIDER: azure_blob
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      CREDENTIAL_STORE_PROVIDER: ${CREDENTIAL_STORE_PROVIDER:-}
+      LOCAL_CREDENTIAL_STORE_PATH: ${LOCAL_CREDENTIAL_STORE_PATH:-}
+      LOCAL_CREDENTIAL_STORE_KEY: ${LOCAL_CREDENTIAL_STORE_KEY:-}
+      AZURE_KEY_VAULT_URL: ${AZURE_KEY_VAULT_URL:-}
+      AZURE_KEY_VAULT_MANAGED_IDENTITY_CLIENT_ID: ${AZURE_KEY_VAULT_MANAGED_IDENTITY_CLIENT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +63,8 @@ services:
       retries: 5
     networks:
       - nexus-network
+    volumes:
+      - provider-credential-data:/var/lib/nexus/provider-credentials
 
   frontend:
     build:
@@ -121,3 +128,4 @@ volumes:
   postgres-data:
   redis-data:
   azurite-data:
+  provider-credential-data:
