@@ -18,16 +18,15 @@ from nexus.model_providers.application._shared import (
     conflict,
     credential_unavailable,
     get_provider,
-    provider_settings,
     unavailable,
 )
 from nexus.model_providers.domain import (
-    AzureOpenAISettings,
     ConfiguredProvider,
     ModelProviderConfigurationError,
-    OpenAICompatibleSettings,
     OrganizationProviderId,
     ProviderSettings,
+    provider_endpoint_url,
+    provider_settings_from_mapping,
 )
 from nexus.model_providers.ports import (
     CredentialStore,
@@ -70,13 +69,16 @@ class UpdateModelProvider:
                 provider_id=provider_id,
             )
             try:
-                parsed_settings = provider_settings(existing.provider_type, settings)
+                parsed_settings = provider_settings_from_mapping(
+                    existing.provider_type,
+                    settings,
+                )
             except ModelProviderConfigurationError as exc:
                 raise NexusError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
             if (
                 existing.credential_reference is not None
-                and _provider_url(parsed_settings)
-                != _provider_url(existing.settings)
+                and provider_endpoint_url(parsed_settings)
+                != provider_endpoint_url(existing.settings)
                 and self.credential_store is None
             ):
                 raise credential_unavailable()
@@ -134,14 +136,6 @@ class UpdateModelProvider:
                     provider_public_id=str(provider_id.value),
                 )
         return result.provider
-
-
-def _provider_url(settings: ProviderSettings) -> str | None:
-    if isinstance(settings, AzureOpenAISettings):
-        return settings.endpoint
-    if isinstance(settings, OpenAICompatibleSettings):
-        return settings.base_url
-    return None
 
 
 __all__ = ["UpdateModelProvider"]

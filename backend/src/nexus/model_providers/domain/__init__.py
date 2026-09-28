@@ -23,6 +23,12 @@ from nexus.model_providers.domain.credential import (
     ProviderCredentialSecret,
 )
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+from nexus.model_providers.domain.provider_settings import (
+    provider_endpoint_url,
+    provider_required_setting_names,
+    provider_settings_from_mapping,
+    provider_settings_to_mapping,
+)
 
 __all__ = [
     "MAX_PROVIDER_CREDENTIAL_SECRET_BYTES",
@@ -44,4 +50,8 @@ __all__ = [
     "ProviderCredentialSecret",
     "ProviderSettings",
     "ProviderType",
+    "provider_endpoint_url",
+    "provider_required_setting_names",
+    "provider_settings_from_mapping",
+    "provider_settings_to_mapping",
 ]

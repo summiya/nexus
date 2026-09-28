@@ -2,24 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import assert_never
 from uuid import UUID
 
 from nexus.authorization import PermissionChecker, PermissionCheckError
 from nexus.errors import ErrorCode, NexusError
 from nexus.model_providers.domain import (
-    AnthropicSettings,
-    AzureOpenAISettings,
     ConfiguredProvider,
-    GeminiSettings,
-    ModelProviderConfigurationError,
-    OpenAICompatibleSettings,
-    OpenAISettings,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
-    ProviderSettings,
-    ProviderType,
 )
 from nexus.model_providers.ports import (
     ModelProviderPersistence,
@@ -86,40 +76,6 @@ async def get_provider(
             if provider.provider_id == provider_id:
                 return provider
     raise NexusError(ErrorCode.NOT_FOUND, NOT_FOUND)
-
-
-def provider_settings(
-    provider_type: ProviderType,
-    values: Mapping[str, str],
-) -> ProviderSettings:
-    expected_keys: set[str]
-    if provider_type is ProviderType.OPENAI:
-        expected_keys = set()
-        result: ProviderSettings = OpenAISettings()
-    elif provider_type is ProviderType.ANTHROPIC:
-        expected_keys = set()
-        result = AnthropicSettings()
-    elif provider_type is ProviderType.GEMINI:
-        expected_keys = set()
-        result = GeminiSettings()
-    elif provider_type is ProviderType.AZURE_OPENAI:
-        expected_keys = {"endpoint", "api_version"}
-        if set(values) != expected_keys:
-            raise ModelProviderConfigurationError("Provider settings are invalid.")
-        return AzureOpenAISettings(
-            endpoint=values["endpoint"],
-            api_version=values["api_version"],
-        )
-    elif provider_type is ProviderType.OPENAI_COMPATIBLE:
-        expected_keys = {"base_url"}
-        if set(values) != expected_keys:
-            raise ModelProviderConfigurationError("Provider settings are invalid.")
-        return OpenAICompatibleSettings(base_url=values["base_url"])
-    else:
-        assert_never(provider_type)
-    if set(values) != expected_keys:
-        raise ModelProviderConfigurationError("Provider settings are invalid.")
-    return result
 
 
 def conflict() -> NexusError:

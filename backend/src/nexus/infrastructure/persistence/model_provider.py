@@ -13,17 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.infrastructure.persistence import _model_provider_queries as queries
 from nexus.model_providers.domain import (
-    AzureOpenAISettings,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
     DefaultModelSelection,
     ModelType,
-    OpenAICompatibleSettings,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderSettings,
+    provider_endpoint_url,
 )
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
@@ -127,7 +126,9 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 ),
                 settings=existing.settings if settings is None else settings,
             )
-            url_changed = _provider_url(existing) != _provider_url(replacement)
+            url_changed = provider_endpoint_url(
+                existing.settings
+            ) != provider_endpoint_url(replacement.settings)
             cleared_reference = existing.credential_reference if url_changed else None
             replacement = replace(
                 replacement,
@@ -464,15 +465,6 @@ def _replace_provider(
         replacement if provider.provider_id == replacement.provider_id else provider
         for provider in configuration.providers
     )
-
-
-def _provider_url(provider: ConfiguredProvider) -> str | None:
-    settings = provider.settings
-    if isinstance(settings, AzureOpenAISettings):
-        return settings.endpoint
-    if isinstance(settings, OpenAICompatibleSettings):
-        return settings.base_url
-    return None
 
 
 def _find_model(

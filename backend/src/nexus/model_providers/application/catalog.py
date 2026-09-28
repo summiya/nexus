@@ -7,7 +7,10 @@ from uuid import UUID
 
 from nexus.authorization import PermissionChecker, PermissionCheckError
 from nexus.errors import ErrorCode, NexusError
-from nexus.model_providers.domain import ProviderType
+from nexus.model_providers.domain import (
+    ProviderType,
+    provider_required_setting_names,
+)
 
 _READ_PERMISSION = "model_providers.read"
 
@@ -19,20 +22,21 @@ class ProviderCatalogItem:
     required_settings: tuple[str, ...]
 
 
-_CATALOG = (
-    ProviderCatalogItem(ProviderType.OPENAI, "OpenAI", ()),
-    ProviderCatalogItem(ProviderType.ANTHROPIC, "Anthropic", ()),
+_DISPLAY_NAMES = {
+    ProviderType.OPENAI: "OpenAI",
+    ProviderType.ANTHROPIC: "Anthropic",
+    ProviderType.AZURE_OPENAI: "Azure OpenAI",
+    ProviderType.GEMINI: "Gemini",
+    ProviderType.OPENAI_COMPATIBLE: "OpenAI-compatible",
+}
+
+_CATALOG = tuple(
     ProviderCatalogItem(
-        ProviderType.AZURE_OPENAI,
-        "Azure OpenAI",
-        ("endpoint", "api_version"),
-    ),
-    ProviderCatalogItem(ProviderType.GEMINI, "Gemini", ()),
-    ProviderCatalogItem(
-        ProviderType.OPENAI_COMPATIBLE,
-        "OpenAI-compatible",
-        ("base_url",),
-    ),
+        provider_type=provider_type,
+        display_name=_DISPLAY_NAMES[provider_type],
+        required_settings=provider_required_setting_names(provider_type),
+    )
+    for provider_type in ProviderType
 )
 
 
