@@ -9,7 +9,6 @@ from uuid import UUID
 
 from nexus.model_providers.domain.validation import (
     MAX_API_VERSION_LENGTH,
-    MAX_CREDENTIAL_REFERENCE_LENGTH,
     MAX_DISPLAY_NAME_LENGTH,
     MAX_PROVIDER_MODEL_NAME_LENGTH,
     require_bounded_text,
@@ -82,20 +81,13 @@ class ConfiguredModelId:
 
 @dataclass(frozen=True)
 class CredentialReference:
-    """Opaque locator only; never credential material."""
+    """Opaque UUID locator only; it cannot carry provider credential material."""
 
-    value: str = field(repr=False)
+    value: UUID = field(repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "value",
-            require_bounded_text(
-                self.value,
-                field_name="Credential reference",
-                max_length=MAX_CREDENTIAL_REFERENCE_LENGTH,
-            ),
-        )
+        if not isinstance(self.value, UUID):
+            raise ValueError("Credential reference is invalid.")
 
     def __repr__(self) -> str:
         return "CredentialReference(<redacted>)"
@@ -287,7 +279,7 @@ class DefaultModelSelection:
 
 
 @dataclass(frozen=True)
-class ModelProviderConfiguration:
+class OrganizationModelProviderConfiguration:
     """One organization's provider/model configuration and defaults."""
 
     organization_public_id: UUID
@@ -380,7 +372,7 @@ __all__ = [
     "DefaultModelSelection",
     "GeminiSettings",
     "ModelCapability",
-    "ModelProviderConfiguration",
+    "OrganizationModelProviderConfiguration",
     "ModelType",
     "OpenAICompatibleSettings",
     "OpenAISettings",
