@@ -9,6 +9,7 @@ import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 
+import nexus.infrastructure.credentials.local_encrypted as local_encrypted_module
 from nexus.infrastructure.credentials import LocalEncryptedCredentialStore
 from nexus.model_providers.domain import (
     CredentialReference,
@@ -148,5 +149,33 @@ def test_wrong_key_and_corrupted_ciphertext_fail_safely(tmp_path: Path) -> None:
                 credential_reference=reference,
             )
         assert plaintext not in str(corrupt_error.value)
+
+    asyncio.run(scenario())
+
+
+def test_failed_atomic_replacement_removes_temporary_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        store = _store(tmp_path, Fernet.generate_key())
+
+        def fail_replace(_source: Path, _target: Path) -> None:
+            raise OSError("replacement failed")
+
+        monkeypatch.setattr(local_encrypted_module.os, "replace", fail_replace)
+
+        with pytest.raises(
+            CredentialStoreError,
+            match=r"^Credential could not be stored\.$",
+        ):
+            await store.put(
+                organization_public_id=uuid4(),
+                provider_id=OrganizationProviderId(uuid4()),
+                credential_reference=CredentialReference(uuid4()),
+                secret=ProviderCredentialSecret("secret"),
+            )
+
+        assert list(tmp_path.iterdir()) == []
 
     asyncio.run(scenario())

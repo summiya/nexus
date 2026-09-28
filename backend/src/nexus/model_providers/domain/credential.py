@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+
 
 @dataclass(frozen=True, slots=True, repr=False)
 class ProviderCredentialSecret:
@@ -13,7 +15,9 @@ class ProviderCredentialSecret:
 
     def __post_init__(self) -> None:
         if not isinstance(self._value, str) or not self._value.strip():
-            raise ValueError("Provider credential secret is invalid.")
+            raise ModelProviderConfigurationError(
+                "Provider credential secret is invalid."
+            )
 
     def reveal(self) -> str:
         """Return the exact credential plaintext for a trusted adapter operation."""

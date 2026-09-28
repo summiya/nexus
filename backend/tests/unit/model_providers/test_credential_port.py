@@ -1,6 +1,9 @@
 import pytest
 
-from nexus.model_providers.domain import ProviderCredentialSecret
+from nexus.model_providers.domain import (
+    ModelProviderConfigurationError,
+    ProviderCredentialSecret,
+)
 from nexus.model_providers.ports import (
     CredentialNotFoundError,
     CredentialStoreConflictError,
@@ -26,5 +29,8 @@ def test_credential_store_errors_are_provider_neutral() -> None:
 
 @pytest.mark.parametrize("value", ["", "   "])
 def test_provider_credential_secret_rejects_blank_values_safely(value: str) -> None:
-    with pytest.raises(ValueError, match="Provider credential secret is invalid"):
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match=r"^Provider credential secret is invalid\.$",
+    ):
         ProviderCredentialSecret(value)
