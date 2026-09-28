@@ -188,10 +188,11 @@ def test_valid_model_construction_for_each_model_type(model_type: ModelType) -> 
 
 
 def test_credential_reference_never_exposes_locator_in_repr_or_str() -> None:
-    reference_id = uuid4()\n    reference = CredentialReference(reference_id)
+    reference_id = uuid4()
+    reference = CredentialReference(reference_id)
 
-    assert "kv://org/provider/credential" not in repr(reference)
-    assert "kv://org/provider/credential" not in str(reference)
+    assert str(reference_id) not in repr(reference)
+    assert str(reference_id) not in str(reference)
     assert repr(reference) == "CredentialReference(<redacted>)"
     assert str(reference) == "<redacted>"
 
