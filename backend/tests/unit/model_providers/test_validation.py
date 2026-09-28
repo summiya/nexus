@@ -14,7 +14,7 @@ from nexus.model_providers.domain import (
     DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
-    ModelProviderConfiguration,
+    OrganizationModelProviderConfiguration,
     ModelType,
     OpenAICompatibleSettings,
     OpenAISettings,
@@ -295,7 +295,7 @@ def test_configuration_rejects_cross_organization_provider() -> None:
         ValueError,
         match=r"^Provider belongs to a different organization\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=uuid4(),
             providers=(provider,),
         )
@@ -313,7 +313,7 @@ def test_configuration_rejects_cross_organization_model() -> None:
         ValueError,
         match=r"^Model belongs to a different organization\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(model,),
@@ -325,7 +325,7 @@ def test_default_must_exist() -> None:
     provider = _provider(organization_id=organization_id)
 
     with pytest.raises(ValueError, match=r"^Default model does not exist\.$"):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             defaults=DefaultModelSelection(chat=ConfiguredModelId(uuid4())),
@@ -342,7 +342,7 @@ def test_default_must_be_enabled() -> None:
     )
 
     with pytest.raises(ValueError, match=r"^Default model must be enabled\.$"):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(model,),
@@ -367,7 +367,7 @@ def test_default_must_match_selected_type() -> None:
         ValueError,
         match=r"^Default model type does not match selection\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(embedding,),
@@ -387,7 +387,7 @@ def test_default_provider_must_be_enabled() -> None:
         ValueError,
         match=r"^Default model provider must be enabled\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(model,),
@@ -408,7 +408,7 @@ def test_default_chat_model_must_support_streaming() -> None:
         ValueError,
         match=r"^Default chat model must support streaming\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(model,),
@@ -428,7 +428,7 @@ def test_model_must_reference_provider_in_same_configuration() -> None:
         ValueError,
         match=r"^Configured model references an unknown provider\.$",
     ):
-        ModelProviderConfiguration(
+        OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
             models=(model,),
@@ -490,6 +490,6 @@ def test_provider_model_name_is_bounded() -> None:
         )
 
 
-def test_credential_reference_is_bounded() -> None:
-    with pytest.raises(ValueError, match=r"^Credential reference is too long\.$"):
-        CredentialReference("x" * (MAX_CREDENTIAL_REFERENCE_LENGTH + 1))
+def test_credential_reference_rejects_non_uuid_values() -> None:
+    with pytest.raises(ValueError, match=r"^Credential reference is invalid\.$"):
+        CredentialReference("not-a-uuid")  # type: ignore[arg-type]
