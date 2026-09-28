@@ -22,7 +22,6 @@ from nexus.model_providers.domain import (
     ProviderType,
 )
 from nexus.model_providers.domain.validation import (
-    MAX_CREDENTIAL_REFERENCE_LENGTH,
     MAX_DISPLAY_NAME_LENGTH,
     MAX_PROVIDER_MODEL_NAME_LENGTH,
     MAX_URL_LENGTH,
