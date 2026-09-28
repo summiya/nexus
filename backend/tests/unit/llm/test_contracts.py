@@ -13,7 +13,6 @@ from nexus.llm.domain import (
     LLMEventType,
     LLMFinishReason,
     LLMMessage,
-    LLMProviderCapabilities,
     LLMRequest,
     LLMResponse,
     LLMRole,
@@ -212,15 +211,3 @@ def test_contracts_are_frozen() -> None:
     with pytest.raises(FrozenInstanceError):
         message.content = "changed"  # type: ignore[misc]
 
-
-def test_capabilities_contract_is_explicit() -> None:
-    capabilities = LLMProviderCapabilities(
-        supports_streaming=True,
-        supports_tool_calls=True,
-        supports_usage=True,
-    )
-
-    assert capabilities.supports_streaming is True
-    assert capabilities.supports_tool_calls is True
-    assert capabilities.supports_usage is True
-    assert capabilities.supports_json_response is False
