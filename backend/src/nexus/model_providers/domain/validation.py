@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
+from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+
 MAX_DISPLAY_NAME_LENGTH = 200
 MAX_PROVIDER_MODEL_NAME_LENGTH = 256
 MAX_API_VERSION_LENGTH = 64
@@ -16,11 +18,13 @@ def require_bounded_text(
     field_name: str,
     max_length: int,
 ) -> str:
+    if not isinstance(value, str):
+        raise ModelProviderConfigurationError(f"{field_name} must be a string.")
     normalized = value.strip()
     if not normalized:
-        raise ValueError(f"{field_name} is required.")
+        raise ModelProviderConfigurationError(f"{field_name} is required.")
     if len(normalized) > max_length:
-        raise ValueError(f"{field_name} is too long.")
+        raise ModelProviderConfigurationError(f"{field_name} is too long.")
     return normalized
 
 
@@ -40,24 +44,24 @@ def require_https_url(value: str, *, field_name: str) -> str:
     try:
         parsed = urlsplit(normalized)
     except ValueError as exc:
-        raise ValueError("Provider URL is invalid.") from exc
+        raise ModelProviderConfigurationError("Provider URL is invalid.") from exc
 
     if not parsed.scheme:
-        raise ValueError("Provider URL is invalid.")
+        raise ModelProviderConfigurationError("Provider URL is invalid.")
     if parsed.scheme.lower() != "https":
-        raise ValueError("Provider URL must use HTTPS.")
+        raise ModelProviderConfigurationError("Provider URL must use HTTPS.")
     if not parsed.hostname:
-        raise ValueError("Provider URL is invalid.")
+        raise ModelProviderConfigurationError("Provider URL is invalid.")
     if any(character.isspace() for character in parsed.netloc) or "\\" in parsed.netloc:
-        raise ValueError("Provider URL is invalid.")
+        raise ModelProviderConfigurationError("Provider URL is invalid.")
     try:
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("Provider URL is invalid.") from exc
+        raise ModelProviderConfigurationError("Provider URL is invalid.") from exc
     if parsed.username is not None or parsed.password is not None:
-        raise ValueError("Provider URL must not contain credentials.")
+        raise ModelProviderConfigurationError("Provider URL must not contain credentials.")
     if parsed.fragment:
-        raise ValueError("Provider URL is invalid.")
+        raise ModelProviderConfigurationError("Provider URL is invalid.")
     return normalized
 
 
