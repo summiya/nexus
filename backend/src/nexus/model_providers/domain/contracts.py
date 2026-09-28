@@ -178,8 +178,15 @@ class ConfiguredProvider:
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
             raise ValueError("Organization identifier is invalid.")
+        if not isinstance(self.provider_id, OrganizationProviderId):
+            raise ValueError("Configured provider identifier is invalid.")
         if not isinstance(self.provider_type, ProviderType):
             raise ValueError("Unknown provider type.")
+        if self.credential_reference is not None and not isinstance(
+            self.credential_reference,
+            CredentialReference,
+        ):
+            raise ValueError("Credential reference is invalid.")
         object.__setattr__(
             self,
             "display_name",
@@ -216,6 +223,10 @@ class ConfiguredModel:
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
             raise ValueError("Organization identifier is invalid.")
+        if not isinstance(self.model_id, ConfiguredModelId):
+            raise ValueError("Configured model identifier is invalid.")
+        if not isinstance(self.provider_id, OrganizationProviderId):
+            raise ValueError("Configured provider identifier is invalid.")
         if not isinstance(self.model_type, ModelType):
             raise ValueError("Unknown model type.")
         if any(
@@ -270,7 +281,16 @@ class DefaultModelSelection:
     embedding: ConfiguredModelId | None = None
     reranker: ConfiguredModelId | None = None
 
+    def __post_init__(self) -> None:
+        if any(
+            value is not None and not isinstance(value, ConfiguredModelId)
+            for value in (self.chat, self.embedding, self.reranker)
+        ):
+            raise ValueError("Default model identifier is invalid.")
+
     def for_type(self, model_type: ModelType) -> ConfiguredModelId | None:
+        if not isinstance(model_type, ModelType):
+            raise ValueError("Unknown model type.")
         if model_type is ModelType.CHAT:
             return self.chat
         if model_type is ModelType.EMBEDDING:
@@ -290,8 +310,14 @@ class OrganizationModelProviderConfiguration:
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
             raise ValueError("Organization identifier is invalid.")
+        if not isinstance(self.defaults, DefaultModelSelection):
+            raise ValueError("Default model selection is invalid.")
         object.__setattr__(self, "providers", tuple(self.providers))
         object.__setattr__(self, "models", tuple(self.models))
+        if any(not isinstance(provider, ConfiguredProvider) for provider in self.providers):
+            raise ValueError("Configured provider is invalid.")
+        if any(not isinstance(model, ConfiguredModel) for model in self.models):
+            raise ValueError("Configured model is invalid.")
         self._validate()
 
     def _validate(self) -> None:
