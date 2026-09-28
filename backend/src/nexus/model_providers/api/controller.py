@@ -1,0 +1,215 @@
+"""Organization model-provider HTTP controller."""
+
+from uuid import UUID
+
+from fastapi import APIRouter, Response, status
+
+from nexus.authentication.api.security import CurrentAuthContextDep
+from nexus.errors import ErrorCode, NexusError
+from nexus.model_providers.api.dependencies import (
+    ProviderCatalogDep,
+    ProviderManagerDep,
+    ProviderReaderDep,
+)
+from nexus.model_providers.api.schemas import (
+    ConfiguredProviderResponseBody,
+    CreateProviderRequestBody,
+    ListConfiguredProvidersResponseBody,
+    ProviderCatalogItemResponseBody,
+    ProviderCatalogResponseBody,
+    ProviderCredentialStateResponseBody,
+    SetProviderCredentialRequestBody,
+    SetProviderEnabledRequestBody,
+    UpdateProviderRequestBody,
+)
+from nexus.model_providers.domain import (
+    AzureOpenAISettings,
+    ConfiguredProvider,
+    ModelProviderConfigurationError,
+    OpenAICompatibleSettings,
+    ProviderCredentialSecret,
+)
+
+router = APIRouter(prefix="/model-providers", tags=["model-providers"])
+
+
+@router.get("/catalog", response_model=ProviderCatalogResponseBody)
+async def list_provider_catalog(
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderCatalogDep,
+) -> ProviderCatalogResponseBody:
+    items = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ProviderCatalogResponseBody(
+        items=[
+            ProviderCatalogItemResponseBody(
+                provider_type=item.provider_type,
+                display_name=item.display_name,
+                required_settings=list(item.required_settings),
+            )
+            for item in items
+        ]
+    )
+
+
+@router.get("", response_model=ListConfiguredProvidersResponseBody)
+async def list_configured_providers(
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderReaderDep,
+) -> ListConfiguredProvidersResponseBody:
+    providers = await service.list(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ListConfiguredProvidersResponseBody(
+        items=[_to_response(provider) for provider in providers]
+    )
+
+
+@router.get("/{provider_public_id}", response_model=ConfiguredProviderResponseBody)
+async def get_configured_provider(
+    provider_public_id: UUID,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderReaderDep,
+) -> ConfiguredProviderResponseBody:
+    provider = await service.get(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return _to_response(provider)
+
+
+@router.post(
+    "",
+    response_model=ConfiguredProviderResponseBody,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_configured_provider(
+    body: CreateProviderRequestBody,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderManagerDep,
+) -> ConfiguredProviderResponseBody:
+    provider = await service.create(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_type=body.provider_type,
+        display_name=body.display_name,
+        settings=body.settings,
+        enabled=body.enabled,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _to_response(provider)
+
+
+@router.put("/{provider_public_id}", response_model=ConfiguredProviderResponseBody)
+async def update_configured_provider(
+    provider_public_id: UUID,
+    body: UpdateProviderRequestBody,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderManagerDep,
+) -> ConfiguredProviderResponseBody:
+    provider = await service.update(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+        display_name=body.display_name,
+        settings=body.settings,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _to_response(provider)
+
+
+@router.patch(
+    "/{provider_public_id}/enabled", response_model=ConfiguredProviderResponseBody
+)
+async def set_configured_provider_enabled(
+    provider_public_id: UUID,
+    body: SetProviderEnabledRequestBody,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderManagerDep,
+) -> ConfiguredProviderResponseBody:
+    provider = await service.set_enabled(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+        enabled=body.enabled,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _to_response(provider)
+
+
+@router.put(
+    "/{provider_public_id}/credential",
+    response_model=ProviderCredentialStateResponseBody,
+)
+async def set_configured_provider_credential(
+    provider_public_id: UUID,
+    body: SetProviderCredentialRequestBody,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderManagerDep,
+) -> ProviderCredentialStateResponseBody:
+    try:
+        secret = ProviderCredentialSecret(body.credential.get_secret_value())
+    except ModelProviderConfigurationError as exc:
+        raise NexusError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
+    provider = await service.set_credential(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+        secret=secret,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return ProviderCredentialStateResponseBody(
+        credential_configured=provider.credential_reference is not None
+    )
+
+
+@router.delete("/{provider_public_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_configured_provider(
+    provider_public_id: UUID,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderManagerDep,
+) -> Response:
+    await service.delete(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _to_response(provider: ConfiguredProvider) -> ConfiguredProviderResponseBody:
+    settings: dict[str, str]
+    if isinstance(provider.settings, AzureOpenAISettings):
+        settings = {
+            "endpoint": provider.settings.endpoint,
+            "api_version": provider.settings.api_version,
+        }
+    elif isinstance(provider.settings, OpenAICompatibleSettings):
+        settings = {"base_url": provider.settings.base_url}
+    else:
+        settings = {}
+    return ConfiguredProviderResponseBody(
+        public_id=provider.provider_id.value,
+        provider_type=provider.provider_type,
+        display_name=provider.display_name,
+        settings=settings,
+        enabled=provider.enabled,
+        credential_configured=provider.credential_reference is not None,
+    )
+
+
+__all__ = ["router"]

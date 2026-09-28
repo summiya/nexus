@@ -1095,6 +1095,17 @@ The external capability is optional in application composition until runtime
 credential use is implemented. A later consumer must fail closed if no
 credential store is configured.
 
+Credential replacement never writes a new value under the active reference.
+It creates a new reference, stores the new secret, conditionally switches the
+provider row only if the previously observed reference is still active, and
+then deletes the old external secret on a best-effort basis. PostgreSQL stores
+the opaque `credential_reference` as designed but never stores credential
+plaintext. Read APIs expose only a `credential_configured` boolean.
+
+For Azure OpenAI and OpenAI-compatible providers, changing the endpoint/base
+URL atomically clears `credential_reference`; non-URL configuration changes
+retain it.
+
 ---
 
 # 24. Entity: ConfiguredModel and OrganizationModelDefault

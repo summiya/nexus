@@ -1,5 +1,6 @@
 """Application-facing model-provider ports."""
 
+from nexus.model_providers.ports.credential_naming import credential_storage_name
 from nexus.model_providers.ports.credentials import (
     CredentialNotFoundError,
     CredentialStore,
@@ -12,6 +13,7 @@ from nexus.model_providers.ports.persistence import (
     ModelProviderPersistence,
     ModelProviderPersistenceError,
     ModelProviderReferenceError,
+    ProviderUpdateResult,
 )
 
 __all__ = [
@@ -24,4 +26,6 @@ __all__ = [
     "ModelProviderPersistence",
     "ModelProviderPersistenceError",
     "ModelProviderReferenceError",
+    "ProviderUpdateResult",
+    "credential_storage_name",
 ]

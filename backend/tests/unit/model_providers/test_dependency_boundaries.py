@@ -9,6 +9,13 @@ DOMAIN_ROOT = (
 PORTS_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "model_providers" / "ports"
 )
+APPLICATION_ROOT = (
+    Path(__file__).resolve().parents[3]
+    / "src"
+    / "nexus"
+    / "model_providers"
+    / "application"
+)
 
 FORBIDDEN_IMPORTS = (
     "anthropic",
@@ -76,5 +83,21 @@ def test_model_provider_ports_have_no_framework_or_infrastructure_dependencies()
         ), path
         assert not any(
             module.startswith(("nexus.api", "nexus.config", "nexus.infrastructure"))
+            for module in imports
+        ), path
+
+
+def test_model_provider_application_has_no_transport_or_infrastructure_dependencies() -> (
+    None
+):
+    for path in sorted(APPLICATION_ROOT.rglob("*.py")):
+        imports = _imports(path)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in ("fastapi", "sqlalchemy", "azure")
+        ), path
+        assert not any(
+            module.startswith(("nexus.api", "nexus.infrastructure"))
             for module in imports
         ), path

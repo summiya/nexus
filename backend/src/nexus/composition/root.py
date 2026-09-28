@@ -13,6 +13,10 @@ from nexus.composition.authentication import (
     build_authentication_composition,
 )
 from nexus.composition.files import FileComposition, build_file_composition
+from nexus.composition.model_providers import (
+    ModelProviderComposition,
+    build_model_provider_composition,
+)
 from nexus.composition.provider_credentials import (
     ProviderCredentialComposition,
     build_provider_credential_composition,
@@ -109,6 +113,7 @@ class AppContainer:
     event_publisher: EventPublisher
     storage: StorageComposition
     provider_credentials: ProviderCredentialComposition
+    model_providers: ModelProviderComposition
 
     async def close(self) -> None:
         """Release application-scoped resources in dependency order."""
@@ -184,6 +189,10 @@ async def build_app_container(
             app_settings,
             credential_store=credential_store,
         )
+        model_providers = build_model_provider_composition(
+            session_factory=resolved_database.session_factory,
+            credential_store=provider_credentials.store,
+        )
         files = build_file_composition(
             app_settings,
             session_factory=resolved_database.session_factory,
@@ -234,4 +243,5 @@ async def build_app_container(
         event_publisher=resolved_event_publisher,
         storage=storage,
         provider_credentials=provider_credentials,
+        model_providers=model_providers,
     )

@@ -1313,6 +1313,23 @@ errors, and production authenticates to Azure Key Vault with Managed Identity.
 Local encrypted credential storage is restricted to explicit development/test
 environments and its Fernet key must be generated outside source control.
 
+Provider credential API bodies use secret-aware transport values and enforce a
+16-KiB UTF-8 bound before storage. Credential-management logs contain only the
+organization public ID, acting user public ID, provider public ID, event name,
+and—when manual cleanup is required—the non-secret opaque storage locator.
+They must never contain credential plaintext, references, request bodies,
+exception text, Key Vault URLs, or provider responses.
+
+Changing an Azure OpenAI endpoint or OpenAI-compatible base URL invalidates the
+stored credential reference so an administrator cannot redirect a write-only
+credential to a different server. Domain URL validation is intentionally
+syntax-only to preserve future explicitly authorized private-provider support.
+Before Phase 5 makes provider calls, its outbound boundary must resolve and
+revalidate every address and default to globally routable addresses only,
+including protection against alternate IP encodings, mapped IPv6, metadata
+addresses, shared address space, and DNS rebinding. Phase 8 runtime calls must
+retain that enforcement.
+
 Before unrestricted production use, restrict Key Vault networking/private
 endpoints as appropriate and enable Key Vault diagnostic audit logging with an
 operational retention and review policy. Rotation orchestration and runtime

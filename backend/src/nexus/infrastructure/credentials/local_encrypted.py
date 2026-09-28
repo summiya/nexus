@@ -10,7 +10,6 @@ from uuid import UUID, uuid4
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import SecretStr
 
-from nexus.infrastructure.credentials.naming import credential_storage_name
 from nexus.model_providers.domain import (
     CredentialReference,
     OrganizationProviderId,
@@ -19,6 +18,7 @@ from nexus.model_providers.domain import (
 from nexus.model_providers.ports import (
     CredentialNotFoundError,
     CredentialStoreError,
+    credential_storage_name,
 )
 
 

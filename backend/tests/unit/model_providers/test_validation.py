@@ -194,6 +194,18 @@ def test_provider_url_rejects_overlong_value() -> None:
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://localhost:8443/v1",
+        "https://127.0.0.1/v1",
+        "https://10.0.0.5/v1",
+    ],
+)
+def test_provider_domain_url_validation_remains_syntax_only(url: str) -> None:
+    assert OpenAICompatibleSettings(base_url=url).base_url == url
+
+
+@pytest.mark.parametrize(
     "provider_type",
     [ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.GEMINI],
 )

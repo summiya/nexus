@@ -1,4 +1,4 @@
-"""Deterministic, non-identifying credential storage names."""
+"""Provider-neutral opaque credential storage naming."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def credential_storage_name(
     provider_id: OrganizationProviderId,
     credential_reference: CredentialReference,
 ) -> str:
-    """Return a fixed-length Key Vault-compatible opaque credential name."""
+    """Return a fixed-length non-secret storage locator for operations and logs."""
 
     digest = sha256(
         _DIGEST_DOMAIN
@@ -26,3 +26,6 @@ def credential_storage_name(
         + credential_reference.value.bytes
     ).hexdigest()
     return f"{_NAME_PREFIX}{digest}"
+
+
+__all__ = ["credential_storage_name"]

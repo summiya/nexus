@@ -1,8 +1,8 @@
 import re
 from uuid import uuid4
 
-from nexus.infrastructure.credentials.naming import credential_storage_name
 from nexus.model_providers.domain import CredentialReference, OrganizationProviderId
+from nexus.model_providers.ports import credential_storage_name
 
 
 def test_credential_storage_name_is_deterministic_opaque_and_key_vault_safe() -> None:

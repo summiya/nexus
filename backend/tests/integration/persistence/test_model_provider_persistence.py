@@ -21,6 +21,9 @@ from nexus.infrastructure.persistence.models.model_provider import (
     ConfiguredModel as ConfiguredModelRecord,
 )
 from nexus.infrastructure.persistence.models.model_provider import (
+    ModelProvider as ModelProviderRecord,
+)
+from nexus.infrastructure.persistence.models.model_provider import (
     OrganizationModelDefault,
 )
 from nexus.infrastructure.persistence.models.organization import Organization
@@ -301,6 +304,158 @@ def test_update_provider_preserves_existing_credential_reference(
     assert configuration is not None
     assert configuration.providers[0].display_name == "Updated OpenAI"
     assert configuration.providers[0].credential_reference == credential_reference
+
+
+def test_update_provider_url_change_clears_credential_reference_atomically(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    credential_reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = replace(
+        _provider(
+            organization_public_id,
+            credential_reference=credential_reference,
+        ),
+        provider_type=ProviderType.OPENAI_COMPATIBLE,
+        settings=OpenAICompatibleSettings(base_url="https://first.example.com"),
+    )
+    asyncio.run(persistence.create_provider(provider))
+
+    result = asyncio.run(
+        persistence.update_provider(
+            replace(
+                provider,
+                display_name="Updated display name",
+                settings=OpenAICompatibleSettings(
+                    base_url="https://second.example.com"
+                ),
+            )
+        )
+    )
+
+    assert result.cleared_credential_reference == credential_reference
+    assert result.provider.credential_reference is None
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers[0].credential_reference is None
+
+
+def test_provider_credential_reference_compare_and_set_rejects_stale_reference(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    initial_reference = CredentialReference(uuid4())
+    provider = _provider(
+        organization_public_id,
+        credential_reference=initial_reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+    winning_reference = CredentialReference(uuid4())
+    updated = asyncio.run(
+        persistence.set_provider_credential_reference(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            expected_credential_reference=initial_reference,
+            credential_reference=winning_reference,
+        )
+    )
+    assert updated.credential_reference == winning_reference
+
+    with pytest.raises(ModelProviderConflictError):
+        asyncio.run(
+            persistence.set_provider_credential_reference(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                expected_credential_reference=initial_reference,
+                credential_reference=CredentialReference(uuid4()),
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers[0].credential_reference == winning_reference
+
+
+def test_concurrent_credential_reference_switch_allows_exactly_one_winner(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    original_reference = CredentialReference(uuid4())
+    provider = _provider(
+        organization_public_id,
+        credential_reference=original_reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+    candidates = (CredentialReference(uuid4()), CredentialReference(uuid4()))
+
+    async def race() -> list[ConfiguredProvider | BaseException]:
+        return list(
+            await asyncio.gather(
+                *(
+                    persistence.set_provider_credential_reference(
+                        organization_public_id=organization_public_id,
+                        provider_id=provider.provider_id,
+                        expected_credential_reference=original_reference,
+                        credential_reference=candidate,
+                    )
+                    for candidate in candidates
+                ),
+                return_exceptions=True,
+            )
+        )
+
+    results = asyncio.run(race())
+
+    winners = [result for result in results if isinstance(result, ConfiguredProvider)]
+    conflicts = [
+        result for result in results if isinstance(result, ModelProviderConflictError)
+    ]
+    assert len(winners) == 1
+    assert len(conflicts) == 1
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert (
+        configuration.providers[0].credential_reference
+        == winners[0].credential_reference
+    )
+
+
+def test_postgresql_persists_only_the_opaque_credential_reference(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    reference = CredentialReference(uuid4())
+    provider = _provider(
+        organization_public_id,
+        credential_reference=reference,
+    )
+    asyncio.run(
+        _persistence(persistence_async_session_factory).create_provider(provider)
+    )
+
+    with Session(migrated_engine) as session:
+        record = session.scalar(
+            select(ModelProviderRecord).where(
+                ModelProviderRecord.public_id == provider.provider_id.value
+            )
+        )
+        assert record is not None
+        assert record.credential_reference == reference.value
+        assert record.settings_json == {}
+        assert not any("secret" in column.name for column in record.__table__.columns)
 
 
 def test_update_provider_rejects_provider_type_change(
