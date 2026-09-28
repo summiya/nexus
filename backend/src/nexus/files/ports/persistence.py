@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
 from nexus.files.domain import File, FileStorageStatus
+
+
+@dataclass(frozen=True)
+class FileDeletionTarget:
+    """Minimal provider-neutral data required to resume one File deletion."""
+
+    storage_key: str = field(repr=False)
 
 
 class FilePersistenceError(Exception):
@@ -15,6 +23,10 @@ class FilePersistenceError(Exception):
 
 class FileReferenceError(Exception):
     """A required File organization or creator reference is invalid."""
+
+
+class FileDeletionInProgressError(Exception):
+    """A malware result arrived while the File is being deleted."""
 
 
 class FileIdentityConflictError(Exception):
@@ -46,6 +58,23 @@ class FilePersistence(Protocol):
     ) -> None:
         """Apply one idempotent terminal malware-scan state transition."""
 
+    async def prepare_file_deletion(
+        self,
+        *,
+        organization_public_id: UUID,
+        file_public_id: UUID,
+        updated_at: datetime,
+    ) -> FileDeletionTarget | None:
+        """Mark one tenant File DELETING or resume an existing deletion."""
+
+    async def delete_file_record(
+        self,
+        *,
+        organization_public_id: UUID,
+        file_public_id: UUID,
+    ) -> None:
+        """Delete metadata only after the File is already DELETING."""
+
     async def get_file(
         self,
         *,
@@ -65,6 +94,8 @@ class FilePersistence(Protocol):
 
 
 __all__ = [
+    "FileDeletionInProgressError",
+    "FileDeletionTarget",
     "FileIdentityConflictError",
     "FileNotReadyError",
     "FilePersistence",

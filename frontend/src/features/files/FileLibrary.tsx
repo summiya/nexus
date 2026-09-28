@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { FileDeleteButton } from "./FileDeleteButton";
 import { FileDownloadButton } from "./FileDownloadButton";
 import { FileStatusBadge } from "./FileStatusBadge";
 import { useFilesQuery } from "./queries";
@@ -57,11 +58,15 @@ function FileRow({ file }: { file: FileMetadata }) {
         ) : null}
       </div>
       <time dateTime={file.createdAt}>{formatDate(file.createdAt)}</time>
-      {file.storageStatus === "available" ? (
-        <FileDownloadButton filePublicId={file.publicId} />
-      ) : (
-        <span aria-hidden="true" />
-      )}
+      <div className="file-library-actions">
+        {file.storageStatus === "available" ? (
+          <FileDownloadButton filePublicId={file.publicId} />
+        ) : null}
+        <FileDeleteButton
+          filePublicId={file.publicId}
+          originalName={file.originalName}
+        />
+      </div>
     </li>
   );
 }
@@ -73,6 +78,19 @@ export function FileLibrary() {
   const page = files.data;
   const items = page?.items ?? [];
   const navigating = files.isPlaceholderData;
+
+  useEffect(() => {
+    if (
+      page !== undefined &&
+      page.items.length === 0 &&
+      cursorHistory.length > 0 &&
+      !files.isFetching
+    ) {
+      const previousCursor = cursorHistory[cursorHistory.length - 1];
+      setCursorHistory((history) => history.slice(0, -1));
+      setCurrentCursor(previousCursor);
+    }
+  }, [page, cursorHistory, files.isFetching]);
 
   function goNext() {
     if (

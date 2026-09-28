@@ -52,7 +52,7 @@ class File(Base):
             name="ck_files_size_bytes_nonnegative",
         ),
         CheckConstraint(
-            "storage_status IN ('pending', 'available', 'failed')",
+            "storage_status IN ('pending', 'available', 'failed', 'deleting')",
             name="ck_files_storage_status",
         ),
         CheckConstraint(

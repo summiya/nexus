@@ -13,6 +13,7 @@ from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
 from nexus.errors import ErrorCode, NexusError
 from nexus.files.api.dependencies import (
+    get_delete_file,
     get_file,
     get_issue_file_download,
     get_list_files,
@@ -253,9 +254,11 @@ def test_file_read_endpoints_require_authentication() -> None:
     with TestClient(app) as client:
         list_response = client.get("/api/v1/files")
         get_response = client.get(f"/api/v1/files/{uuid4()}")
+        delete_response = client.delete(f"/api/v1/files/{uuid4()}")
 
     assert list_response.status_code == 401
     assert get_response.status_code == 401
+    assert delete_response.status_code == 401
 
 
 def test_openapi_exposes_only_metadata_read_endpoints() -> None:
@@ -263,10 +266,14 @@ def test_openapi_exposes_only_metadata_read_endpoints() -> None:
 
     schema = app.openapi()
     list_operation = schema["paths"]["/api/v1/files"]["get"]
-    get_operation = schema["paths"]["/api/v1/files/{file_public_id}"]["get"]
+    file_path = schema["paths"]["/api/v1/files/{file_public_id}"]
+    get_operation = file_path["get"]
+    delete_operation = file_path["delete"]
 
     assert list_operation["security"] == [{"HTTPBearer": []}]
     assert get_operation["security"] == [{"HTTPBearer": []}]
+    assert delete_operation["security"] == [{"HTTPBearer": []}]
+    assert "204" in delete_operation["responses"]
     assert "200" in list_operation["responses"]
     assert "422" in list_operation["responses"]
     schemas = schema["components"]["schemas"]
@@ -280,7 +287,68 @@ def test_openapi_exposes_only_metadata_read_endpoints() -> None:
         "created_at",
         "updated_at",
     }
+    status_schema = schemas["FileMetadataStorageStatus"]
+    assert status_schema["enum"] == ["pending", "available", "failed"]
 
+
+class FakeDeleteFileService:
+    def __init__(self) -> None:
+        self.error: NexusError | None = None
+        self.calls: list[tuple[UUID, UUID, UUID]] = []
+
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        user_public_id: UUID,
+        file_public_id: UUID,
+    ) -> None:
+        self.calls.append((organization_public_id, user_public_id, file_public_id))
+        if self.error is not None:
+            raise self.error
+
+
+def test_delete_endpoint_returns_204_and_no_body() -> None:
+    service = FakeDeleteFileService()
+    app, organization_id, user_id = _app()
+    file_public_id = uuid4()
+    app.dependency_overrides[get_delete_file] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/v1/files/{file_public_id}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert service.calls == [(organization_id, user_id, file_public_id)]
+
+
+@pytest.mark.parametrize(
+    ("code", "status_code"),
+    [
+        (ErrorCode.NOT_FOUND, 404),
+        (ErrorCode.FORBIDDEN, 403),
+        (ErrorCode.SERVICE_UNAVAILABLE, 503),
+    ],
+)
+def test_delete_endpoint_preserves_safe_errors(
+    code: ErrorCode,
+    status_code: int,
+) -> None:
+    service = FakeDeleteFileService()
+    service.error = NexusError(
+        code,
+        "safe",
+        retryable=code is ErrorCode.SERVICE_UNAVAILABLE,
+    )
+    app, _, _ = _app()
+    app.dependency_overrides[get_delete_file] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.delete(f"/api/v1/files/{uuid4()}")
+
+    assert response.status_code == status_code
+    assert "storage_key" not in response.text
+    assert "azure" not in response.text.lower()
 
 
 class FakeIssueFileDownloadService:
@@ -295,9 +363,7 @@ class FakeIssueFileDownloadService:
         user_public_id: UUID,
         file_public_id: UUID,
     ) -> DownloadGrant:
-        self.calls.append(
-            (organization_public_id, user_public_id, file_public_id)
-        )
+        self.calls.append((organization_public_id, user_public_id, file_public_id))
         if self.error is not None:
             raise self.error
         return DownloadGrant(

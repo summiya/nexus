@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.files.api.dependencies import (
+    DeleteFileDep,
     GetFileDep,
     InitiateFileUploadDep,
     IssueFileDownloadDep,
@@ -16,6 +17,7 @@ from nexus.files.api.pagination import decode_file_cursor, encode_file_cursor
 from nexus.files.api.schemas import (
     FileDownloadResponseBody,
     FileMetadataResponseBody,
+    FileMetadataStorageStatus,
     InitiateFileUploadRequestBody,
     InitiateFileUploadResponseBody,
     ListFilesResponseBody,
@@ -110,6 +112,23 @@ async def initiate_file_download(
     )
 
 
+@router.delete(
+    "/{file_public_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_file(
+    file_public_id: UUID,
+    auth_context: CurrentAuthContextDep,
+    service: DeleteFileDep,
+) -> Response:
+    await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        file_public_id=file_public_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{file_public_id}", response_model=FileMetadataResponseBody)
 async def get_file(
     file_public_id: UUID,
@@ -132,7 +151,7 @@ def _to_file_metadata(file: File) -> FileMetadataResponseBody:
         original_name=file.original_name,
         mime_type=file.mime_type,
         size_bytes=file.size_bytes,
-        storage_status=file.storage_status,
+        storage_status=FileMetadataStorageStatus(file.storage_status.value),
         created_at=file.created_at,
         updated_at=file.updated_at,
     )

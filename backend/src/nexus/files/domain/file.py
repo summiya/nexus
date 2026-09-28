@@ -24,6 +24,7 @@ class FileStorageStatus(StrEnum):
     PENDING = "pending"
     AVAILABLE = "available"
     FAILED = "failed"
+    DELETING = "deleting"
 
 
 def is_canonical_file_storage_key(value: object) -> bool:

@@ -857,13 +857,22 @@ p {
   }
 }
 
-.file-download-action {
+.file-library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.file-download-action,
+.file-delete-action {
   display: grid;
   gap: 0.3rem;
   justify-items: start;
 }
 
-.file-download-error {
+.file-download-error,
+.file-delete-error {
   max-width: 14rem;
   color: #fca5a5;
   font-size: 0.78rem;

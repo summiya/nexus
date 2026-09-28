@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FilePage } from "./types";
 
 const apiMocks = vi.hoisted(() => ({
+  deleteFile: vi.fn(),
   listFiles: vi.fn(),
 }));
 
@@ -13,6 +14,7 @@ vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
+    deleteFile: apiMocks.deleteFile,
     listFiles: apiMocks.listFiles,
   };
 });
@@ -60,7 +62,9 @@ function deferred<T>() {
 
 describe("FileLibrary", () => {
   beforeEach(() => {
+    apiMocks.deleteFile.mockReset();
     apiMocks.listFiles.mockReset();
+    vi.restoreAllMocks();
   });
 
   it("renders metadata, status, and the pending security explanation", async () => {
@@ -99,6 +103,69 @@ describe("FileLibrary", () => {
     await screen.findByText("available.pdf");
 
     expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(1);
+  });
+
+  it("shows Delete for every visible File status", async () => {
+    apiMocks.listFiles.mockResolvedValue({
+      items: [
+        firstPage.items[0],
+        {
+          ...firstPage.items[0],
+          publicId: "22222222-2222-4222-8222-222222222222",
+          originalName: "failed.pdf",
+          storageStatus: "failed",
+        },
+        {
+          ...firstPage.items[0],
+          publicId: "33333333-3333-4333-8333-333333333333",
+          originalName: "available.pdf",
+          storageStatus: "available",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderLibrary();
+
+    await screen.findByText("available.pdf");
+
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(3);
+  });
+
+  it("steps back when deletion leaves a non-first page empty", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMocks.deleteFile.mockResolvedValue(undefined);
+    const secondPage: FilePage = {
+      items: [
+        {
+          ...firstPage.items[0],
+          publicId: "22222222-2222-4222-8222-222222222222",
+          originalName: "only-on-page-two.pdf",
+          storageStatus: "available",
+        },
+      ],
+      nextCursor: null,
+    };
+    apiMocks.listFiles
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(secondPage)
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+      .mockResolvedValueOnce(firstPage);
+
+    renderLibrary();
+    await screen.findByText("report.pdf");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByText("only-on-page-two.pdf");
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(apiMocks.listFiles).toHaveBeenLastCalledWith(
+        { cursor: null, limit: 50 },
+        expect.any(AbortSignal),
+      );
+    });
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
   });
 
   it("renders the first-page loading state", () => {

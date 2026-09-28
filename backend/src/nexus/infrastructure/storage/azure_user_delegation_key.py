@@ -124,9 +124,7 @@ class AzureUserDelegationKeyProvider:
                 key_expiry_time=requested_key_expiry,
             )
         except AzureError as exc:
-            raise AzureUserDelegationKeyError(
-                _DELEGATION_KEY_FAILURE_MESSAGE
-            ) from exc
+            raise AzureUserDelegationKeyError(_DELEGATION_KEY_FAILURE_MESSAGE) from exc
 
         verification_time = self._current_time()
         self._validate_requested_expiration(

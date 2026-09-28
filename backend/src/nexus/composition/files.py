@@ -9,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.config.settings import Settings
 from nexus.files.application import (
+    DeleteFile,
     GetFile,
     InitiateFileUpload,
     IssueFileDownload,
     ListFiles,
     UploadIntentPolicy,
 )
-from nexus.files.ports import DownloadGrantIssuer, UploadGrantIssuer
+from nexus.files.ports import DownloadGrantIssuer, ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.persistence.authorization import (
     SqlAlchemyPermissionChecker,
 )
@@ -31,6 +32,7 @@ class FileComposition:
     list_files: ListFiles
     get_file: GetFile
     issue_download: IssueFileDownload
+    delete_file: DeleteFile
 
 
 def build_file_composition(
@@ -39,6 +41,7 @@ def build_file_composition(
     session_factory: async_sessionmaker[AsyncSession],
     upload_grant_issuer: UploadGrantIssuer,
     download_grant_issuer: DownloadGrantIssuer,
+    object_storage: ObjectStorage,
 ) -> FileComposition:
     """Build File use cases from provider-neutral runtime dependencies."""
 
@@ -73,6 +76,11 @@ def build_file_composition(
             grant_ttl=timedelta(
                 seconds=settings.file_download_grant_ttl_seconds,
             ),
+        ),
+        delete_file=DeleteFile(
+            persistence=persistence,
+            permission_checker=permission_checker,
+            object_storage=object_storage,
         ),
     )
 

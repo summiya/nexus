@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.files.domain import File, FileStorageStatus
 from nexus.files.ports import (
+    FileDeletionInProgressError,
+    FileDeletionTarget,
     FileIdentityConflictError,
     FileNotReadyError,
     FilePersistence,
@@ -79,6 +81,36 @@ class SqlAlchemyFilePersistence(FilePersistence):
                 storage_key=storage_key,
                 target_status=target_status,
                 updated_at=updated_at,
+            )
+        )
+
+    async def prepare_file_deletion(
+        self,
+        *,
+        organization_public_id: UUID,
+        file_public_id: UUID,
+        updated_at: datetime,
+    ) -> FileDeletionTarget | None:
+        return await self._run_transaction(
+            lambda session: queries.prepare_file_deletion(
+                session,
+                organization_public_id=organization_public_id,
+                file_public_id=file_public_id,
+                updated_at=updated_at,
+            )
+        )
+
+    async def delete_file_record(
+        self,
+        *,
+        organization_public_id: UUID,
+        file_public_id: UUID,
+    ) -> None:
+        await self._run_transaction(
+            lambda session: queries.delete_file_record(
+                session,
+                organization_public_id=organization_public_id,
+                file_public_id=file_public_id,
             )
         )
 
@@ -174,6 +206,8 @@ class SqlAlchemyFilePersistence(FilePersistence):
             raise FileNotReadyError("File is not ready for malware result")
         if current_status is target_status:
             return
+        if current_status is FileStorageStatus.DELETING:
+            raise FileDeletionInProgressError("File is being deleted")
         if current_status is not FileStorageStatus.PENDING:
             raise FileStateConflictError("File malware state conflicts")
         await queries.update_file_storage_status(

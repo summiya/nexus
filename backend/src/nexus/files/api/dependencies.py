@@ -6,11 +6,16 @@ from fastapi import Depends
 
 from nexus.api.dependencies import AppContainerDep
 from nexus.files.application import (
+    DeleteFile,
     GetFile,
     InitiateFileUpload,
     IssueFileDownload,
     ListFiles,
 )
+
+
+def get_delete_file(container: AppContainerDep) -> DeleteFile:
+    return container.files.delete_file
 
 
 def get_initiate_file_upload(container: AppContainerDep) -> InitiateFileUpload:
@@ -28,6 +33,11 @@ def get_file(container: AppContainerDep) -> GetFile:
 def get_issue_file_download(container: AppContainerDep) -> IssueFileDownload:
     return container.files.issue_download
 
+
+DeleteFileDep = Annotated[
+    DeleteFile,
+    Depends(get_delete_file),
+]
 
 InitiateFileUploadDep = Annotated[
     InitiateFileUpload,

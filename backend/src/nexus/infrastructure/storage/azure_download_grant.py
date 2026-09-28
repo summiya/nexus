@@ -100,18 +100,14 @@ def _attachment_content_disposition(original_name: str) -> str:
         return f'attachment; filename="{escaped_fallback}"'
 
     encoded = quote(original_name, safe=_RFC5987_SAFE, encoding="utf-8")
-    return (
-        f'attachment; filename="{escaped_fallback}"; '
-        f"filename*=UTF-8''{encoded}"
-    )
+    return f"attachment; filename=\"{escaped_fallback}\"; filename*=UTF-8''{encoded}"
 
 
 def _ascii_filename_fallback(original_name: str) -> str:
     normalized = unicodedata.normalize("NFKD", original_name)
     ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
     safe_name = "".join(
-        character if " " <= character <= "~" else "_"
-        for character in ascii_name
+        character if " " <= character <= "~" else "_" for character in ascii_name
     ).strip()
     if safe_name.startswith(".") and len(safe_name) > 1:
         return f"download{safe_name}"
