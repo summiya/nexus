@@ -1,6 +1,5 @@
 """Provider-independent LLM domain contracts."""
 
-from nexus.llm.domain.capabilities import LLMProviderCapabilities
 from nexus.llm.domain.errors import (
     LLMAuthenticationError,
     LLMContentRejectedError,
@@ -42,7 +41,6 @@ __all__ = [
     "LLMFinishReason",
     "LLMInvalidRequestError",
     "LLMMessage",
-    "LLMProviderCapabilities",
     "LLMProviderUnavailableError",
     "LLMRateLimitedError",
     "LLMRequest",
