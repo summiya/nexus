@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from nexus.model_providers.domain import (
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
+    ProviderSettings,
 )
 
 
@@ -32,6 +34,14 @@ class ModelProviderDeleteRestrictedError(Exception):
     """A provider or model is still referenced and cannot be deleted."""
 
 
+@dataclass(frozen=True)
+class ProviderUpdateResult:
+    """Authoritative provider update and any credential detached by a URL change."""
+
+    provider: ConfiguredProvider
+    cleared_credential_reference: CredentialReference | None = None
+
+
 class ModelProviderPersistence(Protocol):
     """Tenant-scoped storage for one validated organization configuration."""
 
@@ -43,22 +53,38 @@ class ModelProviderPersistence(Protocol):
 
     async def create_provider(self, provider: ConfiguredProvider) -> None: ...
 
-    async def update_provider(self, provider: ConfiguredProvider) -> None: ...
+    async def update_provider_configuration(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        display_name: str | None,
+        settings: ProviderSettings | None,
+    ) -> ProviderUpdateResult: ...
+
+    async def set_provider_enabled(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        enabled: bool,
+    ) -> ConfiguredProvider: ...
 
     async def set_provider_credential_reference(
         self,
         *,
         organization_public_id: UUID,
         provider_id: OrganizationProviderId,
+        expected_credential_reference: CredentialReference | None,
         credential_reference: CredentialReference | None,
-    ) -> None: ...
+    ) -> ConfiguredProvider: ...
 
     async def delete_provider(
         self,
         *,
         organization_public_id: UUID,
         provider_id: OrganizationProviderId,
-    ) -> None: ...
+    ) -> ConfiguredProvider: ...
 
     async def create_model(self, model: ConfiguredModel) -> None: ...
 
@@ -86,4 +112,5 @@ __all__ = [
     "ModelProviderPersistence",
     "ModelProviderPersistenceError",
     "ModelProviderReferenceError",
+    "ProviderUpdateResult",
 ]

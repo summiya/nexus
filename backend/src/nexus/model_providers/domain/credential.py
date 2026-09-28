@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
 
+MAX_PROVIDER_CREDENTIAL_SECRET_BYTES = 16 * 1024
+
 
 @dataclass(frozen=True, slots=True, repr=False)
 class ProviderCredentialSecret:
@@ -14,7 +16,11 @@ class ProviderCredentialSecret:
     _value: str = field(repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self._value, str) or not self._value.strip():
+        if (
+            not isinstance(self._value, str)
+            or not self._value.strip()
+            or len(self._value.encode("utf-8")) > MAX_PROVIDER_CREDENTIAL_SECRET_BYTES
+        ):
             raise ModelProviderConfigurationError(
                 "Provider credential secret is invalid."
             )
@@ -29,3 +35,6 @@ class ProviderCredentialSecret:
 
     def __repr__(self) -> str:
         return "ProviderCredentialSecret(<redacted>)"
+
+
+__all__ = ["MAX_PROVIDER_CREDENTIAL_SECRET_BYTES", "ProviderCredentialSecret"]

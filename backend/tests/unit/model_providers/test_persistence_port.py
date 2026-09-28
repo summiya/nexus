@@ -24,7 +24,8 @@ def test_persistence_port_exposes_only_async_configuration_operations() -> None:
     assert operations == {
         "load_configuration",
         "create_provider",
-        "update_provider",
+        "update_provider_configuration",
+        "set_provider_enabled",
         "set_provider_credential_reference",
         "delete_provider",
         "create_model",

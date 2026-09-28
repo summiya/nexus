@@ -2882,6 +2882,40 @@ The endpoint must return only models available under the caller's tenant, projec
 
 Provider credentials and internal configuration must never be returned.
 
+## 89.2 Organization Model Provider Configuration
+
+The implemented authenticated provider-management API is:
+
+```text
+GET    /api/v1/model-providers/catalog
+GET    /api/v1/model-providers
+GET    /api/v1/model-providers/{provider_public_id}
+POST   /api/v1/model-providers
+PUT    /api/v1/model-providers/{provider_public_id}
+PATCH  /api/v1/model-providers/{provider_public_id}/enabled
+PUT    /api/v1/model-providers/{provider_public_id}/credential
+DELETE /api/v1/model-providers/{provider_public_id}
+```
+
+Catalog and configured-provider reads require `model_providers.read`.
+Mutations require `model_providers.manage`. Organization and actor identity
+come exclusively from the authenticated context. Provider read responses
+contain only public ID, provider type, display name, non-secret settings,
+enabled state, and `credential_configured`; credential references, storage
+locators, and plaintext never leave the backend.
+
+The credential endpoint is write-only. Replacement creates a new opaque
+reference and conditionally switches it, rather than creating another version
+under the active Key Vault secret name. Update payloads omit provider type,
+which remains immutable after creation. Changing a provider URL clears its
+credential and requires the administrator to submit it again.
+
+`PUT /api/v1/model-providers/{provider_public_id}` is a partial configuration
+update: `display_name` and `settings` are optional, at least one must be
+provided, and omitted fields retain their authoritative stored values. Clients
+must send only fields the administrator changed; they must not resubmit an
+unchanged settings snapshot from a potentially stale form.
+
 ---
 
 # 90. File API

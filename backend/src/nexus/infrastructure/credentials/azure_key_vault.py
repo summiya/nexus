@@ -7,7 +7,6 @@ from uuid import UUID
 from azure.core.exceptions import AzureError, HttpResponseError, ResourceNotFoundError
 from azure.keyvault.secrets.aio import SecretClient
 
-from nexus.infrastructure.credentials.naming import credential_storage_name
 from nexus.model_providers.domain import (
     CredentialReference,
     OrganizationProviderId,
@@ -17,6 +16,7 @@ from nexus.model_providers.ports import (
     CredentialNotFoundError,
     CredentialStoreConflictError,
     CredentialStoreError,
+    credential_storage_name,
 )
 
 

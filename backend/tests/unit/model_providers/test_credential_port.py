@@ -1,6 +1,7 @@
 import pytest
 
 from nexus.model_providers.domain import (
+    MAX_PROVIDER_CREDENTIAL_SECRET_BYTES,
     ModelProviderConfigurationError,
     ProviderCredentialSecret,
 )
@@ -34,3 +35,14 @@ def test_provider_credential_secret_rejects_blank_values_safely(value: str) -> N
         match=r"^Provider credential secret is invalid\.$",
     ):
         ProviderCredentialSecret(value)
+
+
+def test_provider_credential_secret_enforces_utf8_byte_limit() -> None:
+    accepted = "a" * MAX_PROVIDER_CREDENTIAL_SECRET_BYTES
+    assert ProviderCredentialSecret(accepted).reveal() == accepted
+
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match=r"^Provider credential secret is invalid\.$",
+    ):
+        ProviderCredentialSecret("é" * (MAX_PROVIDER_CREDENTIAL_SECRET_BYTES // 2 + 1))

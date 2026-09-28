@@ -18,10 +18,14 @@ from nexus.model_providers.domain.contracts import (
     ProviderSettings,
     ProviderType,
 )
-from nexus.model_providers.domain.credential import ProviderCredentialSecret
+from nexus.model_providers.domain.credential import (
+    MAX_PROVIDER_CREDENTIAL_SECRET_BYTES,
+    ProviderCredentialSecret,
+)
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
 
 __all__ = [
+    "MAX_PROVIDER_CREDENTIAL_SECRET_BYTES",
     "AnthropicSettings",
     "AzureOpenAISettings",
     "ConfiguredModel",

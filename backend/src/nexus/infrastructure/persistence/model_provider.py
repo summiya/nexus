@@ -13,15 +13,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.infrastructure.persistence import _model_provider_queries as queries
 from nexus.model_providers.domain import (
+    AzureOpenAISettings,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
     DefaultModelSelection,
-    ModelProviderConfigurationError,
     ModelType,
+    OpenAICompatibleSettings,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
+    ProviderSettings,
 )
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
@@ -29,6 +31,7 @@ from nexus.model_providers.ports import (
     ModelProviderPersistence,
     ModelProviderPersistenceError,
     ModelProviderReferenceError,
+    ProviderUpdateResult,
 )
 
 T = TypeVar("T")
@@ -103,20 +106,34 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
 
         await self._run_transaction(create)
 
-    async def update_provider(self, provider: ConfiguredProvider) -> None:
-        async def update(session: AsyncSession) -> None:
+    async def update_provider_configuration(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        display_name: str | None,
+        settings: ProviderSettings | None,
+    ) -> ProviderUpdateResult:
+        async def update(session: AsyncSession) -> ProviderUpdateResult:
             organization_id, current = await self._locked_configuration(
                 session,
-                provider.organization_public_id,
+                organization_public_id,
             )
-            existing = _find_provider(current, provider.provider_id)
-            if provider.provider_type is not existing.provider_type:
-                raise ModelProviderConfigurationError(
-                    "Provider type cannot be changed."
-                )
+            existing = _find_provider(current, provider_id)
             replacement = replace(
-                provider,
-                credential_reference=existing.credential_reference,
+                existing,
+                display_name=(
+                    existing.display_name if display_name is None else display_name
+                ),
+                settings=existing.settings if settings is None else settings,
+            )
+            url_changed = _provider_url(existing) != _provider_url(replacement)
+            cleared_reference = existing.credential_reference if url_changed else None
+            replacement = replace(
+                replacement,
+                credential_reference=(
+                    None if url_changed else existing.credential_reference
+                ),
             )
             updated = _replace_provider(current, replacement)
             OrganizationModelProviderConfiguration(
@@ -131,22 +148,61 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 provider=replacement,
             ):
                 raise ModelProviderReferenceError("Configured provider was not found")
+            return ProviderUpdateResult(
+                provider=replacement,
+                cleared_credential_reference=cleared_reference,
+            )
 
-        await self._run_transaction(update)
+        return await self._run_transaction(update)
+
+    async def set_provider_enabled(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        enabled: bool,
+    ) -> ConfiguredProvider:
+        async def update(session: AsyncSession) -> ConfiguredProvider:
+            organization_id, current = await self._locked_configuration(
+                session,
+                organization_public_id,
+            )
+            existing = _find_provider(current, provider_id)
+            replacement = replace(existing, enabled=enabled)
+            OrganizationModelProviderConfiguration(
+                organization_public_id=current.organization_public_id,
+                providers=_replace_provider(current, replacement),
+                models=current.models,
+                defaults=current.defaults,
+            )
+            if not await queries.update_provider(
+                session,
+                organization_id=organization_id,
+                provider=replacement,
+            ):
+                raise ModelProviderReferenceError("Configured provider was not found")
+            return replacement
+
+        return await self._run_transaction(update)
 
     async def set_provider_credential_reference(
         self,
         *,
         organization_public_id: UUID,
         provider_id: OrganizationProviderId,
+        expected_credential_reference: CredentialReference | None,
         credential_reference: CredentialReference | None,
-    ) -> None:
-        async def update(session: AsyncSession) -> None:
+    ) -> ConfiguredProvider:
+        async def update(session: AsyncSession) -> ConfiguredProvider:
             organization_id, current = await self._locked_configuration(
                 session,
                 organization_public_id,
             )
             existing = _find_provider(current, provider_id)
+            if existing.credential_reference != expected_credential_reference:
+                raise ModelProviderConflictError(
+                    "Provider credential configuration changed"
+                )
             provider = replace(existing, credential_reference=credential_reference)
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
@@ -160,21 +216,22 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 provider=provider,
             ):
                 raise ModelProviderReferenceError("Configured provider was not found")
+            return provider
 
-        await self._run_transaction(update)
+        return await self._run_transaction(update)
 
     async def delete_provider(
         self,
         *,
         organization_public_id: UUID,
         provider_id: OrganizationProviderId,
-    ) -> None:
-        async def delete(session: AsyncSession) -> None:
+    ) -> ConfiguredProvider:
+        async def delete(session: AsyncSession) -> ConfiguredProvider:
             organization_id, current = await self._locked_configuration(
                 session,
                 organization_public_id,
             )
-            _find_provider(current, provider_id)
+            existing = _find_provider(current, provider_id)
             if any(model.provider_id == provider_id for model in current.models):
                 raise ModelProviderDeleteRestrictedError(
                     "Configured provider is still referenced by models"
@@ -195,8 +252,9 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 provider_id=provider_id,
             ):
                 raise ModelProviderReferenceError("Configured provider was not found")
+            return existing
 
-        await self._run_transaction(delete, delete_operation=True)
+        return await self._run_transaction(delete, delete_operation=True)
 
     async def create_model(self, model: ConfiguredModel) -> None:
         async def create(session: AsyncSession) -> None:
@@ -406,6 +464,15 @@ def _replace_provider(
         replacement if provider.provider_id == replacement.provider_id else provider
         for provider in configuration.providers
     )
+
+
+def _provider_url(provider: ConfiguredProvider) -> str | None:
+    settings = provider.settings
+    if isinstance(settings, AzureOpenAISettings):
+        return settings.endpoint
+    if isinstance(settings, OpenAICompatibleSettings):
+        return settings.base_url
+    return None
 
 
 def _find_model(

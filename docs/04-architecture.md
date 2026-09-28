@@ -306,6 +306,49 @@ validation.
 Credential storage names are a fixed prefix plus a SHA-256 digest of the
 organization, configured-provider, and credential-reference identities. The
 name is Key Vault-compatible, fixed length, and does not expose tenant IDs.
+The provider-neutral credential port owns this non-secret storage-locator
+policy so application cleanup failures can be logged without importing an
+infrastructure adapter.
+
+Credential replacement always creates a new `CredentialReference`, stores the
+new secret, and compare-and-sets the provider reference against the reference
+read at the start. A lost race is rejected and the new secret is removed on a
+best-effort basis. After a successful switch, the old secret is removed on a
+best-effort basis so prior Key Vault versions do not remain active. Provider
+deletion similarly commits the aggregate deletion before secret cleanup.
+Cleanup failures never expose secret material and record only organization,
+actor, provider, and the opaque `npc-v1-...` operational locator.
+
+Changing an Azure OpenAI endpoint or OpenAI-compatible base URL clears the
+stored credential reference in the same locked aggregate update. The previous
+secret is then removed on a best-effort basis and an administrator must provide
+a credential for the new endpoint. Non-URL edits retain the reference.
+
+Provider configuration updates are field-level mutations merged with the
+authoritative provider while the organization aggregate is locked. Omitted
+display-name or settings fields retain their current values, and enabled-state
+updates likewise preserve current configuration and credentials. Frontends
+must submit only fields the administrator actually changed so a stale form
+cannot overwrite a newer endpoint and trigger credential invalidation.
+
+Credential replacement, credential-bearing provider deletion, and URL-change
+credential detachment are cancellation-safe critical lifecycles. If caller
+cancellation arrives after one begins, Nexus settles the database decision and
+required compensation or best-effort cleanup before re-propagating
+cancellation.
+
+Provider URL domain validation remains syntax-only: bounded HTTPS, a valid
+hostname/port, and no embedded credentials. Phase 5 outbound validation must
+resolve and revalidate DNS immediately before provider calls. It must evaluate
+every resolved address, unwrap IPv4-mapped IPv6, and permit an address only
+when `ipaddress.is_global` is true. The policy must account for legacy numeric
+IPv4 forms (`127.1`, `2130706433`, `0x7f.0.0.1`), `0.0.0.0`, `[::1]`,
+`[::ffff:127.0.0.1]`, shared space such as `100.64.0.1`, metadata addresses
+such as `169.254.169.254`, and trailing-dot names such as `localhost.`. Private
+or self-hosted endpoints require a future explicit policy decision rather than
+being allowed by default. Phase 8 runtime integration must preserve this
+resolve-time enforcement on every outbound call because DNS can change.
+
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.
 
