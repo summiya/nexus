@@ -276,7 +276,7 @@ class ConfiguredModel:
                 or self.embedding_dimension <= 0
             ):
                 raise ModelProviderConfigurationError(
-                    "Embedding dimension must be a positive integer."
+                    "Embedding dimension must be positive."
                 )
             return
 
