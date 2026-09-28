@@ -6,6 +6,9 @@ from pathlib import Path
 DOMAIN_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "model_providers" / "domain"
 )
+PORTS_ROOT = (
+    Path(__file__).resolve().parents[3] / "src" / "nexus" / "model_providers" / "ports"
+)
 
 FORBIDDEN_IMPORTS = (
     "anthropic",
@@ -56,5 +59,21 @@ def test_model_provider_domain_does_not_depend_on_llm_runtime_or_infrastructure(
                     "nexus.infrastructure",
                 )
             )
+            for module in imports
+        ), path
+
+
+def test_model_provider_ports_have_no_framework_or_infrastructure_dependencies() -> (
+    None
+):
+    for path in sorted(PORTS_ROOT.rglob("*.py")):
+        imports = _imports(path)
+        assert not any(
+            module == forbidden or module.startswith(f"{forbidden}.")
+            for module in imports
+            for forbidden in FORBIDDEN_IMPORTS
+        ), path
+        assert not any(
+            module.startswith(("nexus.api", "nexus.config", "nexus.infrastructure"))
             for module in imports
         ), path
