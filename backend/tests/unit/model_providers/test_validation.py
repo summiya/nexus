@@ -30,6 +30,10 @@ from nexus.model_providers.domain.validation import (
 )
 
 
+def test_configuration_error_is_a_value_error() -> None:
+    assert issubclass(ModelProviderConfigurationError, ValueError)
+
+
 def _provider(
     *,
     organization_id,
