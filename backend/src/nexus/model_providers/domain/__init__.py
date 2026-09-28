@@ -19,6 +19,8 @@ from nexus.model_providers.domain.contracts import (
     ProviderType,
 )
 
+from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+
 __all__ = [
     "AnthropicSettings",
     "AzureOpenAISettings",
@@ -29,6 +31,7 @@ __all__ = [
     "DefaultModelSelection",
     "GeminiSettings",
     "ModelCapability",
+    "ModelProviderConfigurationError",
     "ModelType",
     "OpenAICompatibleSettings",
     "OpenAISettings",
