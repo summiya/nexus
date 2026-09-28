@@ -84,6 +84,8 @@ def test_runtime_uses_one_application_state_container() -> None:
         "conversations",
         "storage",
         "files",
+        "credential_store",
+        "provider_credentials",
     ):
         assert f"app.state.{legacy_name}" not in source
 

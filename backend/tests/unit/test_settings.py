@@ -56,6 +56,11 @@ SETTINGS_ENV_KEYS = [
     "AZURE_STORAGE_ACCOUNT_URL",
     "AZURE_STORAGE_ACCOUNT_NAME",
     "AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID",
+    "CREDENTIAL_STORE_PROVIDER",
+    "LOCAL_CREDENTIAL_STORE_PATH",
+    "LOCAL_CREDENTIAL_STORE_KEY",
+    "AZURE_KEY_VAULT_URL",
+    "AZURE_KEY_VAULT_MANAGED_IDENTITY_CLIENT_ID",
 ]
 
 
@@ -136,6 +141,37 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.azure_storage_account_url is None
     assert settings.azure_storage_account_name is None
     assert settings.azure_storage_managed_identity_client_id is None
+    assert settings.credential_store_provider is None
+    assert settings.local_credential_store_path is None
+    assert settings.local_credential_store_key is None
+    assert settings.azure_key_vault_url is None
+    assert settings.azure_key_vault_managed_identity_client_id is None
+
+
+def test_blank_optional_credential_store_environment_values_are_unconfigured(
+    clean_environment,
+) -> None:
+    settings = build_settings(
+        credential_store_provider="",
+        local_credential_store_path="",
+        local_credential_store_key="",
+        azure_key_vault_url="",
+    )
+
+    assert settings.credential_store_provider is None
+    assert settings.local_credential_store_path is None
+    assert settings.local_credential_store_key is None
+    assert settings.azure_key_vault_url is None
+
+
+def test_local_credential_store_key_is_redacted_from_settings_representation(
+    clean_environment,
+) -> None:
+    plaintext_key = "sensitive-local-fernet-key"
+    settings = build_settings(local_credential_store_key=plaintext_key)
+
+    assert plaintext_key not in repr(settings)
+    assert "**********" in repr(settings)
 
 
 def test_database_url_is_required(clean_environment) -> None:

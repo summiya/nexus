@@ -18,6 +18,7 @@ from nexus.model_providers.domain.contracts import (
     ProviderSettings,
     ProviderType,
 )
+from nexus.model_providers.domain.credential import ProviderCredentialSecret
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "OpenAISettings",
     "OrganizationModelProviderConfiguration",
     "OrganizationProviderId",
+    "ProviderCredentialSecret",
     "ProviderSettings",
     "ProviderType",
 ]

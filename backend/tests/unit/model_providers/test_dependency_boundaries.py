@@ -14,6 +14,7 @@ FORBIDDEN_IMPORTS = (
     "anthropic",
     "azure",
     "boto3",
+    "cryptography",
     "fastapi",
     "google",
     "litellm",

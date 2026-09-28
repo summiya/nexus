@@ -1,5 +1,11 @@
 """Application-facing model-provider ports."""
 
+from nexus.model_providers.ports.credentials import (
+    CredentialNotFoundError,
+    CredentialStore,
+    CredentialStoreConflictError,
+    CredentialStoreError,
+)
 from nexus.model_providers.ports.persistence import (
     ModelProviderConflictError,
     ModelProviderDeleteRestrictedError,
@@ -9,6 +15,10 @@ from nexus.model_providers.ports.persistence import (
 )
 
 __all__ = [
+    "CredentialNotFoundError",
+    "CredentialStore",
+    "CredentialStoreConflictError",
+    "CredentialStoreError",
     "ModelProviderConflictError",
     "ModelProviderDeleteRestrictedError",
     "ModelProviderPersistence",

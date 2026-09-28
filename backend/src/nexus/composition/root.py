@@ -13,6 +13,10 @@ from nexus.composition.authentication import (
     build_authentication_composition,
 )
 from nexus.composition.files import FileComposition, build_file_composition
+from nexus.composition.provider_credentials import (
+    ProviderCredentialComposition,
+    build_provider_credential_composition,
+)
 from nexus.composition.storage import (
     StorageComposition,
     build_storage_composition,
@@ -34,6 +38,7 @@ from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.llm.application import ModelPolicy
 from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
 from nexus.llm.ports import LLMGateway
+from nexus.model_providers.ports import CredentialStore
 
 
 @dataclass(frozen=True)
@@ -103,6 +108,7 @@ class AppContainer:
     files: FileComposition
     event_publisher: EventPublisher
     storage: StorageComposition
+    provider_credentials: ProviderCredentialComposition
 
     async def close(self) -> None:
         """Release application-scoped resources in dependency order."""
@@ -111,9 +117,12 @@ class AppContainer:
             self.authentication.close()
         finally:
             try:
-                await self.storage.close()
+                await self.provider_credentials.close()
             finally:
-                await self.database.dispose()
+                try:
+                    await self.storage.close()
+                finally:
+                    await self.database.dispose()
 
 
 async def build_app_container(
@@ -127,6 +136,7 @@ async def build_app_container(
     object_storage: ObjectStorage | None = None,
     upload_grant_issuer: UploadGrantIssuer | None = None,
     download_grant_issuer: DownloadGrantIssuer | None = None,
+    credential_store: CredentialStore | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
@@ -156,6 +166,7 @@ async def build_app_container(
         raise
 
     storage: StorageComposition | None = None
+    provider_credentials: ProviderCredentialComposition | None = None
     try:
         conversations = build_conversation_composition(
             app_settings,
@@ -168,6 +179,10 @@ async def build_app_container(
             object_storage=object_storage,
             upload_grant_issuer=upload_grant_issuer,
             download_grant_issuer=download_grant_issuer,
+        )
+        provider_credentials = await build_provider_credential_composition(
+            app_settings,
+            credential_store=credential_store,
         )
         files = build_file_composition(
             app_settings,
@@ -192,6 +207,14 @@ async def build_app_container(
                     "A storage resource also failed during startup cleanup: "
                     f"{type(cleanup_error).__name__}"
                 )
+        if provider_credentials is not None:
+            try:
+                await provider_credentials.close()
+            except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001
+                construction_error.add_note(
+                    "A credential-store resource also failed during startup cleanup: "
+                    f"{type(cleanup_error).__name__}"
+                )
         try:
             await resolved_database.dispose()
         except (Exception, CancelledError) as cleanup_error:  # noqa: BLE001 - preserve startup failure
@@ -210,4 +233,5 @@ async def build_app_container(
         files=files,
         event_publisher=resolved_event_publisher,
         storage=storage,
+        provider_credentials=provider_credentials,
     )

@@ -65,7 +65,9 @@ infra-check:
 			az bicep install --version v0.47.16 >/dev/null && \
 			az bicep build --file infra/azure/file-upload-events.bicep --stdout >/dev/null && \
 			az bicep build --file infra/azure/shared-storage-system-topic.bicep --stdout >/dev/null && \
-			az bicep build-params --file infra/azure/file-upload-events.example.bicepparam --stdout >/dev/null \
+			az bicep build --file infra/azure/provider-credentials.bicep --stdout >/dev/null && \
+			az bicep build-params --file infra/azure/file-upload-events.example.bicepparam --stdout >/dev/null && \
+			az bicep build-params --file infra/azure/provider-credentials.example.bicepparam --stdout >/dev/null \
 		'
 
 docker-check:

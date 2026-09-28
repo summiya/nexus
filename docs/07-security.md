@@ -1306,6 +1306,18 @@ When using external LLM providers:
 
 Provider output remains untrusted data.
 
+Provider credential plaintext must be resolved only through the
+organization/provider/reference-scoped credential-store boundary. Secret value
+objects are redacted by default, provider errors are translated to fixed safe
+errors, and production authenticates to Azure Key Vault with Managed Identity.
+Local encrypted credential storage is restricted to explicit development/test
+environments and its Fernet key must be generated outside source control.
+
+Before unrestricted production use, restrict Key Vault networking/private
+endpoints as appropriate and enable Key Vault diagnostic audit logging with an
+operational retention and review policy. Rotation orchestration and runtime
+resolution/caching remain later runtime-integration work.
+
 ---
 
 # 44. Multi-Model Security
@@ -1803,4 +1815,3 @@ AUTHORIZED DESTINATION
 ```
 
 No model response, prompt, file, MCP message, tool result, or external service should be capable of bypassing this boundary.
-
