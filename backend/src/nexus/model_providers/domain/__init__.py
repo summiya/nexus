@@ -18,7 +18,6 @@ from nexus.model_providers.domain.contracts import (
     ProviderSettings,
     ProviderType,
 )
-
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
 
 __all__ = [

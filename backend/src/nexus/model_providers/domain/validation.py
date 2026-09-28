@@ -59,7 +59,9 @@ def require_https_url(value: str, *, field_name: str) -> str:
     except ValueError as exc:
         raise ModelProviderConfigurationError("Provider URL is invalid.") from exc
     if parsed.username is not None or parsed.password is not None:
-        raise ModelProviderConfigurationError("Provider URL must not contain credentials.")
+        raise ModelProviderConfigurationError(
+            "Provider URL must not contain credentials."
+        )
     if parsed.fragment:
         raise ModelProviderConfigurationError("Provider URL is invalid.")
     return normalized

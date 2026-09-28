@@ -111,13 +111,18 @@ def test_provider_type_rejects_wrong_settings_type(
 
 @pytest.mark.parametrize("value", ["", "   "])
 def test_azure_requires_endpoint(value: str) -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Azure OpenAI endpoint is required\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Azure OpenAI endpoint is required\.$"
+    ):
         AzureOpenAISettings(endpoint=value, api_version="2026-01-01")
 
 
 @pytest.mark.parametrize("value", ["", "   "])
 def test_azure_requires_api_version(value: str) -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Azure OpenAI API version is required\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match=r"^Azure OpenAI API version is required\.$",
+    ):
         AzureOpenAISettings(
             endpoint="https://example.openai.azure.com",
             api_version=value,
@@ -141,7 +146,9 @@ def test_openai_compatible_requires_base_url(value: str) -> None:
     ],
 )
 def test_provider_url_requires_https(url: str) -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Provider URL must use HTTPS\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Provider URL must use HTTPS\.$"
+    ):
         OpenAICompatibleSettings(base_url=url)
 
 
@@ -155,7 +162,9 @@ def test_provider_url_requires_https(url: str) -> None:
     ],
 )
 def test_provider_url_rejects_malformed_values(url: str) -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Provider URL is invalid\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Provider URL is invalid\.$"
+    ):
         OpenAICompatibleSettings(base_url=url)
 
 
@@ -230,7 +239,9 @@ def test_non_chat_models_reject_chat_capabilities(
     kwargs = {
         "embedding_dimension": 1536 if model_type is ModelType.EMBEDDING else None
     }
-    with pytest.raises(ModelProviderConfigurationError, match="cannot declare chat capabilities"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match="cannot declare chat capabilities"
+    ):
         ConfiguredModel(
             organization_public_id=uuid4(),
             model_id=ConfiguredModelId(uuid4()),
@@ -247,7 +258,10 @@ def test_non_chat_models_reject_chat_capabilities(
 def test_embedding_dimension_is_required_and_positive(
     dimension: int | None,
 ) -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Embedding dimension must be positive\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match=r"^Embedding dimension must be positive\.$",
+    ):
         ConfiguredModel(
             organization_public_id=uuid4(),
             model_id=ConfiguredModelId(uuid4()),
@@ -391,7 +405,9 @@ def test_default_must_exist() -> None:
     organization_id = uuid4()
     provider = _provider(organization_id=organization_id)
 
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Default model does not exist\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Default model does not exist\.$"
+    ):
         OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
@@ -408,7 +424,9 @@ def test_default_must_be_enabled() -> None:
         enabled=False,
     )
 
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Default model must be enabled\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Default model must be enabled\.$"
+    ):
         OrganizationModelProviderConfiguration(
             organization_public_id=organization_id,
             providers=(provider,),
@@ -522,7 +540,9 @@ def test_unknown_enum_values_fail_with_fixed_safe_messages(
 
 
 def test_provider_display_name_is_bounded() -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Provider display name is too long\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Provider display name is too long\.$"
+    ):
         ConfiguredProvider(
             organization_public_id=uuid4(),
             provider_id=OrganizationProviderId(uuid4()),
@@ -534,7 +554,9 @@ def test_provider_display_name_is_bounded() -> None:
 
 
 def test_model_display_name_is_bounded() -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Model display name is too long\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Model display name is too long\.$"
+    ):
         ConfiguredModel(
             organization_public_id=uuid4(),
             model_id=ConfiguredModelId(uuid4()),
@@ -546,7 +568,9 @@ def test_model_display_name_is_bounded() -> None:
 
 
 def test_provider_model_name_is_bounded() -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Provider model name is too long\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Provider model name is too long\.$"
+    ):
         ConfiguredModel(
             organization_public_id=uuid4(),
             model_id=ConfiguredModelId(uuid4()),
@@ -558,5 +582,7 @@ def test_provider_model_name_is_bounded() -> None:
 
 
 def test_credential_reference_rejects_non_uuid_values() -> None:
-    with pytest.raises(ModelProviderConfigurationError, match=r"^Credential reference is invalid\.$"):
+    with pytest.raises(
+        ModelProviderConfigurationError, match=r"^Credential reference is invalid\.$"
+    ):
         CredentialReference("not-a-uuid")  # type: ignore[arg-type]
