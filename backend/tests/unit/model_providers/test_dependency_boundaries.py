@@ -4,11 +4,7 @@ import ast
 from pathlib import Path
 
 DOMAIN_ROOT = (
-    Path(__file__).resolve().parents[3]
-    / "src"
-    / "nexus"
-    / "model_providers"
-    / "domain"
+    Path(__file__).resolve().parents[3] / "src" / "nexus" / "model_providers" / "domain"
 )
 
 FORBIDDEN_IMPORTS = (
@@ -46,7 +42,9 @@ def test_model_provider_domain_has_no_framework_or_provider_sdk_imports() -> Non
         ), path
 
 
-def test_model_provider_domain_does_not_depend_on_llm_runtime_or_infrastructure() -> None:
+def test_model_provider_domain_does_not_depend_on_llm_runtime_or_infrastructure() -> (
+    None
+):
     for path in sorted(DOMAIN_ROOT.rglob("*.py")):
         imports = _imports(path)
         assert not any(
