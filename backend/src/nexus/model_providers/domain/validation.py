@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-MAX_IDENTIFIER_LENGTH = 128
 MAX_DISPLAY_NAME_LENGTH = 200
 MAX_PROVIDER_MODEL_NAME_LENGTH = 256
 MAX_API_VERSION_LENGTH = 64
@@ -65,7 +64,6 @@ __all__ = [
     "MAX_API_VERSION_LENGTH",
     "MAX_CREDENTIAL_REFERENCE_LENGTH",
     "MAX_DISPLAY_NAME_LENGTH",
-    "MAX_IDENTIFIER_LENGTH",
     "MAX_PROVIDER_MODEL_NAME_LENGTH",
     "MAX_URL_LENGTH",
     "require_bounded_text",
