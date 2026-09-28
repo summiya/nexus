@@ -1,0 +1,60 @@
+"""Deterministic provider/model validation helpers."""
+
+from __future__ import annotations
+
+from urllib.parse import urlsplit
+
+MAX_IDENTIFIER_LENGTH = 128
+MAX_DISPLAY_NAME_LENGTH = 200
+MAX_PROVIDER_MODEL_NAME_LENGTH = 256
+MAX_API_VERSION_LENGTH = 64
+MAX_URL_LENGTH = 2048
+MAX_CREDENTIAL_REFERENCE_LENGTH = 256
+
+
+def require_bounded_text(
+    value: str,
+    *,
+    field_name: str,
+    max_length: int,
+) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{field_name} is required.")
+    if len(normalized) > max_length:
+        raise ValueError(f"{field_name} is too long.")
+    return normalized
+
+
+def require_https_url(value: str, *, field_name: str) -> str:
+    normalized = require_bounded_text(
+        value,
+        field_name=field_name,
+        max_length=MAX_URL_LENGTH,
+    )
+    try:
+        parsed = urlsplit(normalized)
+    except ValueError as exc:
+        raise ValueError("Provider URL is invalid.") from exc
+
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Provider URL must use HTTPS.")
+    if not parsed.hostname:
+        raise ValueError("Provider URL is invalid.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Provider URL must not contain credentials.")
+    if parsed.fragment:
+        raise ValueError("Provider URL is invalid.")
+    return normalized
+
+
+__all__ = [
+    "MAX_API_VERSION_LENGTH",
+    "MAX_CREDENTIAL_REFERENCE_LENGTH",
+    "MAX_DISPLAY_NAME_LENGTH",
+    "MAX_IDENTIFIER_LENGTH",
+    "MAX_PROVIDER_MODEL_NAME_LENGTH",
+    "MAX_URL_LENGTH",
+    "require_bounded_text",
+    "require_https_url",
+]
