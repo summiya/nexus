@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TypeAlias
 from uuid import UUID
 
 from nexus.model_providers.domain.validation import (
@@ -61,7 +60,7 @@ class OrganizationProviderId:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise ValueError("Configured provider identifier is invalid.")
+            raise TypeError("Configured provider identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -73,7 +72,7 @@ class ConfiguredModelId:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise ValueError("Configured model identifier is invalid.")
+            raise TypeError("Configured model identifier is invalid.")
 
     def __str__(self) -> str:
         return str(self.value)
@@ -87,7 +86,7 @@ class CredentialReference:
 
     def __post_init__(self) -> None:
         if not isinstance(self.value, UUID):
-            raise ValueError("Credential reference is invalid.")
+            raise TypeError("Credential reference is invalid.")
 
     def __repr__(self) -> str:
         return "CredentialReference(<redacted>)"
@@ -148,7 +147,7 @@ class OpenAICompatibleSettings:
         )
 
 
-ProviderSettings: TypeAlias = (
+type ProviderSettings = (
     OpenAISettings
     | AnthropicSettings
     | AzureOpenAISettings
@@ -177,16 +176,16 @@ class ConfiguredProvider:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise ValueError("Organization identifier is invalid.")
+            raise TypeError("Organization identifier is invalid.")
         if not isinstance(self.provider_id, OrganizationProviderId):
-            raise ValueError("Configured provider identifier is invalid.")
+            raise TypeError("Configured provider identifier is invalid.")
         if not isinstance(self.provider_type, ProviderType):
-            raise ValueError("Unknown provider type.")
+            raise TypeError("Unknown provider type.")
         if self.credential_reference is not None and not isinstance(
             self.credential_reference,
             CredentialReference,
         ):
-            raise ValueError("Credential reference is invalid.")
+            raise TypeError("Credential reference is invalid.")
         object.__setattr__(
             self,
             "display_name",
@@ -198,7 +197,7 @@ class ConfiguredProvider:
         )
         expected = _EXPECTED_SETTINGS[self.provider_type]
         if not isinstance(self.settings, expected):
-            raise ValueError("Provider settings do not match provider type.")
+            raise TypeError("Provider settings do not match provider type.")
 
 
 @dataclass(frozen=True)
@@ -222,18 +221,18 @@ class ConfiguredModel:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise ValueError("Organization identifier is invalid.")
+            raise TypeError("Organization identifier is invalid.")
         if not isinstance(self.model_id, ConfiguredModelId):
-            raise ValueError("Configured model identifier is invalid.")
+            raise TypeError("Configured model identifier is invalid.")
         if not isinstance(self.provider_id, OrganizationProviderId):
-            raise ValueError("Configured provider identifier is invalid.")
+            raise TypeError("Configured provider identifier is invalid.")
         if not isinstance(self.model_type, ModelType):
-            raise ValueError("Unknown model type.")
+            raise TypeError("Unknown model type.")
         if any(
             not isinstance(capability, ModelCapability)
             for capability in self.capabilities
         ):
-            raise ValueError("Unknown model capability.")
+            raise TypeError("Unknown model capability.")
         object.__setattr__(
             self,
             "provider_model_name",
@@ -290,7 +289,7 @@ class DefaultModelSelection:
 
     def for_type(self, model_type: ModelType) -> ConfiguredModelId | None:
         if not isinstance(model_type, ModelType):
-            raise ValueError("Unknown model type.")
+            raise TypeError("Unknown model type.")
         if model_type is ModelType.CHAT:
             return self.chat
         if model_type is ModelType.EMBEDDING:
@@ -309,17 +308,17 @@ class OrganizationModelProviderConfiguration:
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
-            raise ValueError("Organization identifier is invalid.")
+            raise TypeError("Organization identifier is invalid.")
         if not isinstance(self.defaults, DefaultModelSelection):
-            raise ValueError("Default model selection is invalid.")
+            raise TypeError("Default model selection is invalid.")
         object.__setattr__(self, "providers", tuple(self.providers))
         object.__setattr__(self, "models", tuple(self.models))
         if any(
             not isinstance(provider, ConfiguredProvider) for provider in self.providers
         ):
-            raise ValueError("Configured provider is invalid.")
+            raise TypeError("Configured provider is invalid.")
         if any(not isinstance(model, ConfiguredModel) for model in self.models):
-            raise ValueError("Configured model is invalid.")
+            raise TypeError("Configured model is invalid.")
         self._validate()
 
     def _validate(self) -> None:
@@ -400,10 +399,10 @@ __all__ = [
     "DefaultModelSelection",
     "GeminiSettings",
     "ModelCapability",
-    "OrganizationModelProviderConfiguration",
     "ModelType",
     "OpenAICompatibleSettings",
     "OpenAISettings",
+    "OrganizationModelProviderConfiguration",
     "OrganizationProviderId",
     "ProviderSettings",
     "ProviderType",
