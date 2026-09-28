@@ -12,8 +12,6 @@ from uuid import uuid4
 from nexus.authentication.gateways import (
     AuthenticationEmailError,
     AuthenticationEmailGateway,
-    RateLimiter,
-    RateLimitError,
 )
 from nexus.authentication.otp import (
     digest_otp,
@@ -25,6 +23,7 @@ from nexus.authentication.repository import AuthenticationRepository, OtpChallen
 from nexus.authentication.session_service import SessionService, SessionTokenResult
 from nexus.errors import ErrorCode, NexusError
 from nexus.logging import get_logger
+from nexus.ports.rate_limit import RateLimiter, RateLimitError
 from nexus.ports.transaction import TransactionManager
 
 logger = get_logger(__name__)

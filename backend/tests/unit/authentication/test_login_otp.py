@@ -10,7 +10,6 @@ import pytest
 
 from nexus.authentication.gateways import (
     AuthenticationEmailError,
-    RateLimitError,
 )
 from nexus.authentication.login_service import (
     LoginOtpRequest,
@@ -21,6 +20,7 @@ from nexus.authentication.otp import digest_otp, keyed_digest
 from nexus.authentication.repository import OtpChallenge
 from nexus.authentication.session_service import SessionService
 from nexus.errors import ErrorCode, NexusError
+from nexus.ports.rate_limit import RateLimitError
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=UTC)
 OTP_SECRET = "test-secret-value-with-enough-length"

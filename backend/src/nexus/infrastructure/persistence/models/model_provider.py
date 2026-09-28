@@ -42,6 +42,17 @@ class ModelProvider(Base):
             name="ck_model_providers_display_name_nonblank",
         ),
         CheckConstraint(
+            "validation_status IN ('unvalidated', 'valid', "
+            "'invalid_credentials', 'unreachable', "
+            "'unsupported_configuration')",
+            name="ck_model_providers_validation_status",
+        ),
+        CheckConstraint(
+            "(validation_status = 'unvalidated' AND last_validated_at IS NULL) OR "
+            "(validation_status <> 'unvalidated' AND last_validated_at IS NOT NULL)",
+            name="ck_model_providers_validation_timestamp",
+        ),
+        CheckConstraint(
             "jsonb_typeof(settings_json) = 'object' AND ("
             "(provider_type IN ('openai', 'anthropic', 'gemini') "
             "AND settings_json = '{}'::jsonb) OR "
@@ -108,6 +119,15 @@ class ModelProvider(Base):
         nullable=False,
         default=True,
         server_default=text("true"),
+    )
+    validation_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="unvalidated",
+        server_default=text("'unvalidated'"),
+    )
+    last_validated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

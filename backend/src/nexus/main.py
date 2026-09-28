@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from nexus.api.router import api_router
-from nexus.authentication.gateways import RateLimiter
 from nexus.composition.root import build_app_container
 from nexus.config.settings import Settings, load_settings
 from nexus.errors.handlers import register_exception_handlers
@@ -16,7 +15,8 @@ from nexus.infrastructure.persistence.session import Database
 from nexus.llm.ports import LLMGateway
 from nexus.logging import configure_logging, get_logger
 from nexus.middleware import RequestContextMiddleware
-from nexus.model_providers.ports import CredentialStore
+from nexus.model_providers.ports import CredentialStore, ProviderConfigurationValidator
+from nexus.ports.rate_limit import RateLimiter
 
 logger = get_logger("nexus")
 
@@ -32,6 +32,7 @@ def create_app(
     upload_grant_issuer: UploadGrantIssuer | None = None,
     download_grant_issuer: DownloadGrantIssuer | None = None,
     credential_store: CredentialStore | None = None,
+    provider_configuration_validator: ProviderConfigurationValidator | None = None,
 ) -> FastAPI:
     """Compose one NEXUS FastAPI application from explicit dependencies."""
     resolved_settings = app_settings or load_settings()
@@ -50,6 +51,7 @@ def create_app(
             upload_grant_issuer=upload_grant_issuer,
             download_grant_issuer=download_grant_issuer,
             credential_store=credential_store,
+            provider_configuration_validator=provider_configuration_validator,
         )
         app.state.container = container
         logger.info("application_started")

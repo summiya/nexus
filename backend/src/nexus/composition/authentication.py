@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nexus.authentication.gateways import (
     AccessTokenGateway,
     AuthenticationEmailGateway,
-    RateLimiter,
 )
 from nexus.authentication.login_service import LoginPolicy, LoginService
 from nexus.authentication.session_service import SessionPolicy, SessionService
@@ -32,6 +31,7 @@ from nexus.infrastructure.persistence.repositories.authentication import (
 )
 from nexus.infrastructure.persistence.transaction import SqlAlchemyTransactionManager
 from nexus.infrastructure.rate_limit import RedisRateLimiter
+from nexus.ports.rate_limit import RateLimiter
 
 
 def _noop() -> None:

@@ -88,6 +88,19 @@ class Settings(BaseSettings):
     local_credential_store_key: SecretStr | None = None
     azure_key_vault_url: HttpUrl | None = None
     azure_key_vault_managed_identity_client_id: UUID | None = None
+    model_provider_validation_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
+    model_provider_validation_rate_limit_max_requests: int = Field(default=1, gt=0)
+    model_provider_validation_rate_limit_window_seconds: int = Field(default=5, gt=0)
+    model_provider_validation_organization_rate_limit_max_requests: int = Field(
+        default=20, gt=0
+    )
+    model_provider_validation_organization_rate_limit_window_seconds: int = Field(
+        default=60, gt=0
+    )
 
     @field_validator(
         "credential_store_provider",

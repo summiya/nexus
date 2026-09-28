@@ -27,6 +27,7 @@ def test_persistence_port_exposes_only_async_configuration_operations() -> None:
         "update_provider_configuration",
         "set_provider_enabled",
         "set_provider_credential_reference",
+        "record_provider_validation",
         "delete_provider",
         "create_model",
         "update_model",

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
@@ -20,6 +22,7 @@ from nexus.model_providers.api.dependencies import (
     get_provider_enabled_setter,
     get_provider_list,
     get_provider_updater,
+    get_provider_validator,
 )
 from nexus.model_providers.application import ProviderCatalogItem
 from nexus.model_providers.domain import (
@@ -29,6 +32,7 @@ from nexus.model_providers.domain import (
     OrganizationProviderId,
     ProviderCredentialSecret,
     ProviderType,
+    ProviderValidationStatus,
 )
 
 
@@ -162,6 +166,8 @@ def test_provider_reads_mask_all_credential_storage_details() -> None:
                 "settings": {"base_url": "https://models.example.com"},
                 "enabled": True,
                 "credential_configured": True,
+                "validation_status": "unvalidated",
+                "last_validated_at": None,
             }
         ]
     }
@@ -262,6 +268,38 @@ def test_provider_mutation_routes_use_trusted_auth_context() -> None:
         ("enabled", organization_id, user_id),
         ("delete", organization_id, user_id),
     ]
+
+
+def test_validate_provider_uses_trusted_context_and_returns_safe_result() -> None:
+    app, organization_id, user_id, provider = _app()
+    validated = replace(
+        provider,
+        validation_status=ProviderValidationStatus.VALID,
+        last_validated_at=datetime(2026, 9, 29, 12, 30, tzinfo=UTC),
+    )
+    service = FakeMutation(validated, "validate")
+    app.dependency_overrides[get_provider_validator] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/model-providers/{provider.provider_id.value}/validate"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == {
+        "status": "valid",
+        "last_validated_at": "2026-09-29T12:30:00Z",
+    }
+    assert service.calls == [("validate", organization_id, user_id)]
+    assert service.last_values["provider_public_id"] == provider.provider_id.value
+    for forbidden in (
+        "credential_reference",
+        "secret",
+        "api-key",
+        "npc-v1",
+    ):
+        assert forbidden not in response.text
 
 
 def test_credential_endpoint_is_write_only_and_does_not_log_secret(

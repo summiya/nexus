@@ -15,6 +15,7 @@ from nexus.model_providers.domain import (
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderSettings,
+    ProviderValidationStatus,
 )
 
 
@@ -77,6 +78,16 @@ class ModelProviderPersistence(Protocol):
         provider_id: OrganizationProviderId,
         expected_credential_reference: CredentialReference | None,
         credential_reference: CredentialReference | None,
+    ) -> ConfiguredProvider: ...
+
+    async def record_provider_validation(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        expected_settings: ProviderSettings,
+        expected_credential_reference: CredentialReference | None,
+        status: ProviderValidationStatus,
     ) -> ConfiguredProvider: ...
 
     async def delete_provider(

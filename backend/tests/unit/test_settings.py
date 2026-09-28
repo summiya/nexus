@@ -61,6 +61,11 @@ SETTINGS_ENV_KEYS = [
     "LOCAL_CREDENTIAL_STORE_KEY",
     "AZURE_KEY_VAULT_URL",
     "AZURE_KEY_VAULT_MANAGED_IDENTITY_CLIENT_ID",
+    "MODEL_PROVIDER_VALIDATION_TIMEOUT_SECONDS",
+    "MODEL_PROVIDER_VALIDATION_RATE_LIMIT_MAX_REQUESTS",
+    "MODEL_PROVIDER_VALIDATION_RATE_LIMIT_WINDOW_SECONDS",
+    "MODEL_PROVIDER_VALIDATION_ORGANIZATION_RATE_LIMIT_MAX_REQUESTS",
+    "MODEL_PROVIDER_VALIDATION_ORGANIZATION_RATE_LIMIT_WINDOW_SECONDS",
 ]
 
 
@@ -146,6 +151,13 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.local_credential_store_key is None
     assert settings.azure_key_vault_url is None
     assert settings.azure_key_vault_managed_identity_client_id is None
+    assert settings.model_provider_validation_timeout_seconds == 10.0
+    assert settings.model_provider_validation_rate_limit_max_requests == 1
+    assert settings.model_provider_validation_rate_limit_window_seconds == 5
+    assert settings.model_provider_validation_organization_rate_limit_max_requests == 20
+    assert (
+        settings.model_provider_validation_organization_rate_limit_window_seconds == 60
+    )
 
 
 def test_blank_optional_credential_store_environment_values_are_unconfigured(

@@ -20,6 +20,8 @@ def test_provider_model_schema_has_named_tenant_and_conflict_constraints() -> No
 
     assert "uq_model_providers_credential_reference_not_null" in provider_names
     assert "uq_model_providers_organization_id_display_name" in provider_names
+    assert "ck_model_providers_validation_status" in provider_names
+    assert "ck_model_providers_validation_timestamp" in provider_names
     assert "fk_configured_models_organization_provider" in model_names
     assert "uq_configured_models_provider_model_identity" in model_names
     assert "fk_organization_model_defaults_tenant_model" in default_names

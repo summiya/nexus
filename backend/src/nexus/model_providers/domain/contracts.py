@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+from nexus.model_providers.domain.provider_validation import ProviderValidationStatus
 from nexus.model_providers.domain.validation import (
     MAX_API_VERSION_LENGTH,
     MAX_DISPLAY_NAME_LENGTH,
@@ -178,6 +180,8 @@ class ConfiguredProvider:
     settings: ProviderSettings
     enabled: bool
     credential_reference: CredentialReference | None = None
+    validation_status: ProviderValidationStatus = ProviderValidationStatus.UNVALIDATED
+    last_validated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_public_id, UUID):
@@ -197,6 +201,23 @@ class ConfiguredProvider:
             CredentialReference,
         ):
             raise ModelProviderConfigurationError("Credential reference is invalid.")
+        if not isinstance(self.validation_status, ProviderValidationStatus):
+            raise ModelProviderConfigurationError(
+                "Provider validation status is invalid."
+            )
+        if self.validation_status is ProviderValidationStatus.UNVALIDATED:
+            if self.last_validated_at is not None:
+                raise ModelProviderConfigurationError(
+                    "Unvalidated provider cannot have a validation timestamp."
+                )
+        elif (
+            not isinstance(self.last_validated_at, datetime)
+            or self.last_validated_at.tzinfo is None
+            or self.last_validated_at.utcoffset() is None
+        ):
+            raise ModelProviderConfigurationError(
+                "Validated provider must have a timezone-aware timestamp."
+            )
         object.__setattr__(
             self,
             "display_name",

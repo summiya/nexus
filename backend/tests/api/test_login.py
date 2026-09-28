@@ -13,7 +13,6 @@ from nexus.authentication.api.dependencies import get_login_service
 from nexus.authentication.gateways import (
     AuthenticationEmailError,
     AuthenticationEmailGateway,
-    RateLimiter,
 )
 from nexus.authentication.login_service import (
     LoginOtpRequest,
@@ -24,6 +23,7 @@ from nexus.authentication.login_service import (
 from nexus.authentication.repository import AuthenticationRepository
 from nexus.authentication.session_service import SessionService, SessionTokenResult
 from nexus.errors import ErrorCode, NexusError
+from nexus.ports.rate_limit import RateLimiter
 from nexus.ports.transaction import TransactionManager
 
 

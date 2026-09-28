@@ -338,16 +338,28 @@ required compensation or best-effort cleanup before re-propagating
 cancellation.
 
 Provider URL domain validation remains syntax-only: bounded HTTPS, a valid
-hostname/port, and no embedded credentials. Phase 5 outbound validation must
-resolve and revalidate DNS immediately before provider calls. It must evaluate
-every resolved address, unwrap IPv4-mapped IPv6, and permit an address only
-when `ipaddress.is_global` is true. The policy must account for legacy numeric
+hostname/port, and no embedded credentials. Provider credential validation
+resolves and checks DNS inside one bounded operation immediately before every
+provider call. It evaluates every resolved address, unwraps IPv4-mapped IPv6,
+and permits an address only when `ipaddress.is_global` is true. The outbound
+connector is pinned to those checked addresses while the original hostname is
+preserved for TLS verification, SNI, and the HTTP Host header. Redirects and
+environment proxy configuration are disabled. The policy accounts for legacy numeric
 IPv4 forms (`127.1`, `2130706433`, `0x7f.0.0.1`), `0.0.0.0`, `[::1]`,
 `[::ffff:127.0.0.1]`, shared space such as `100.64.0.1`, metadata addresses
 such as `169.254.169.254`, and trailing-dot names such as `localhost.`. Private
 or self-hosted endpoints require a future explicit policy decision rather than
 being allowed by default. Phase 8 runtime integration must preserve this
 resolve-time enforcement on every outbound call because DNS can change.
+
+Validation uses provider metadata endpoints without generating content. It
+classifies responses by status only and never parses provider bodies. Generic
+`403` responses are unsupported configuration rather than invalid credentials;
+Azure OpenAI can return `403` for resource firewall/network restrictions. The
+current status and database-generated validation timestamp are stored on the
+provider and reset whenever settings or the credential reference changes.
+Results are compare-and-set against the settings/reference snapshot so an old
+request cannot validate a newer configuration.
 
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.
