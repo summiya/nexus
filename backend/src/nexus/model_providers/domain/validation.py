@@ -27,6 +27,13 @@ def require_bounded_text(
 
 
 def require_https_url(value: str, *, field_name: str) -> str:
+    """Validate URL syntax only.
+
+    Network and SSRF defenses such as private/loopback/link-local address checks,
+    metadata-address blocking, DNS resolution, and DNS re-validation belong to a
+    later infrastructure validation phase.
+    """
+
     normalized = require_bounded_text(
         value,
         field_name=field_name,
@@ -41,6 +48,12 @@ def require_https_url(value: str, *, field_name: str) -> str:
         raise ValueError("Provider URL must use HTTPS.")
     if not parsed.hostname:
         raise ValueError("Provider URL is invalid.")
+    if any(character.isspace() for character in parsed.netloc) or "\\" in parsed.netloc:
+        raise ValueError("Provider URL is invalid.")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("Provider URL is invalid.") from exc
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("Provider URL must not contain credentials.")
     if parsed.fragment:
