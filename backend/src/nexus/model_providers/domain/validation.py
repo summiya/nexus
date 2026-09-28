@@ -51,7 +51,7 @@ def require_https_url(value: str, *, field_name: str) -> str:
     if any(character.isspace() for character in parsed.netloc) or "\\" in parsed.netloc:
         raise ValueError("Provider URL is invalid.")
     try:
-        parsed.port
+        _ = parsed.port
     except ValueError as exc:
         raise ValueError("Provider URL is invalid.") from exc
     if parsed.username is not None or parsed.password is not None:
