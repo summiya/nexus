@@ -99,7 +99,7 @@ def test_provider_type_rejects_wrong_settings_type(
     settings: object,
 ) -> None:
     with pytest.raises(
-        TypeError,
+        ModelProviderConfigurationError,
         match=r"^Provider settings do not match provider type\.$",
     ):
         _provider(
@@ -127,7 +127,7 @@ def test_azure_requires_api_version(value: str) -> None:
 @pytest.mark.parametrize("value", ["", "   "])
 def test_openai_compatible_requires_base_url(value: str) -> None:
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^OpenAI-compatible base URL is required\.$",
     ):
         OpenAICompatibleSettings(base_url=value)
@@ -168,7 +168,7 @@ def test_provider_url_rejects_malformed_values(url: str) -> None:
 )
 def test_provider_url_rejects_embedded_credentials(url: str) -> None:
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Provider URL must not contain credentials\.$",
     ):
         OpenAICompatibleSettings(base_url=url)
@@ -178,7 +178,7 @@ def test_provider_url_rejects_overlong_value() -> None:
     url = "https://example.com/" + ("a" * MAX_URL_LENGTH)
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^OpenAI-compatible base URL is too long\.$",
     ):
         OpenAICompatibleSettings(base_url=url)
@@ -325,7 +325,7 @@ def test_require_bounded_text_rejects_non_string_without_attribute_error() -> No
 
 def test_chat_model_rejects_embedding_dimension() -> None:
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Chat models cannot declare an embedding dimension\.$",
     ):
         ConfiguredModel(
@@ -341,7 +341,7 @@ def test_chat_model_rejects_embedding_dimension() -> None:
 
 def test_reranker_rejects_embedding_dimension() -> None:
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Reranker models cannot declare an embedding dimension\.$",
     ):
         ConfiguredModel(
@@ -359,7 +359,7 @@ def test_configuration_rejects_cross_organization_provider() -> None:
     provider = _provider(organization_id=uuid4())
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Provider belongs to a different organization\.$",
     ):
         OrganizationModelProviderConfiguration(
@@ -377,7 +377,7 @@ def test_configuration_rejects_cross_organization_model() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Model belongs to a different organization\.$",
     ):
         OrganizationModelProviderConfiguration(
@@ -431,7 +431,7 @@ def test_default_must_match_selected_type() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Default model type does not match selection\.$",
     ):
         OrganizationModelProviderConfiguration(
@@ -451,7 +451,7 @@ def test_default_provider_must_be_enabled() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Default model provider must be enabled\.$",
     ):
         OrganizationModelProviderConfiguration(
@@ -472,7 +472,7 @@ def test_default_chat_model_must_support_streaming() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Default chat model must support streaming\.$",
     ):
         OrganizationModelProviderConfiguration(
@@ -492,7 +492,7 @@ def test_model_must_reference_provider_in_same_configuration() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ModelProviderConfigurationError,
         match=r"^Configured model references an unknown provider\.$",
     ):
         OrganizationModelProviderConfiguration(
