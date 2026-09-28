@@ -204,6 +204,13 @@ class ConfiguredProvider:
 
 @dataclass(frozen=True)
 class ConfiguredModel:
+    """One organization-owned model configuration.
+
+    provider_model_name is the provider's invocation identifier. For Azure
+    OpenAI it is the deployment name, allowing one configured Azure provider
+    to expose multiple chat or embedding deployments.
+    """
+
     organization_public_id: UUID
     model_id: ConfiguredModelId
     provider_id: OrganizationProviderId
