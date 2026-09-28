@@ -314,7 +314,9 @@ class OrganizationModelProviderConfiguration:
             raise ValueError("Default model selection is invalid.")
         object.__setattr__(self, "providers", tuple(self.providers))
         object.__setattr__(self, "models", tuple(self.models))
-        if any(not isinstance(provider, ConfiguredProvider) for provider in self.providers):
+        if any(
+            not isinstance(provider, ConfiguredProvider) for provider in self.providers
+        ):
             raise ValueError("Configured provider is invalid.")
         if any(not isinstance(model, ConfiguredModel) for model in self.models):
             raise ValueError("Configured model is invalid.")
