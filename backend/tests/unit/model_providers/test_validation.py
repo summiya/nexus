@@ -14,10 +14,10 @@ from nexus.model_providers.domain import (
     DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
-    OrganizationModelProviderConfiguration,
     ModelType,
     OpenAICompatibleSettings,
     OpenAISettings,
+    OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderType,
 )
@@ -95,7 +95,7 @@ def test_provider_type_rejects_wrong_settings_type(
     settings: object,
 ) -> None:
     with pytest.raises(
-        ValueError,
+        TypeError,
         match=r"^Provider settings do not match provider type\.$",
     ):
         _provider(
@@ -443,7 +443,7 @@ def test_model_must_reference_provider_in_same_configuration() -> None:
     ],
 )
 def test_unknown_enum_values_fail_with_fixed_safe_messages(
-    enum_type: type[ProviderType] | type[ModelType] | type[ModelCapability],
+    enum_type: type[ProviderType | ModelType | ModelCapability],
     value: str,
     message: str,
 ) -> None:
@@ -490,5 +490,5 @@ def test_provider_model_name_is_bounded() -> None:
 
 
 def test_credential_reference_rejects_non_uuid_values() -> None:
-    with pytest.raises(ValueError, match=r"^Credential reference is invalid\.$"):
+    with pytest.raises(TypeError, match=r"^Credential reference is invalid\.$"):
         CredentialReference("not-a-uuid")  # type: ignore[arg-type]
