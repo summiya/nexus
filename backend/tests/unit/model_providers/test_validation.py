@@ -56,9 +56,7 @@ def _chat_model(
     enabled: bool = True,
     streaming: bool = True,
 ) -> ConfiguredModel:
-    capabilities = (
-        frozenset({ModelCapability.STREAMING}) if streaming else frozenset()
-    )
+    capabilities = frozenset({ModelCapability.STREAMING}) if streaming else frozenset()
     return ConfiguredModel(
         organization_public_id=organization_id,
         model_id=ConfiguredModelId(uuid4()),
