@@ -21,6 +21,7 @@ from nexus.infrastructure.persistence.models.model_provider import (
 )
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.model_providers.domain import (
+    AnthropicSettings,
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
@@ -34,6 +35,7 @@ from nexus.model_providers.domain import (
 )
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
+    ModelProviderDeleteRestrictedError,
     ModelProviderPersistenceError,
     ModelProviderReferenceError,
 )
@@ -218,6 +220,127 @@ def test_duplicate_provider_display_name_maps_to_conflict(
                 )
             )
         )
+
+
+def test_update_provider_preserves_existing_credential_reference(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    credential_reference = CredentialReference(uuid4())
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(
+        organization_public_id,
+        credential_reference=credential_reference,
+    )
+    asyncio.run(persistence.create_provider(provider))
+
+    asyncio.run(
+        persistence.update_provider(
+            replace(
+                provider,
+                display_name="Updated OpenAI",
+                credential_reference=None,
+            )
+        )
+    )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers[0].display_name == "Updated OpenAI"
+    assert configuration.providers[0].credential_reference == credential_reference
+
+
+def test_update_provider_rejects_provider_type_change(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(organization_public_id)
+    asyncio.run(persistence.create_provider(provider))
+
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match=r"^Provider type cannot be changed\.$",
+    ):
+        asyncio.run(
+            persistence.update_provider(
+                replace(
+                    provider,
+                    provider_type=ProviderType.ANTHROPIC,
+                    settings=AnthropicSettings(),
+                )
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers == (provider,)
+
+
+def test_delete_provider_with_models_is_explicitly_restricted(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(organization_public_id)
+    model = _chat_model(organization_public_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+
+    with pytest.raises(
+        ModelProviderDeleteRestrictedError,
+        match=r"^Configured provider is still referenced by models$",
+    ):
+        asyncio.run(
+            persistence.delete_provider(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers == (provider,)
+    assert configuration.models == (model,)
+
+
+def test_delete_current_default_model_is_explicitly_restricted(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider, model = asyncio.run(
+        _create_complete_configuration(persistence, organization_public_id)
+    )
+
+    with pytest.raises(
+        ModelProviderDeleteRestrictedError,
+        match=r"^Configured model is selected as a default$",
+    ):
+        asyncio.run(
+            persistence.delete_model(
+                organization_public_id=organization_public_id,
+                model_id=model.model_id,
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers == (provider,)
+    assert configuration.models == (model,)
+    assert configuration.defaults.chat == model.model_id
 
 
 def test_unexpected_integrity_error_remains_persistence_failure(

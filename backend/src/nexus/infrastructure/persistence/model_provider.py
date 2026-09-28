@@ -18,6 +18,7 @@ from nexus.model_providers.domain import (
     ConfiguredProvider,
     CredentialReference,
     DefaultModelSelection,
+    ModelProviderConfigurationError,
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
@@ -108,7 +109,16 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 session,
                 provider.organization_public_id,
             )
-            updated = _replace_provider(current, provider)
+            existing = _find_provider(current, provider.provider_id)
+            if provider.provider_type is not existing.provider_type:
+                raise ModelProviderConfigurationError(
+                    "Provider type cannot be changed."
+                )
+            replacement = replace(
+                provider,
+                credential_reference=existing.credential_reference,
+            )
+            updated = _replace_provider(current, replacement)
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
                 providers=updated,
@@ -118,7 +128,7 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
             if not await queries.update_provider(
                 session,
                 organization_id=organization_id,
-                provider=provider,
+                provider=replacement,
             ):
                 raise ModelProviderReferenceError("Configured provider was not found")
 
@@ -165,6 +175,10 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 organization_public_id,
             )
             _find_provider(current, provider_id)
+            if any(model.provider_id == provider_id for model in current.models):
+                raise ModelProviderDeleteRestrictedError(
+                    "Configured provider is still referenced by models"
+                )
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
                 providers=tuple(
@@ -239,6 +253,14 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 organization_public_id,
             )
             _find_model(current, model_id)
+            if model_id in (
+                current.defaults.chat,
+                current.defaults.embedding,
+                current.defaults.reranker,
+            ):
+                raise ModelProviderDeleteRestrictedError(
+                    "Configured model is selected as a default"
+                )
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
                 providers=current.providers,
