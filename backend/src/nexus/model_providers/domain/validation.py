@@ -43,6 +43,8 @@ def require_https_url(value: str, *, field_name: str) -> str:
     except ValueError as exc:
         raise ValueError("Provider URL is invalid.") from exc
 
+    if not parsed.scheme:
+        raise ValueError("Provider URL is invalid.")
     if parsed.scheme.lower() != "https":
         raise ValueError("Provider URL must use HTTPS.")
     if not parsed.hostname:
