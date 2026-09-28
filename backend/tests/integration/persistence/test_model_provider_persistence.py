@@ -289,12 +289,11 @@ def test_update_provider_preserves_existing_credential_reference(
     asyncio.run(persistence.create_provider(provider))
 
     asyncio.run(
-        persistence.update_provider(
-            replace(
-                provider,
-                display_name="Updated OpenAI",
-                credential_reference=None,
-            )
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name="Updated OpenAI",
+            settings=None,
         )
     )
 
@@ -324,14 +323,11 @@ def test_update_provider_url_change_clears_credential_reference_atomically(
     asyncio.run(persistence.create_provider(provider))
 
     result = asyncio.run(
-        persistence.update_provider(
-            replace(
-                provider,
-                display_name="Updated display name",
-                settings=OpenAICompatibleSettings(
-                    base_url="https://second.example.com"
-                ),
-            )
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name="Updated display name",
+            settings=OpenAICompatibleSettings(base_url="https://second.example.com"),
         )
     )
 
@@ -456,36 +452,6 @@ def test_postgresql_persists_only_the_opaque_credential_reference(
         assert record.credential_reference == reference.value
         assert record.settings_json == {}
         assert not any("secret" in column.name for column in record.__table__.columns)
-
-
-def test_update_provider_rejects_provider_type_change(
-    migrated_engine: Engine,
-    persistence_async_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    organization_public_id = _seed_organization(migrated_engine)
-    persistence = _persistence(persistence_async_session_factory)
-    provider = _provider(organization_public_id)
-    asyncio.run(persistence.create_provider(provider))
-
-    with pytest.raises(
-        ModelProviderConfigurationError,
-        match=r"^Provider type cannot be changed\.$",
-    ):
-        asyncio.run(
-            persistence.update_provider(
-                replace(
-                    provider,
-                    provider_type=ProviderType.ANTHROPIC,
-                    settings=AnthropicSettings(),
-                )
-            )
-        )
-
-    configuration = asyncio.run(
-        persistence.load_configuration(organization_public_id=organization_public_id)
-    )
-    assert configuration is not None
-    assert configuration.providers == (provider,)
 
 
 def test_delete_provider_with_models_is_explicitly_restricted(
@@ -741,7 +707,11 @@ def test_sequential_updates_cannot_invalidate_the_default_aggregate(
     if target == "model":
         operation = persistence.update_model(replace(model, enabled=False))
     elif target == "provider":
-        operation = persistence.update_provider(replace(provider, enabled=False))
+        operation = persistence.set_provider_enabled(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            enabled=False,
+        )
     else:
         operation = persistence.update_model(
             replace(model, capabilities=frozenset({ModelCapability.TOOLS}))
@@ -799,3 +769,93 @@ def test_concurrent_mutations_serialize_and_preserve_a_valid_aggregate(
     else:
         assert configuration.defaults.chat == model.model_id
         assert configuration.models[0].enabled is True
+
+
+def test_concurrent_provider_configuration_and_enabled_updates_preserve_both(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _provider(organization_public_id)
+    asyncio.run(persistence.create_provider(provider))
+
+    async def race() -> None:
+        await asyncio.gather(
+            persistence.update_provider_configuration(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                display_name="Renamed",
+                settings=None,
+            ),
+            persistence.set_provider_enabled(
+                organization_public_id=organization_public_id,
+                provider_id=provider.provider_id,
+                enabled=False,
+            ),
+        )
+
+    asyncio.run(race())
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    assert configuration.providers[0].display_name == "Renamed"
+    assert configuration.providers[0].enabled is False
+
+
+def test_display_only_update_preserves_new_url_and_credential_from_other_admin(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    old_reference = CredentialReference(uuid4())
+    provider = replace(
+        _provider(
+            organization_public_id,
+            credential_reference=old_reference,
+        ),
+        provider_type=ProviderType.OPENAI_COMPATIBLE,
+        settings=OpenAICompatibleSettings(base_url="https://old.example.com"),
+    )
+    asyncio.run(persistence.create_provider(provider))
+    url_update = asyncio.run(
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name=None,
+            settings=OpenAICompatibleSettings(base_url="https://new.example.com"),
+        )
+    )
+    assert url_update.cleared_credential_reference == old_reference
+    new_reference = CredentialReference(uuid4())
+    asyncio.run(
+        persistence.set_provider_credential_reference(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            expected_credential_reference=None,
+            credential_reference=new_reference,
+        )
+    )
+
+    asyncio.run(
+        persistence.update_provider_configuration(
+            organization_public_id=organization_public_id,
+            provider_id=provider.provider_id,
+            display_name="Stale form rename",
+            settings=None,
+        )
+    )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_public_id)
+    )
+    assert configuration is not None
+    current = configuration.providers[0]
+    assert current.display_name == "Stale form rename"
+    assert current.settings == OpenAICompatibleSettings(
+        base_url="https://new.example.com"
+    )
+    assert current.credential_reference == new_reference

@@ -324,6 +324,19 @@ stored credential reference in the same locked aggregate update. The previous
 secret is then removed on a best-effort basis and an administrator must provide
 a credential for the new endpoint. Non-URL edits retain the reference.
 
+Provider configuration updates are field-level mutations merged with the
+authoritative provider while the organization aggregate is locked. Omitted
+display-name or settings fields retain their current values, and enabled-state
+updates likewise preserve current configuration and credentials. Frontends
+must submit only fields the administrator actually changed so a stale form
+cannot overwrite a newer endpoint and trigger credential invalidation.
+
+Credential replacement, credential-bearing provider deletion, and URL-change
+credential detachment are cancellation-safe critical lifecycles. If caller
+cancellation arrives after one begins, Nexus settles the database decision and
+required compensation or best-effort cleanup before re-propagating
+cancellation.
+
 Provider URL domain validation remains syntax-only: bounded HTTPS, a valid
 hostname/port, and no embedded credentials. Phase 5 outbound validation must
 resolve and revalidate DNS immediately before provider calls. It must evaluate

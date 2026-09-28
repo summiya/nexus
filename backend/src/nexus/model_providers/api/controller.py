@@ -8,8 +8,13 @@ from nexus.authentication.api.security import CurrentAuthContextDep
 from nexus.errors import ErrorCode, NexusError
 from nexus.model_providers.api.dependencies import (
     ProviderCatalogDep,
-    ProviderManagerDep,
-    ProviderReaderDep,
+    ProviderCreatorDep,
+    ProviderCredentialSetterDep,
+    ProviderDeleterDep,
+    ProviderDep,
+    ProviderEnabledSetterDep,
+    ProviderListDep,
+    ProviderUpdaterDep,
 )
 from nexus.model_providers.api.schemas import (
     ConfiguredProviderResponseBody,
@@ -60,9 +65,9 @@ async def list_provider_catalog(
 async def list_configured_providers(
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderReaderDep,
+    service: ProviderListDep,
 ) -> ListConfiguredProvidersResponseBody:
-    providers = await service.list(
+    providers = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
     )
@@ -77,9 +82,9 @@ async def get_configured_provider(
     provider_public_id: UUID,
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderReaderDep,
+    service: ProviderDep,
 ) -> ConfiguredProviderResponseBody:
-    provider = await service.get(
+    provider = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_public_id=provider_public_id,
@@ -97,9 +102,9 @@ async def create_configured_provider(
     body: CreateProviderRequestBody,
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderManagerDep,
+    service: ProviderCreatorDep,
 ) -> ConfiguredProviderResponseBody:
-    provider = await service.create(
+    provider = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_type=body.provider_type,
@@ -117,9 +122,9 @@ async def update_configured_provider(
     body: UpdateProviderRequestBody,
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderManagerDep,
+    service: ProviderUpdaterDep,
 ) -> ConfiguredProviderResponseBody:
-    provider = await service.update(
+    provider = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_public_id=provider_public_id,
@@ -138,9 +143,9 @@ async def set_configured_provider_enabled(
     body: SetProviderEnabledRequestBody,
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderManagerDep,
+    service: ProviderEnabledSetterDep,
 ) -> ConfiguredProviderResponseBody:
-    provider = await service.set_enabled(
+    provider = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_public_id=provider_public_id,
@@ -159,13 +164,13 @@ async def set_configured_provider_credential(
     body: SetProviderCredentialRequestBody,
     response: Response,
     auth_context: CurrentAuthContextDep,
-    service: ProviderManagerDep,
+    service: ProviderCredentialSetterDep,
 ) -> ProviderCredentialStateResponseBody:
     try:
         secret = ProviderCredentialSecret(body.credential.get_secret_value())
     except ModelProviderConfigurationError as exc:
         raise NexusError(ErrorCode.VALIDATION_ERROR, str(exc)) from exc
-    provider = await service.set_credential(
+    provider = await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_public_id=provider_public_id,
@@ -181,9 +186,9 @@ async def set_configured_provider_credential(
 async def delete_configured_provider(
     provider_public_id: UUID,
     auth_context: CurrentAuthContextDep,
-    service: ProviderManagerDep,
+    service: ProviderDeleterDep,
 ) -> Response:
-    await service.delete(
+    await service.execute(
         organization_public_id=auth_context.organization_public_id,
         user_public_id=auth_context.user_public_id,
         provider_public_id=provider_public_id,

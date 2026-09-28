@@ -1106,6 +1106,10 @@ For Azure OpenAI and OpenAI-compatible providers, changing the endpoint/base
 URL atomically clears `credential_reference`; non-URL configuration changes
 retain it.
 
+Provider configuration and enabled-state mutations merge only their requested
+fields into the authoritative provider loaded under the organization lock.
+Omitted configuration fields retain their current stored values.
+
 ---
 
 # 24. Entity: ConfiguredModel and OrganizationModelDefault

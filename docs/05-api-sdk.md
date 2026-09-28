@@ -2910,6 +2910,12 @@ under the active Key Vault secret name. Update payloads omit provider type,
 which remains immutable after creation. Changing a provider URL clears its
 credential and requires the administrator to submit it again.
 
+`PUT /api/v1/model-providers/{provider_public_id}` is a partial configuration
+update: `display_name` and `settings` are optional, at least one must be
+provided, and omitted fields retain their authoritative stored values. Clients
+must send only fields the administrator changed; they must not resubmit an
+unchanged settings snapshot from a potentially stale form.
+
 ---
 
 # 90. File API

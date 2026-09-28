@@ -14,6 +14,7 @@ from nexus.model_providers.domain import (
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
+    ProviderSettings,
 )
 
 
@@ -52,9 +53,22 @@ class ModelProviderPersistence(Protocol):
 
     async def create_provider(self, provider: ConfiguredProvider) -> None: ...
 
-    async def update_provider(
-        self, provider: ConfiguredProvider
+    async def update_provider_configuration(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        display_name: str | None,
+        settings: ProviderSettings | None,
     ) -> ProviderUpdateResult: ...
+
+    async def set_provider_enabled(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        enabled: bool,
+    ) -> ConfiguredProvider: ...
 
     async def set_provider_credential_reference(
         self,

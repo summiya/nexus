@@ -14,8 +14,12 @@ from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 from nexus.model_providers.api.dependencies import (
     get_provider_catalog,
-    get_provider_manager,
-    get_provider_reader,
+    get_provider_creator,
+    get_provider_credential_setter,
+    get_provider_deleter,
+    get_provider_enabled_setter,
+    get_provider_list,
+    get_provider_updater,
 )
 from nexus.model_providers.application import ProviderCatalogItem
 from nexus.model_providers.domain import (
@@ -45,88 +49,38 @@ class FakeCatalog:
         )
 
 
-class FakeReader:
+class FakeList:
     def __init__(self, provider: ConfiguredProvider) -> None:
         self.provider = provider
         self.calls: list[tuple[UUID, UUID]] = []
 
-    async def list(
+    async def execute(
         self, *, organization_public_id: UUID, user_public_id: UUID
     ) -> tuple[ConfiguredProvider, ...]:
         self.calls.append((organization_public_id, user_public_id))
         return (self.provider,)
 
-    async def get(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_public_id: UUID,
-    ) -> ConfiguredProvider:
-        self.calls.append((organization_public_id, user_public_id))
-        return self.provider
 
-
-class FakeManager:
-    def __init__(self, provider: ConfiguredProvider) -> None:
+class FakeMutation:
+    def __init__(self, provider: ConfiguredProvider, operation: str) -> None:
         self.provider = provider
+        self.operation = operation
         self.secret: ProviderCredentialSecret | None = None
         self.calls: list[tuple[str, UUID, UUID]] = []
+        self.last_values: dict[str, object] = {}
 
-    async def create(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_type: ProviderType,
-        display_name: str,
-        settings: dict[str, str],
-        enabled: bool,
-    ) -> ConfiguredProvider:
-        self.calls.append(("create", organization_public_id, user_public_id))
-        return self.provider
-
-    async def update(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_public_id: UUID,
-        display_name: str,
-        settings: dict[str, str],
-    ) -> ConfiguredProvider:
-        self.calls.append(("update", organization_public_id, user_public_id))
-        return self.provider
-
-    async def set_enabled(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_public_id: UUID,
-        enabled: bool,
-    ) -> ConfiguredProvider:
-        self.calls.append(("enabled", organization_public_id, user_public_id))
-        return self.provider
-
-    async def delete(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_public_id: UUID,
-    ) -> None:
-        self.calls.append(("delete", organization_public_id, user_public_id))
-
-    async def set_credential(
-        self,
-        *,
-        organization_public_id: UUID,
-        user_public_id: UUID,
-        provider_public_id: UUID,
-        secret: ProviderCredentialSecret,
-    ) -> ConfiguredProvider:
-        self.secret = secret
+    async def execute(self, **values: object) -> ConfiguredProvider | None:
+        self.last_values = values
+        organization_public_id = values["organization_public_id"]
+        user_public_id = values["user_public_id"]
+        assert isinstance(organization_public_id, UUID)
+        assert isinstance(user_public_id, UUID)
+        self.calls.append((self.operation, organization_public_id, user_public_id))
+        secret = values.get("secret")
+        if isinstance(secret, ProviderCredentialSecret):
+            self.secret = secret
+        if self.operation == "delete":
+            return None
         return self.provider
 
 
@@ -191,8 +145,8 @@ def test_catalog_uses_trusted_auth_context_and_returns_safe_contract() -> None:
 
 def test_provider_reads_mask_all_credential_storage_details() -> None:
     app, organization_id, user_id, provider = _app()
-    service = FakeReader(provider)
-    app.dependency_overrides[get_provider_reader] = lambda: service
+    service = FakeList(provider)
+    app.dependency_overrides[get_provider_list] = lambda: service
 
     with TestClient(app) as client:
         response = client.get("/api/v1/model-providers")
@@ -232,10 +186,47 @@ def test_update_dto_does_not_accept_provider_type() -> None:
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_update_requires_at_least_one_changed_field() -> None:
+    app, _, _, provider = _app()
+
+    with TestClient(app) as client:
+        response = client.put(
+            f"/api/v1/model-providers/{provider.provider_id.value}",
+            json={},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_display_name_only_update_omits_settings_from_application_change() -> None:
+    app, _, _, provider = _app()
+    service = FakeMutation(provider, "update")
+    app.dependency_overrides[get_provider_updater] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.put(
+            f"/api/v1/model-providers/{provider.provider_id.value}",
+            json={"display_name": "Renamed"},
+        )
+
+    assert response.status_code == 200
+    assert service.last_values["display_name"] == "Renamed"
+    assert service.last_values["settings"] is None
+
+
 def test_provider_mutation_routes_use_trusted_auth_context() -> None:
     app, organization_id, user_id, provider = _app()
-    service = FakeManager(provider)
-    app.dependency_overrides[get_provider_manager] = lambda: service
+    services = {
+        "create": FakeMutation(provider, "create"),
+        "update": FakeMutation(provider, "update"),
+        "enabled": FakeMutation(provider, "enabled"),
+        "delete": FakeMutation(provider, "delete"),
+    }
+    app.dependency_overrides[get_provider_creator] = lambda: services["create"]
+    app.dependency_overrides[get_provider_updater] = lambda: services["update"]
+    app.dependency_overrides[get_provider_enabled_setter] = lambda: services["enabled"]
+    app.dependency_overrides[get_provider_deleter] = lambda: services["delete"]
     provider_path = f"/api/v1/model-providers/{provider.provider_id.value}"
 
     with TestClient(app) as client:
@@ -265,7 +256,7 @@ def test_provider_mutation_routes_use_trusted_auth_context() -> None:
     assert update_response.status_code == 200
     assert enabled_response.status_code == 200
     assert delete_response.status_code == 204
-    assert service.calls == [
+    assert [call for service in services.values() for call in service.calls] == [
         ("create", organization_id, user_id),
         ("update", organization_id, user_id),
         ("enabled", organization_id, user_id),
@@ -277,8 +268,8 @@ def test_credential_endpoint_is_write_only_and_does_not_log_secret(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     app, _, _, provider = _app()
-    service = FakeManager(provider)
-    app.dependency_overrides[get_provider_manager] = lambda: service
+    service = FakeMutation(provider, "credential")
+    app.dependency_overrides[get_provider_credential_setter] = lambda: service
     plaintext = "submitted-provider-secret"
 
     with TestClient(app) as client:
