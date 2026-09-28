@@ -10,6 +10,7 @@ from nexus.model_providers.domain import (
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
+    CredentialReference,
     DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
@@ -435,21 +436,6 @@ def test_model_must_reference_provider_in_same_configuration() -> None:
 
 
 @pytest.mark.parametrize(
-    ("enum_type", "value"),
-    [
-        (ProviderType, "vertex_ai"),
-        (ModelType, "completion"),
-    ],
-)
-def test_unknown_provider_and_model_types_are_rejected(
-    enum_type: type[ProviderType] | type[ModelType],
-    value: str,
-) -> None:
-    with pytest.raises(ValueError):
-        enum_type(value)
-
-
-@pytest.mark.parametrize(
     ("enum_type", "value", "message"),
     [
         (ProviderType, "vertex_ai", "Unknown provider type."),
@@ -462,8 +448,10 @@ def test_unknown_enum_values_fail_with_fixed_safe_messages(
     value: str,
     message: str,
 ) -> None:
-    with pytest.raises(ValueError, match=rf"^{message.replace('.', r'\.')}$"):
+    with pytest.raises(ValueError) as captured:
         enum_type(value)
+
+    assert str(captured.value) == message
 
 
 def test_provider_display_name_is_bounded() -> None:
@@ -503,7 +491,5 @@ def test_provider_model_name_is_bounded() -> None:
 
 
 def test_credential_reference_is_bounded() -> None:
-    from nexus.model_providers.domain import CredentialReference
-
     with pytest.raises(ValueError, match=r"^Credential reference is too long\.$"):
         CredentialReference("x" * (MAX_CREDENTIAL_REFERENCE_LENGTH + 1))
