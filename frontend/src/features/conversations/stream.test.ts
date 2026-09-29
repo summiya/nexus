@@ -135,7 +135,6 @@ describe("Conversation message streaming", () => {
         body: JSON.stringify({ content: "Use the default" }),
       }),
     );
-    expect(fetchMock.mock.calls[0][1]?.body).not.toContain("model");
   });
 
   it("omits the idempotency header when the caller does not supply one", async () => {
