@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from uuid import UUID
 
 from nexus.errors import ErrorCode, NexusError
@@ -21,10 +21,8 @@ from nexus.model_providers.domain import (
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
-    ProviderCredentialSecret,
-    ProviderSettings,
-    ProviderType,
     ProviderValidationStatus,
+    ResolvedChatModel,
 )
 from nexus.model_providers.ports import (
     CredentialNotFoundError,
@@ -35,18 +33,6 @@ from nexus.model_providers.ports import (
 
 _NOT_FOUND = "The requested resource was not found."
 _NO_DEFAULT = "No chat model is configured."
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedChatModel:
-    """One immutable provider-neutral runtime target and its redacted credential."""
-
-    model_id: ConfiguredModelId
-    provider_id: OrganizationProviderId
-    provider_type: ProviderType
-    provider_model_name: str
-    settings: ProviderSettings
-    credential: ProviderCredentialSecret = field(repr=False)
 
 
 @dataclass(frozen=True)

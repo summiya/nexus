@@ -4,12 +4,12 @@ import asyncio
 
 import httpx
 import pytest
-
 from litellm.exceptions import (
     APIConnectionError,
     BadRequestError,
     Timeout,
 )
+
 from nexus.llm.domain import (
     LLMInvalidRequestError,
     LLMProviderUnavailableError,

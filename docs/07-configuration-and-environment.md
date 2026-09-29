@@ -195,7 +195,10 @@ first address from the already validated resolution set and never performs a
 fresh DNS lookup or follows redirects. V1 deliberately does not fail over to a
 second approved address because retrying a generation request after an
 ambiguous send could duplicate provider work; operators gain safety and
-determinism at the cost of reduced per-request address failover.
+determinism at the cost of reduced per-request address failover. Phase 8B.2's
+`RuntimeChatGateway` uses this setting and transport for each organization
+runtime invocation; it introduces no provider-specific environment credential
+or endpoint settings.
 
 The following must be present in the process environment before Python imports
 LiteLLM, including in Azure application settings:

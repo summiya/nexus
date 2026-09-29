@@ -26,7 +26,6 @@ from nexus.model_providers.application.get_provider import GetModelProvider
 from nexus.model_providers.application.list_providers import ListModelProviders
 from nexus.model_providers.application.resolve_chat_model import (
     ResolveChatModel,
-    ResolvedChatModel,
 )
 from nexus.model_providers.application.set_provider_credential import (
     SetModelProviderCredential,
@@ -39,6 +38,7 @@ from nexus.model_providers.application.validate_provider import (
     ProviderValidationPolicy,
     ValidateModelProvider,
 )
+from nexus.model_providers.domain import ResolvedChatModel
 
 __all__ = [
     "ClearDefaultModel",

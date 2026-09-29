@@ -46,6 +46,7 @@ from nexus.model_providers.ports import (
     CredentialStore,
     ProviderConfigurationValidator,
     ProviderModelCatalog,
+    RuntimeChatGateway,
 )
 from nexus.ports.rate_limit import RateLimiter
 
@@ -55,6 +56,7 @@ class LLMComposition:
     """Application-scoped LLM dependencies composed at startup."""
 
     gateway: LLMGateway
+    runtime_gateway: RuntimeChatGateway
     model_policy: ModelPolicy
 
 
@@ -69,14 +71,27 @@ class ConversationComposition:
 def build_llm_composition(
     app_settings: Settings,
     gateway: LLMGateway | None = None,
+    runtime_gateway: RuntimeChatGateway | None = None,
 ) -> LLMComposition:
     """Build one shared provider-independent LLM gateway and its policy."""
 
     resolved_gateway = (
         gateway if gateway is not None else create_llm_gateway(app_settings.llm_gateway)
     )
+    if runtime_gateway is None:
+        # LiteLLM reads its local-metadata setting during import. Keep this
+        # import behind startup's fail-closed guard rather than importing
+        # LiteLLM while loading the ASGI module.
+        from nexus.llm.infrastructure.adapters.litellm.runtime_adapter import (
+            LiteLLMRuntimeAdapter,
+        )
+
+        runtime_gateway = LiteLLMRuntimeAdapter(
+            timeout_seconds=app_settings.model_provider_runtime_timeout_seconds
+        )
     return LLMComposition(
         gateway=resolved_gateway,
+        runtime_gateway=runtime_gateway,
         model_policy=ModelPolicy.from_models(app_settings.llm_allowed_models),
     )
 
@@ -140,6 +155,7 @@ async def build_app_container(
     *,
     event_publisher: EventPublisher | None = None,
     llm_gateway: LLMGateway | None = None,
+    runtime_chat_gateway: RuntimeChatGateway | None = None,
     database: Database | None = None,
     rate_limiter: RateLimiter | None = None,
     email_provider: EmailProvider | None = None,
@@ -153,7 +169,11 @@ async def build_app_container(
     """Build one explicit object graph from one settings instance."""
 
     require_local_litellm_metadata()
-    llm = build_llm_composition(app_settings, gateway=llm_gateway)
+    llm = build_llm_composition(
+        app_settings,
+        gateway=llm_gateway,
+        runtime_gateway=runtime_chat_gateway,
+    )
     resolved_event_publisher = (
         event_publisher if event_publisher is not None else InProcessEventPublisher()
     )

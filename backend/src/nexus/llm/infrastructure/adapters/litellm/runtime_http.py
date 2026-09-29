@@ -30,6 +30,24 @@ _RUNTIME_MODEL = "nexus-runtime"
 _RUNTIME_PROVIDER = "nexus-runtime"
 
 
+class _SafeHTTPStatusError(httpx.HTTPStatusError):
+    """Expose only the status shape expected by pinned LiteLLM handlers."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        request: httpx.Request,
+        response: httpx.Response,
+    ) -> None:
+        super().__init__(
+            _SAFE_STATUS_MESSAGE,
+            request=request,
+            response=response,
+        )
+        self.status_code = status_code
+
+
 class PinnedLiteLLMAsyncHTTPHandler(AsyncHTTPHandler):
     """Borrow a secure client without LiteLLM retries or fallback clients.
 
@@ -111,8 +129,8 @@ async def _raise_safe_http_status(response: httpx.Response) -> None:
         request=safe_request,
         content=b"",
     )
-    raise httpx.HTTPStatusError(
-        _SAFE_STATUS_MESSAGE,
+    raise _SafeHTTPStatusError(
+        status_code=status_code,
         request=safe_request,
         response=safe_response,
     )

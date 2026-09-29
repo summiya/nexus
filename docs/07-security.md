@@ -1374,6 +1374,16 @@ not automatically fail over a generation POST. This avoids duplicating an
 invocation after an ambiguous send. Later failover, if introduced, may use only
 the already approved address set and must not perform fresh DNS resolution.
 
+The runtime adapter treats the resolved target—not `LLMRequest.model`—as the
+trusted provider and model selection. It does not place provider credentials,
+references, endpoints, or settings into request metadata. Plaintext credential
+access occurs only at the infrastructure client-construction boundary and is
+request-scoped; credentials are never stored in global LiteLLM configuration,
+URLs, query parameters, logs, errors, response metadata, or telemetry. Separate
+concurrent organization requests use separate clients and transports, and all
+owned resources are closed on success, provider failure, timeout, cancellation,
+mid-stream failure, and early stream close.
+
 ---
 
 # 44. Multi-Model Security

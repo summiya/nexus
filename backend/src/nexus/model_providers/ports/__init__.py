@@ -24,6 +24,7 @@ from nexus.model_providers.ports.persistence import (
     ModelProviderReferenceError,
     ProviderUpdateResult,
 )
+from nexus.model_providers.ports.runtime import RuntimeChatGateway
 from nexus.model_providers.ports.validation import ProviderConfigurationValidator
 
 __all__ = [
@@ -45,5 +46,6 @@ __all__ = [
     "ProviderModelDiscoveryUnavailableError",
     "ProviderModelDiscoveryUnsupportedError",
     "ProviderUpdateResult",
+    "RuntimeChatGateway",
     "credential_storage_name",
 ]
