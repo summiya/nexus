@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Self, TypeVar
+from typing import Self, TypeVar, cast
 from urllib.parse import SplitResult
 
 import httpx
@@ -102,6 +102,7 @@ class PinnedAsyncHTTPTransport(httpx.AsyncBaseTransport):
         if hostname is None:
             raise LLMInvalidRequestError(_INVALID_ENDPOINT_MESSAGE)
         self._hostname = _normalize_hostname(hostname)
+        self._authority = endpoint.netloc
         self._port = endpoint.port or 443
         self._address = address
         self._deadline = deadline
@@ -114,10 +115,12 @@ class PinnedAsyncHTTPTransport(httpx.AsyncBaseTransport):
         self._require_expected_origin(request.url)
         extensions = dict(request.extensions)
         extensions["sni_hostname"] = self._hostname
+        headers = request.headers.copy()
+        headers["host"] = self._authority
         pinned_request = httpx.Request(
             method=request.method,
             url=request.url.copy_with(host=self._address.host),
-            headers=request.headers,
+            headers=headers,
             extensions=extensions,
         )
         # Preserve HTTPX's existing asynchronous request stream exactly. Passing
@@ -140,7 +143,10 @@ class PinnedAsyncHTTPTransport(httpx.AsyncBaseTransport):
         return httpx.Response(
             status_code=response.status_code,
             headers=response.headers,
-            stream=_DeadlineResponseStream(response.stream, self._deadline),
+            stream=_DeadlineResponseStream(
+                cast(httpx.AsyncByteStream, response.stream),
+                self._deadline,
+            ),
             extensions=response.extensions,
         )
 
