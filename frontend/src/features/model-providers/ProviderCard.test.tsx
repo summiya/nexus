@@ -97,6 +97,17 @@ describe("ProviderCard", () => {
     });
   });
 
+  it("keeps Save disabled for whitespace-only normalized edits", async () => {
+    const user = userEvent.setup();
+    renderCard();
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.type(screen.getByLabelText("Display name"), " ");
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(apiMocks.updateProvider).not.toHaveBeenCalled();
+  });
+
   it("warns that changing a provider URL clears an existing credential", async () => {
     const user = userEvent.setup();
     renderCard(provider({ credentialConfigured: true }));

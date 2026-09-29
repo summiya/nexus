@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from nexus.authentication.api.security import get_current_auth_context
 from nexus.authentication.tokens import AuthTokenContext
 from nexus.config.settings import Settings
+from nexus.errors import ErrorCode, NexusError
 from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 from nexus.model_providers.api.dependencies import (
@@ -69,11 +70,14 @@ class FakeCatalog:
 class FakeCapabilities:
     def __init__(self) -> None:
         self.calls: list[tuple[UUID, UUID]] = []
+        self.error: NexusError | None = None
 
     async def execute(
         self, *, organization_public_id: UUID, user_public_id: UUID
     ) -> ModelProviderCapabilities:
         self.calls.append((organization_public_id, user_public_id))
+        if self.error is not None:
+            raise self.error
         return ModelProviderCapabilities(can_read=False, can_manage=True)
 
 
@@ -244,6 +248,41 @@ def test_capabilities_use_trusted_auth_context_without_exposing_role_details() -
     assert service.calls == [(organization_id, user_id)]
     for forbidden in ("organization", "role", "credential", "permission"):
         assert forbidden not in response.text
+
+
+def test_capabilities_require_authentication_before_service_execution() -> None:
+    service = FakeCapabilities()
+    app = create_app(_settings(), object_storage=Mock(spec=ObjectStorage))
+    app.dependency_overrides[get_provider_capabilities] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/model-providers/capabilities")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == ErrorCode.UNAUTHORIZED.value
+    assert service.calls == []
+
+
+def test_capabilities_service_unavailable_uses_safe_standard_envelope() -> None:
+    app, organization_id, user_id, _ = _app()
+    service = FakeCapabilities()
+    service.error = NexusError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        "Authorization is temporarily unavailable.",
+        retryable=True,
+    )
+    app.dependency_overrides[get_provider_capabilities] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/model-providers/capabilities")
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": ErrorCode.SERVICE_UNAVAILABLE.value,
+        "message": "Authorization is temporarily unavailable.",
+        "request_id": response.headers["X-Request-ID"],
+    }
+    assert service.calls == [(organization_id, user_id)]
 
 
 def test_provider_reads_mask_all_credential_storage_details() -> None:

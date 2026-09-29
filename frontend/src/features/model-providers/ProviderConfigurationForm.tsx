@@ -86,7 +86,16 @@ export function ProviderConfigurationForm({
       settings: initialSettings,
     },
   });
+  const watchedDisplayName = form.watch("displayName");
   const watchedSettings = form.watch("settings");
+  const hasMeaningfulChanges =
+    provider === undefined ||
+    watchedDisplayName.trim() !== provider.displayName ||
+    catalogItem.requiredSettings.some(
+      (name) =>
+        (watchedSettings[name]?.trim() ?? "") !==
+        (provider.settings[name] ?? ""),
+    );
   const urlChanged =
     provider?.credentialConfigured === true &&
     catalogItem.requiredSettings.some(
@@ -193,7 +202,7 @@ export function ProviderConfigurationForm({
           type="submit"
           disabled={
             form.formState.isSubmitting ||
-            (provider !== undefined && !form.formState.isDirty)
+            (provider !== undefined && !hasMeaningfulChanges)
           }
         >
           {form.formState.isSubmitting

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -86,8 +86,8 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the settings route inside the application shell", async () => {
-    window.history.replaceState({}, "", "/settings");
+  it("redirects the settings index to the canonical AI Providers route", async () => {
+    window.history.replaceState({}, "", "/settings?tab=profile#security");
 
     render(<App />);
 
@@ -97,7 +97,11 @@ describe("App", () => {
     expect(
       await screen.findByRole("link", { name: "AI Providers" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(window.location.pathname).toBe("/settings");
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/settings/ai-providers"),
+    );
+    expect(window.location.search).toBe("?tab=profile");
+    expect(window.location.hash).toBe("#security");
   });
 
   it("renders the Files route inside the authenticated application shell", () => {

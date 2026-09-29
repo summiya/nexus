@@ -203,6 +203,14 @@ describe("Model Provider API", () => {
     ).toEqual(["POST", "PATCH", "DELETE"]);
   });
 
+  it("rejects an unexpected successful delete status", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(jsonResponse({}, 200));
+
+    await expect(deleteProvider(providerId)).rejects.toThrow(
+      "The Model Provider service returned an invalid response.",
+    );
+  });
+
   it.each([
     { can_read: true, can_manage: false, role: "Administrator" },
     {

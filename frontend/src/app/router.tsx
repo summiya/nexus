@@ -1,4 +1,10 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 
 import { AppLayout } from "../components/AppLayout";
 import { AuthGate, LoginPage } from "../features/auth";
@@ -7,6 +13,21 @@ import { ConversationPage } from "../pages/ConversationPage";
 import { FilesPage } from "../pages/FilesPage";
 import { HomePage } from "../pages/HomePage";
 import { SettingsPage } from "../pages/SettingsPage";
+
+function SettingsIndexRedirect() {
+  const location = useLocation();
+
+  return (
+    <Navigate
+      to={{
+        pathname: "/settings/ai-providers",
+        search: location.search,
+        hash: location.hash,
+      }}
+      replace
+    />
+  );
+}
 
 export function AppRouter() {
   return (
@@ -23,7 +44,7 @@ export function AppRouter() {
             />
             <Route path="/files" element={<FilesPage />} />
             <Route path="/settings" element={<SettingsPage />}>
-              <Route index element={<AIProvidersSettings />} />
+              <Route index element={<SettingsIndexRedirect />} />
               <Route path="ai-providers" element={<AIProvidersSettings />} />
             </Route>
           </Route>

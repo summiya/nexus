@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { apiRequest } from "../../services/api/client";
+import { apiRequest, apiResponse } from "../../services/api/client";
 import {
   providerSettingNames,
   providerTypes,
@@ -210,8 +210,11 @@ export async function setProviderEnabled(
 }
 
 export async function deleteProvider(providerPublicId: string): Promise<void> {
-  await apiRequest<void>(
+  const response = await apiResponse(
     `/model-providers/${encodeURIComponent(providerPublicId)}`,
     { method: "DELETE" },
   );
+  if (response.status !== 204) {
+    throw invalidProviderResponse();
+  }
 }
