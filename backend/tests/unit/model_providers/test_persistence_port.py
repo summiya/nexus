@@ -30,7 +30,10 @@ def test_persistence_port_exposes_only_async_configuration_operations() -> None:
         "record_provider_validation",
         "delete_provider",
         "create_model",
+        "create_discovered_models",
+        "create_manual_model",
         "update_model",
+        "set_model_enabled",
         "delete_model",
         "set_default",
     }

@@ -106,7 +106,7 @@ class Settings(BaseSettings):
         gt=0,
         allow_inf_nan=False,
     )
-    model_provider_discovery_rate_limit_max_requests: int = Field(default=1, gt=0)
+    model_provider_discovery_rate_limit_max_requests: int = Field(default=2, gt=0)
     model_provider_discovery_rate_limit_window_seconds: int = Field(default=10, gt=0)
     model_provider_discovery_organization_rate_limit_max_requests: int = Field(
         default=10, gt=0

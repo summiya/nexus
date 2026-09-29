@@ -24,10 +24,12 @@ from nexus.model_providers.domain import (
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderSettings,
+    ProviderType,
     ProviderValidationStatus,
     provider_endpoint_url,
 )
 from nexus.model_providers.ports import (
+    ConfiguredModelUpdateResult,
     ModelProviderConflictError,
     ModelProviderDeleteRestrictedError,
     ModelProviderPersistence,
@@ -342,6 +344,82 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
 
         await self._run_transaction(create)
 
+    async def create_discovered_models(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        expected_settings: ProviderSettings,
+        expected_credential_reference: CredentialReference,
+        models: tuple[ConfiguredModel, ...],
+    ) -> None:
+        async def create(session: AsyncSession) -> None:
+            organization_id, current = await self._locked_configuration(
+                session,
+                organization_public_id,
+            )
+            provider = _find_provider(current, provider_id)
+            _require_provider_eligible(provider)
+            if (
+                provider.settings != expected_settings
+                or provider.credential_reference != expected_credential_reference
+            ):
+                raise ModelProviderConflictError("Provider snapshot is stale")
+            if provider.provider_type not in {
+                ProviderType.OPENAI,
+                ProviderType.ANTHROPIC,
+                ProviderType.GEMINI,
+            }:
+                raise ModelProviderConflictError("Discovery mode is unsupported")
+            _validate_models_for_provider(models, organization_public_id, provider_id)
+            OrganizationModelProviderConfiguration(
+                organization_public_id=current.organization_public_id,
+                providers=current.providers,
+                models=(*current.models, *models),
+                defaults=current.defaults,
+            )
+            if not await queries.insert_models(
+                session,
+                organization_id=organization_id,
+                models=models,
+            ):
+                raise ModelProviderReferenceError("Configured provider was not found")
+
+        await self._run_transaction(create)
+
+    async def create_manual_model(
+        self,
+        *,
+        organization_public_id: UUID,
+        model: ConfiguredModel,
+    ) -> None:
+        async def create(session: AsyncSession) -> None:
+            organization_id, current = await self._locked_configuration(
+                session,
+                organization_public_id,
+            )
+            provider = _find_provider(current, model.provider_id)
+            _require_provider_eligible(provider)
+            if provider.provider_type not in {
+                ProviderType.AZURE_OPENAI,
+                ProviderType.OPENAI_COMPATIBLE,
+            }:
+                raise ModelProviderConflictError("Manual mode is unsupported")
+            OrganizationModelProviderConfiguration(
+                organization_public_id=current.organization_public_id,
+                providers=current.providers,
+                models=(*current.models, model),
+                defaults=current.defaults,
+            )
+            if not await queries.insert_model(
+                session,
+                organization_id=organization_id,
+                model=model,
+            ):
+                raise ModelProviderReferenceError("Configured provider was not found")
+
+        await self._run_transaction(create)
+
     async def update_model(self, model: ConfiguredModel) -> None:
         async def update(session: AsyncSession) -> None:
             organization_id, current = await self._locked_configuration(
@@ -363,6 +441,43 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 raise ModelProviderReferenceError("Configured model was not found")
 
         await self._run_transaction(update)
+
+    async def set_model_enabled(
+        self,
+        *,
+        organization_public_id: UUID,
+        model_id: ConfiguredModelId,
+        enabled: bool,
+    ) -> ConfiguredModelUpdateResult:
+        async def update(session: AsyncSession) -> ConfiguredModelUpdateResult:
+            organization_id, current = await self._locked_configuration(
+                session,
+                organization_public_id,
+            )
+            existing = _find_model(current, model_id)
+            provider = _find_provider(current, existing.provider_id)
+            if enabled:
+                _require_provider_eligible(provider)
+            replacement = replace(existing, enabled=enabled)
+            updated = _replace_model(current, replacement)
+            OrganizationModelProviderConfiguration(
+                organization_public_id=current.organization_public_id,
+                providers=current.providers,
+                models=updated,
+                defaults=current.defaults,
+            )
+            if not await queries.update_model(
+                session,
+                organization_id=organization_id,
+                model=replacement,
+            ):
+                raise ModelProviderReferenceError("Configured model was not found")
+            return ConfiguredModelUpdateResult(
+                model=replacement,
+                provider_type=provider.provider_type,
+            )
+
+        return await self._run_transaction(update)
 
     async def delete_model(
         self,
@@ -550,6 +665,28 @@ def _replace_model(
         replacement if model.model_id == replacement.model_id else model
         for model in configuration.models
     )
+
+
+def _require_provider_eligible(provider: ConfiguredProvider) -> None:
+    if (
+        not provider.enabled
+        or provider.validation_status is not ProviderValidationStatus.VALID
+        or provider.credential_reference is None
+    ):
+        raise ModelProviderConflictError("Configured provider is not eligible")
+
+
+def _validate_models_for_provider(
+    models: tuple[ConfiguredModel, ...],
+    organization_public_id: UUID,
+    provider_id: OrganizationProviderId,
+) -> None:
+    if not models or any(
+        model.organization_public_id != organization_public_id
+        or model.provider_id != provider_id
+        for model in models
+    ):
+        raise ModelProviderConflictError("Configured model batch is invalid")
 
 
 def _with_default(

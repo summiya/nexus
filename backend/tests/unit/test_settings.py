@@ -164,7 +164,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
         settings.model_provider_validation_organization_rate_limit_window_seconds == 60
     )
     assert settings.model_provider_discovery_timeout_seconds == 15.0
-    assert settings.model_provider_discovery_rate_limit_max_requests == 1
+    assert settings.model_provider_discovery_rate_limit_max_requests == 2
     assert settings.model_provider_discovery_rate_limit_window_seconds == 10
     assert settings.model_provider_discovery_organization_rate_limit_max_requests == 10
     assert (

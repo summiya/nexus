@@ -17,17 +17,24 @@ from nexus.infrastructure.persistence.model_provider import (
 )
 from nexus.model_providers.application import (
     CreateModelProvider,
+    DeleteConfiguredModel,
     DeleteModelProvider,
     DiscoverProviderModels,
     GetModelProvider,
+    ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
     ProviderDiscoveryPolicy,
     ProviderValidationPolicy,
+    RegisterConfiguredModels,
+    SetConfiguredModelEnabled,
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
     ValidateModelProvider,
+)
+from nexus.model_providers.application._provider_model_discovery import (
+    ProviderModelDiscovery,
 )
 from nexus.model_providers.ports import (
     CredentialStore,
@@ -49,6 +56,10 @@ class ModelProviderComposition:
     delete_provider: DeleteModelProvider
     validate_provider: ValidateModelProvider
     discover_models: DiscoverProviderModels
+    list_models: ListConfiguredModels
+    register_models: RegisterConfiguredModels
+    set_model_enabled: SetConfiguredModelEnabled
+    delete_model: DeleteConfiguredModel
 
 
 def build_model_provider_composition(
@@ -62,6 +73,32 @@ def build_model_provider_composition(
 ) -> ModelProviderComposition:
     persistence = SqlAlchemyModelProviderPersistence(session_factory)
     permission_checker = SqlAlchemyPermissionChecker(session_factory)
+    discovery = ProviderModelDiscovery(
+        persistence=persistence,
+        credential_store=credential_store,
+        catalog=(
+            model_catalog
+            if model_catalog is not None
+            else HttpProviderModelCatalog(
+                timeout_seconds=app_settings.model_provider_discovery_timeout_seconds
+            )
+        ),
+        rate_limiter=rate_limiter,
+        policy=ProviderDiscoveryPolicy(
+            provider_max_requests=(
+                app_settings.model_provider_discovery_rate_limit_max_requests
+            ),
+            provider_window_seconds=(
+                app_settings.model_provider_discovery_rate_limit_window_seconds
+            ),
+            organization_max_requests=(
+                app_settings.model_provider_discovery_organization_rate_limit_max_requests
+            ),
+            organization_window_seconds=(
+                app_settings.model_provider_discovery_organization_rate_limit_window_seconds
+            ),
+        ),
+    )
     return ModelProviderComposition(
         catalog=ListProviderCatalog(permission_checker=permission_checker),
         list_providers=ListModelProviders(
@@ -125,33 +162,25 @@ def build_model_provider_composition(
             ),
         ),
         discover_models=DiscoverProviderModels(
+            permission_checker=permission_checker,
+            discovery=discovery,
+        ),
+        list_models=ListConfiguredModels(
             persistence=persistence,
             permission_checker=permission_checker,
-            credential_store=credential_store,
-            catalog=(
-                model_catalog
-                if model_catalog is not None
-                else HttpProviderModelCatalog(
-                    timeout_seconds=(
-                        app_settings.model_provider_discovery_timeout_seconds
-                    )
-                )
-            ),
-            rate_limiter=rate_limiter,
-            policy=ProviderDiscoveryPolicy(
-                provider_max_requests=(
-                    app_settings.model_provider_discovery_rate_limit_max_requests
-                ),
-                provider_window_seconds=(
-                    app_settings.model_provider_discovery_rate_limit_window_seconds
-                ),
-                organization_max_requests=(
-                    app_settings.model_provider_discovery_organization_rate_limit_max_requests
-                ),
-                organization_window_seconds=(
-                    app_settings.model_provider_discovery_organization_rate_limit_window_seconds
-                ),
-            ),
+        ),
+        register_models=RegisterConfiguredModels(
+            persistence=persistence,
+            permission_checker=permission_checker,
+            discovery=discovery,
+        ),
+        set_model_enabled=SetConfiguredModelEnabled(
+            persistence=persistence,
+            permission_checker=permission_checker,
+        ),
+        delete_model=DeleteConfiguredModel(
+            persistence=persistence,
+            permission_checker=permission_checker,
         ),
     )
 

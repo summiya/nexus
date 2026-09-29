@@ -181,8 +181,10 @@ organization per minute. These values configure application behavior only and
 contain no provider credentials.
 
 Provider model discovery uses a separate overall timeout and Redis-backed
-limits. Defaults are one discovery per provider per ten seconds and ten per
-organization per minute. Provider bodies are read incrementally with a 1 MiB
+limits. Defaults are two discoveries per provider per ten seconds and ten per
+organization per minute. The provider allowance supports one catalog request
+followed immediately by one authoritative registration discovery. Provider
+bodies are read incrementally with a 1 MiB
 per-response limit, at most ten pages, and at most 1,000 provider rows.
 
 The following must be present in the process environment before Python imports

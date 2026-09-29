@@ -7,11 +7,15 @@ from fastapi import Depends
 from nexus.api.dependencies import AppContainerDep
 from nexus.model_providers.application import (
     CreateModelProvider,
+    DeleteConfiguredModel,
     DeleteModelProvider,
     DiscoverProviderModels,
     GetModelProvider,
+    ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
+    RegisterConfiguredModels,
+    SetConfiguredModelEnabled,
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
@@ -63,6 +67,26 @@ def get_provider_model_discovery(
     return container.model_providers.discover_models
 
 
+def get_configured_model_list(container: AppContainerDep) -> ListConfiguredModels:
+    return container.model_providers.list_models
+
+
+def get_configured_model_registrar(
+    container: AppContainerDep,
+) -> RegisterConfiguredModels:
+    return container.model_providers.register_models
+
+
+def get_configured_model_enabled_setter(
+    container: AppContainerDep,
+) -> SetConfiguredModelEnabled:
+    return container.model_providers.set_model_enabled
+
+
+def get_configured_model_deleter(container: AppContainerDep) -> DeleteConfiguredModel:
+    return container.model_providers.delete_model
+
+
 ProviderCatalogDep = Annotated[ListProviderCatalog, Depends(get_provider_catalog)]
 ProviderListDep = Annotated[ListModelProviders, Depends(get_provider_list)]
 ProviderDep = Annotated[GetModelProvider, Depends(get_provider)]
@@ -79,9 +103,25 @@ ProviderValidatorDep = Annotated[ValidateModelProvider, Depends(get_provider_val
 ProviderModelDiscoveryDep = Annotated[
     DiscoverProviderModels, Depends(get_provider_model_discovery)
 ]
+ConfiguredModelListDep = Annotated[
+    ListConfiguredModels, Depends(get_configured_model_list)
+]
+ConfiguredModelRegistrarDep = Annotated[
+    RegisterConfiguredModels, Depends(get_configured_model_registrar)
+]
+ConfiguredModelEnabledSetterDep = Annotated[
+    SetConfiguredModelEnabled, Depends(get_configured_model_enabled_setter)
+]
+ConfiguredModelDeleterDep = Annotated[
+    DeleteConfiguredModel, Depends(get_configured_model_deleter)
+]
 
 
 __all__ = [
+    "ConfiguredModelDeleterDep",
+    "ConfiguredModelEnabledSetterDep",
+    "ConfiguredModelListDep",
+    "ConfiguredModelRegistrarDep",
     "ProviderCatalogDep",
     "ProviderCreatorDep",
     "ProviderCredentialSetterDep",

@@ -4,6 +4,13 @@ from nexus.model_providers.application.catalog import (
     ListProviderCatalog,
     ProviderCatalogItem,
 )
+from nexus.model_providers.application.configured_models import (
+    ConfiguredModelItem,
+    DeleteConfiguredModel,
+    ListConfiguredModels,
+    RegisterConfiguredModels,
+    SetConfiguredModelEnabled,
+)
 from nexus.model_providers.application.create_provider import CreateModelProvider
 from nexus.model_providers.application.delete_provider import DeleteModelProvider
 from nexus.model_providers.application.discover_provider_models import (
@@ -25,15 +32,20 @@ from nexus.model_providers.application.validate_provider import (
 )
 
 __all__ = [
+    "ConfiguredModelItem",
     "CreateModelProvider",
+    "DeleteConfiguredModel",
     "DeleteModelProvider",
     "DiscoverProviderModels",
     "GetModelProvider",
+    "ListConfiguredModels",
     "ListModelProviders",
     "ListProviderCatalog",
     "ProviderCatalogItem",
     "ProviderDiscoveryPolicy",
     "ProviderValidationPolicy",
+    "RegisterConfiguredModels",
+    "SetConfiguredModelEnabled",
     "SetModelProviderCredential",
     "SetModelProviderEnabled",
     "UpdateModelProvider",

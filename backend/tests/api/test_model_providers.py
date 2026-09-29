@@ -15,6 +15,8 @@ from nexus.config.settings import Settings
 from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
 from nexus.model_providers.api.dependencies import (
+    get_configured_model_list,
+    get_configured_model_registrar,
     get_provider_catalog,
     get_provider_creator,
     get_provider_credential_setter,
@@ -25,8 +27,10 @@ from nexus.model_providers.api.dependencies import (
     get_provider_updater,
     get_provider_validator,
 )
-from nexus.model_providers.application import ProviderCatalogItem
+from nexus.model_providers.application import ConfiguredModelItem, ProviderCatalogItem
 from nexus.model_providers.domain import (
+    ConfiguredModel,
+    ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
     ModelCandidate,
@@ -116,6 +120,28 @@ class FakeMutation:
         return self.provider
 
 
+class FakeConfiguredModels:
+    def __init__(self, model: ConfiguredModel) -> None:
+        self.model = model
+        self.calls: list[dict[str, object]] = []
+
+    async def execute(self, **values: object) -> tuple[ConfiguredModelItem, ...]:
+        self.calls.append(values)
+        return (ConfiguredModelItem(self.model, ProviderType.OPENAI_COMPATIBLE),)
+
+    async def register_discovered(
+        self, **values: object
+    ) -> tuple[ConfiguredModelItem, ...]:
+        self.calls.append(values)
+        return (ConfiguredModelItem(self.model, ProviderType.OPENAI_COMPATIBLE),)
+
+    async def register_manual(
+        self, **values: object
+    ) -> tuple[ConfiguredModelItem, ...]:
+        self.calls.append(values)
+        return (ConfiguredModelItem(self.model, ProviderType.OPENAI_COMPATIBLE),)
+
+
 def _settings() -> Settings:
     return Settings(
         _env_file=None,  # type: ignore[call-arg]
@@ -138,6 +164,19 @@ def _provider(organization_id: UUID) -> ConfiguredProvider:
         settings=OpenAICompatibleSettings(base_url="https://models.example.com"),
         enabled=True,
         credential_reference=CredentialReference(uuid4()),
+    )
+
+
+def _model(organization_id: UUID, provider: ConfiguredProvider) -> ConfiguredModel:
+    return ConfiguredModel(
+        organization_public_id=organization_id,
+        model_id=ConfiguredModelId(uuid4()),
+        provider_id=provider.provider_id,
+        provider_model_name="deployment-name",
+        display_name="Deployment name",
+        model_type=ModelType.CHAT,
+        capabilities=frozenset({ModelCapability.STREAMING}),
+        enabled=True,
     )
 
 
@@ -234,6 +273,70 @@ def test_model_discovery_uses_trusted_context_and_returns_safe_contract() -> Non
         "provider_public_id",
     ):
         assert forbidden not in response.text
+
+
+def test_configured_model_list_uses_collection_filters_and_trusted_context() -> None:
+    app, organization_id, user_id, provider = _app()
+    model = _model(organization_id, provider)
+    service = FakeConfiguredModels(model)
+    app.dependency_overrides[get_configured_model_list] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/configured-models",
+            params={"provider_public_id": str(uuid4())},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert service.calls[0]["organization_public_id"] == organization_id
+    assert service.calls[0]["user_public_id"] == user_id
+    assert response.json()["items"][0]["public_id"] == str(model.model_id.value)
+    assert response.json()["items"][0]["provider_type"] == "openai_compatible"
+
+
+def test_discovered_batch_registration_preserves_requested_names() -> None:
+    app, organization_id, user_id, provider = _app()
+    service = FakeConfiguredModels(_model(organization_id, provider))
+    app.dependency_overrides[get_configured_model_registrar] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/model-providers/{provider.provider_id.value}/configured-models",
+            json={
+                "registration_mode": "discovered",
+                "provider_model_names": ["first", "second"],
+            },
+        )
+
+    assert response.status_code == 201
+    assert service.calls == [
+        {
+            "organization_public_id": organization_id,
+            "user_public_id": user_id,
+            "provider_public_id": provider.provider_id.value,
+            "provider_model_names": ("first", "second"),
+        }
+    ]
+
+
+def test_manual_registration_requires_display_name() -> None:
+    app, _, _, provider = _app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/model-providers/{provider.provider_id.value}/configured-models",
+            json={
+                "registration_mode": "manual",
+                "provider_model_name": "deployment-name",
+                "model_type": "chat",
+                "capabilities": ["streaming"],
+                "embedding_dimension": None,
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_update_dto_does_not_accept_provider_type() -> None:

@@ -2896,7 +2896,11 @@ PATCH  /api/v1/model-providers/{provider_public_id}/enabled
 PUT    /api/v1/model-providers/{provider_public_id}/credential
 POST   /api/v1/model-providers/{provider_public_id}/validate
 GET    /api/v1/model-providers/{provider_public_id}/models
+POST   /api/v1/model-providers/{provider_public_id}/configured-models
 DELETE /api/v1/model-providers/{provider_public_id}
+GET    /api/v1/configured-models
+PATCH  /api/v1/configured-models/{model_public_id}/enabled
+DELETE /api/v1/configured-models/{model_public_id}
 ```
 
 Catalog and configured-provider reads require `model_providers.read`.
@@ -2940,6 +2944,30 @@ inferred safely and return `MODEL_DISCOVERY_UNSUPPORTED` with HTTP 409. A later
 explicit registration phase supplies those values. Nexus never substitutes an
 Azure base model ID for a deployment name or classifies a compatible-provider
 alias by matching its text to another provider's model.
+
+Discovered registration accepts 1-50 `provider_model_names`, makes exactly one
+fresh discovery request for the batch, matches names exactly and
+case-sensitively, and atomically persists the selected models in request order.
+The default two-per-provider/ten-second discovery allowance permits one catalog
+request followed immediately by this authoritative registration request. A
+missing or unclassifiable candidate, unavailable embedding dimension, stale
+provider snapshot, or persistence conflict rejects the entire batch.
+
+Manual registration is available only for Azure OpenAI and OpenAI-compatible
+providers. It requires `provider_model_name`, `display_name`, `model_type`,
+`capabilities`, and nullable `embedding_dimension`. This metadata is declared
+by an administrator and domain-validated, not verified through provider calls.
+Bad deployment names, aliases, or capability declarations can therefore fail
+only during later runtime invocation; Phase 8 must report those failures safely
+without raw provider details. Newly registered models are enabled.
+
+`GET /api/v1/configured-models` requires `model_providers.read` and supports
+provider, type, capability, and enabled filters. Filters use collection
+semantics: no matches, including a provider UUID outside the caller's tenant,
+return `{"items": []}` without revealing provider existence. Registration,
+enable/disable, and deletion require `model_providers.manage`. Enabling requires
+the locked provider state to be enabled, valid, and credentialed; disabling is
+permitted for an unusable provider unless the model is protected as a default.
 
 ---
 

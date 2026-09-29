@@ -11,6 +11,10 @@ from nexus.errors import ErrorCode, NexusError
 from nexus.model_providers.application import (
     DiscoverProviderModels,
     ProviderDiscoveryPolicy,
+    RegisterConfiguredModels,
+)
+from nexus.model_providers.application._provider_model_discovery import (
+    ProviderModelDiscovery,
 )
 from nexus.model_providers.domain import (
     ConfiguredProvider,
@@ -57,6 +61,9 @@ class FakePersistence:
             providers=(self.provider,),
             defaults=DefaultModelSelection(),
         )
+
+    async def create_discovered_models(self, **_kwargs: object) -> None:
+        return None
 
 
 class FakeCredentialStore:
@@ -122,12 +129,14 @@ def _service(provider: ConfiguredProvider):
     catalog = FakeCatalog()
     limiter = FakeRateLimiter()
     service = DiscoverProviderModels(
-        persistence=FakePersistence(provider),  # type: ignore[arg-type]
         permission_checker=permission,  # type: ignore[arg-type]
-        credential_store=store,  # type: ignore[arg-type]
-        catalog=catalog,  # type: ignore[arg-type]
-        rate_limiter=limiter,  # type: ignore[arg-type]
-        policy=ProviderDiscoveryPolicy(1, 10, 10, 60),
+        discovery=ProviderModelDiscovery(
+            persistence=FakePersistence(provider),  # type: ignore[arg-type]
+            credential_store=store,  # type: ignore[arg-type]
+            catalog=catalog,  # type: ignore[arg-type]
+            rate_limiter=limiter,  # type: ignore[arg-type]
+            policy=ProviderDiscoveryPolicy(1, 10, 10, 60),
+        ),
     )
     return service, permission, store, catalog, limiter
 
@@ -297,3 +306,54 @@ def test_provider_request_rejection_is_non_retryable_conflict() -> None:
     assert raised.value.retryable is False
     assert raised.value.message == "The provider rejected the model discovery request."
     assert "provider raw detail" not in raised.value.message
+
+
+def test_catalog_then_registration_discovery_is_allowed_by_default_policy() -> None:
+    provider = _provider()
+    permission = FakePermissionChecker()
+    store = FakeCredentialStore()
+    catalog = FakeCatalog()
+
+    class CountingLimiter:
+        def __init__(self) -> None:
+            self.provider_calls = 0
+
+        async def allow(self, *, key: str, **_kwargs: object) -> bool:
+            if ":provider:" not in key:
+                return True
+            self.provider_calls += 1
+            return self.provider_calls <= 2
+
+    limiter = CountingLimiter()
+    persistence = FakePersistence(provider)
+    discovery = ProviderModelDiscovery(
+        persistence=persistence,  # type: ignore[arg-type]
+        credential_store=store,  # type: ignore[arg-type]
+        catalog=catalog,  # type: ignore[arg-type]
+        rate_limiter=limiter,  # type: ignore[arg-type]
+        policy=ProviderDiscoveryPolicy(2, 10, 10, 60),
+    )
+    catalog_service = DiscoverProviderModels(
+        permission_checker=permission,  # type: ignore[arg-type]
+        discovery=discovery,
+    )
+    registration = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=permission,  # type: ignore[arg-type]
+        discovery=discovery,
+    )
+
+    _execute(catalog_service, provider)
+    asyncio.run(
+        registration.register_discovered(
+            organization_public_id=provider.organization_public_id,
+            user_public_id=uuid4(),
+            provider_public_id=provider.provider_id.value,
+            provider_model_names=("gpt-test",),
+        )
+    )
+
+    assert catalog.calls == 2
+    with pytest.raises(NexusError) as raised:
+        _execute(catalog_service, provider)
+    assert raised.value.code is ErrorCode.RATE_LIMITED
