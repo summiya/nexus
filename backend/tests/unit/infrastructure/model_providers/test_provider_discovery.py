@@ -448,16 +448,12 @@ def test_anthropic_paginates_with_after_id(
     requests: list[str] = []
     pages = [
         {
-            "data": [
-                {"type": "model", "id": "claude-a", "display_name": "Claude A"}
-            ],
+            "data": [{"type": "model", "id": "claude-a", "display_name": "Claude A"}],
             "has_more": True,
             "last_id": "claude-a",
         },
         {
-            "data": [
-                {"type": "model", "id": "claude-b", "display_name": "Claude B"}
-            ],
+            "data": [{"type": "model", "id": "claude-b", "display_name": "Claude B"}],
             "has_more": False,
             "last_id": "claude-b",
         },
@@ -544,7 +540,9 @@ def test_gemini_paginates_and_normalizes_foundation_model_identity(
         "gemini-foundation",
         "gemini-embed",
     ]
-    assert all(not item.provider_model_name.startswith("models/") for item in candidates)
+    assert all(
+        not item.provider_model_name.startswith("models/") for item in candidates
+    )
     assert requests == [
         "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
         (
