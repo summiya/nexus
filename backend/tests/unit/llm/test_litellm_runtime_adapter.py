@@ -19,6 +19,7 @@ from nexus.llm.domain import (
     LLMErrorEvent,
     LLMEvent,
     LLMMessage,
+    LLMProviderUnavailableError,
     LLMRequest,
     LLMRole,
     LLMStartedEvent,
@@ -26,6 +27,7 @@ from nexus.llm.domain import (
     LLMTimeoutError,
 )
 from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
+import nexus.llm.infrastructure.adapters.litellm.runtime_adapter as runtime_adapter_module
 from nexus.llm.infrastructure.adapters.litellm.runtime_adapter import (
     LiteLLMRuntimeAdapter,
 )
@@ -452,3 +454,181 @@ def test_concurrent_runtime_requests_keep_targets_and_credentials_isolated() -> 
         "https://compatible.example/custom/v1"
     )
     assert all(resource.client.is_closed for resource in factory.resources)
+
+
+@pytest.mark.parametrize(
+    ("provider_type", "expected"),
+    [
+        (
+            ProviderType.OPENAI,
+            {
+                "custom_llm_provider": "openai",
+                "model": "authoritative-provider-model",
+            },
+        ),
+        (
+            ProviderType.AZURE_OPENAI,
+            {
+                "custom_llm_provider": "azure",
+                "model": "authoritative-provider-model",
+                "api_base": "https://azure.example",
+                "api_version": "2026-09-01",
+            },
+        ),
+        (
+            ProviderType.ANTHROPIC,
+            {
+                "custom_llm_provider": "anthropic",
+                "model": "authoritative-provider-model",
+                "api_base": "https://api.anthropic.com",
+                "rust": False,
+            },
+        ),
+        (
+            ProviderType.GEMINI,
+            {
+                "custom_llm_provider": "gemini",
+                "model": "authoritative-provider-model",
+                "api_base": "https://generativelanguage.googleapis.com",
+            },
+        ),
+        (
+            ProviderType.OPENAI_COMPATIBLE,
+            {
+                "custom_llm_provider": "openai",
+                "model": "authoritative-provider-model",
+                "api_base": "https://compatible.example/custom/v1",
+            },
+        ),
+    ],
+)
+def test_runtime_adapter_passes_explicit_target_mapping_to_litellm(
+    provider_type: ProviderType,
+    expected: dict[str, object],
+) -> None:
+    client = FakeLiteLLMClient()
+    factory = FakeHTTPClientFactory()
+
+    asyncio.run(
+        _adapter(client, factory).generate(
+            request=_request(),
+            target=_target(provider_type=provider_type),
+        )
+    )
+
+    arguments = client.calls[0][1]
+    for key, value in expected.items():
+        assert arguments[key] == value
+    assert arguments["api_key"] == SECRET
+    assert arguments["model"] != "untrusted-request-model"
+    assert arguments["client"] is not None
+    assert factory.resources[0].client.is_closed
+
+
+def test_provider_client_close_failure_still_closes_transport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingCloseClient:
+        async def close(self) -> None:
+            raise RuntimeError("unsafe cleanup detail")
+
+    monkeypatch.setattr(
+        runtime_adapter_module,
+        "_build_provider_client",
+        lambda _mapping, _secret, _http: FailingCloseClient(),
+    )
+    factory = FakeHTTPClientFactory()
+
+    with pytest.raises(LLMProviderUnavailableError) as captured:
+        asyncio.run(
+            _adapter(FakeLiteLLMClient(), factory).generate(
+                request=_request(),
+                target=_target(),
+            )
+        )
+
+    assert str(captured.value) == "LLM provider is temporarily unavailable."
+    assert "unsafe cleanup detail" not in str(captured.value)
+    assert factory.resources[0].client.is_closed
+
+
+def test_cleanup_failure_does_not_mask_original_provider_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingCloseClient:
+        async def close(self) -> None:
+            raise RuntimeError("unsafe cleanup detail")
+
+    monkeypatch.setattr(
+        runtime_adapter_module,
+        "_build_provider_client",
+        lambda _mapping, _secret, _http: FailingCloseClient(),
+    )
+    factory = FakeHTTPClientFactory()
+    client = FakeLiteLLMClient(
+        error=FakeAuthenticationFailure("original unsafe provider detail")
+    )
+
+    with pytest.raises(LLMAuthenticationError) as captured:
+        asyncio.run(
+            _adapter(client, factory).generate(
+                request=_request(),
+                target=_target(),
+            )
+        )
+
+    assert str(captured.value) == "LLM provider request failed"
+    assert "unsafe cleanup detail" not in str(captured.value)
+    assert "original unsafe provider detail" not in str(captured.value)
+    assert factory.resources[0].client.is_closed
+
+
+def test_repeated_cancellation_waits_for_cleanup_before_propagating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cleanup_started = asyncio.Event()
+    cleanup_release = asyncio.Event()
+    cleanup_finished = False
+
+    class SlowCloseClient:
+        async def close(self) -> None:
+            nonlocal cleanup_finished
+            cleanup_started.set()
+            await cleanup_release.wait()
+            cleanup_finished = True
+
+    monkeypatch.setattr(
+        runtime_adapter_module,
+        "_build_provider_client",
+        lambda _mapping, _secret, _http: SlowCloseClient(),
+    )
+    factory = FakeHTTPClientFactory()
+    invocation_started = asyncio.Event()
+
+    class BlockingClient(FakeLiteLLMClient):
+        async def acompletion(self, **kwargs: object) -> object:
+            self.calls.append(("generate", kwargs))
+            invocation_started.set()
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    async def exercise() -> None:
+        task = asyncio.create_task(
+            _adapter(BlockingClient(), factory).generate(
+                request=_request(),
+                target=_target(),
+            )
+        )
+        await invocation_started.wait()
+        task.cancel()
+        await cleanup_started.wait()
+        task.cancel()
+        assert not task.done()
+        cleanup_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(exercise())
+
+    assert cleanup_finished
+    assert factory.resources[0].client.is_closed
