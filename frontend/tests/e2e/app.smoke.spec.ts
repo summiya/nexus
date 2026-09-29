@@ -66,14 +66,14 @@ test("login restores the intended protected route and survives reload", async ({
   await page.getByRole("button", { name: "Verify" }).click();
 
   await expect(
-    page.getByRole("heading", { name: "Foundation configuration" }),
+    page.getByRole("heading", { name: "Organization settings" }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/settings\?tab=profile#security$/);
 
   await page.reload();
 
   await expect(
-    page.getByRole("heading", { name: "Foundation configuration" }),
+    page.getByRole("heading", { name: "Organization settings" }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/settings\?tab=profile#security$/);
 

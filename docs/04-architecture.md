@@ -495,6 +495,17 @@ it neither resolves credentials nor calls a provider. When the user has not
 made an explicit selection, the frontend omits `model_public_id` so the server
 continues to resolve the authoritative current default.
 
+Organization AI-provider administration is exposed in the frontend settings
+area at `/settings` (with `/settings/ai-providers` as a direct section route).
+The page obtains focused read/manage
+capability flags before loading provider data, groups every configured instance
+under its catalog provider type, and continues to identify mutations by the
+configured provider's public ID. Multiple configurations of the same provider
+type are therefore preserved. New configurations are created disabled; the
+intended lifecycle is configure, add a write-only credential, validate, then
+enable. Frontend capability checks control presentation only—the backend
+permission checks remain authoritative for every read and mutation.
+
 ---
 
 ## 5.3 Retrieval

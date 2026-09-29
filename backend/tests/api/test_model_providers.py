@@ -17,6 +17,7 @@ from nexus.main import create_app
 from nexus.model_providers.api.dependencies import (
     get_configured_model_list,
     get_configured_model_registrar,
+    get_provider_capabilities,
     get_provider_catalog,
     get_provider_creator,
     get_provider_credential_setter,
@@ -27,7 +28,11 @@ from nexus.model_providers.api.dependencies import (
     get_provider_updater,
     get_provider_validator,
 )
-from nexus.model_providers.application import ConfiguredModelItem, ProviderCatalogItem
+from nexus.model_providers.application import (
+    ConfiguredModelItem,
+    ModelProviderCapabilities,
+    ProviderCatalogItem,
+)
 from nexus.model_providers.domain import (
     ConfiguredModel,
     ConfiguredModelId,
@@ -59,6 +64,17 @@ class FakeCatalog:
                 ("base_url",),
             ),
         )
+
+
+class FakeCapabilities:
+    def __init__(self) -> None:
+        self.calls: list[tuple[UUID, UUID]] = []
+
+    async def execute(
+        self, *, organization_public_id: UUID, user_public_id: UUID
+    ) -> ModelProviderCapabilities:
+        self.calls.append((organization_public_id, user_public_id))
+        return ModelProviderCapabilities(can_read=False, can_manage=True)
 
 
 class FakeList:
@@ -212,6 +228,22 @@ def test_catalog_uses_trusted_auth_context_and_returns_safe_contract() -> None:
             }
         ]
     }
+
+
+def test_capabilities_use_trusted_auth_context_without_exposing_role_details() -> None:
+    app, organization_id, user_id, _ = _app()
+    service = FakeCapabilities()
+    app.dependency_overrides[get_provider_capabilities] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/model-providers/capabilities")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json() == {"can_read": False, "can_manage": True}
+    assert service.calls == [(organization_id, user_id)]
+    for forbidden in ("organization", "role", "credential", "permission"):
+        assert forbidden not in response.text
 
 
 def test_provider_reads_mask_all_credential_storage_details() -> None:

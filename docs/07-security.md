@@ -1327,6 +1327,13 @@ and—when manual cleanup is required—the non-secret opaque storage locator.
 They must never contain credential plaintext, references, request bodies,
 exception text, Key Vault URLs, or provider responses.
 
+The organization AI-provider settings UI treats credentials as write-only.
+Plaintext is held only in local form state while it is being entered and is
+cleared after a successful submission or explicit cancellation; provider read
+responses contain only `credential_configured`. Frontend read/manage capability
+flags are presentation controls, not authorization. Every backend operation
+still performs organization-scoped permission and tenant checks.
+
 Changing an Azure OpenAI endpoint or OpenAI-compatible base URL invalidates the
 stored credential reference so an administrator cannot redirect a write-only
 credential to a different server. Domain URL validation is intentionally

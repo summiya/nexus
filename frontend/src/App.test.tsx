@@ -92,8 +92,12 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Foundation configuration" }),
+      screen.getByRole("heading", { name: "Organization settings" }),
     ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "AI Providers" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(window.location.pathname).toBe("/settings");
   });
 
   it("renders the Files route inside the authenticated application shell", () => {

@@ -41,6 +41,13 @@ class ProviderCatalogResponseBody(BaseModel):
     items: list[ProviderCatalogItemResponseBody]
 
 
+class ModelProviderCapabilitiesResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    can_read: bool
+    can_manage: bool
+
+
 class ConfiguredProviderResponseBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -222,6 +229,7 @@ __all__ = [
     "ManualModelRegistrationRequestBody",
     "ModelCandidateResponseBody",
     "ModelDefaultsResponseBody",
+    "ModelProviderCapabilitiesResponseBody",
     "ProviderCatalogItemResponseBody",
     "ProviderCatalogResponseBody",
     "ProviderCredentialStateResponseBody",

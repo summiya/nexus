@@ -1,5 +1,9 @@
 """Model-provider application services."""
 
+from nexus.model_providers.application.capabilities import (
+    GetModelProviderCapabilities,
+    ModelProviderCapabilities,
+)
 from nexus.model_providers.application.catalog import (
     ListProviderCatalog,
     ProviderCatalogItem,
@@ -54,10 +58,12 @@ __all__ = [
     "DiscoverProviderModels",
     "GetDefaultModels",
     "GetModelProvider",
+    "GetModelProviderCapabilities",
     "ListConfiguredModels",
     "ListModelProviders",
     "ListProviderCatalog",
     "ListSelectableChatModels",
+    "ModelProviderCapabilities",
     "ProviderCatalogItem",
     "ProviderDiscoveryPolicy",
     "ProviderValidationPolicy",

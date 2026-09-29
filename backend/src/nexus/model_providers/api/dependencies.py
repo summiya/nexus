@@ -13,6 +13,7 @@ from nexus.model_providers.application import (
     DiscoverProviderModels,
     GetDefaultModels,
     GetModelProvider,
+    GetModelProviderCapabilities,
     ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
@@ -29,6 +30,12 @@ from nexus.model_providers.application import (
 
 def get_provider_catalog(container: AppContainerDep) -> ListProviderCatalog:
     return container.model_providers.catalog
+
+
+def get_provider_capabilities(
+    container: AppContainerDep,
+) -> GetModelProviderCapabilities:
+    return container.model_providers.capabilities
 
 
 def get_provider_list(container: AppContainerDep) -> ListModelProviders:
@@ -110,6 +117,9 @@ def get_selectable_chat_model_list(
 
 
 ProviderCatalogDep = Annotated[ListProviderCatalog, Depends(get_provider_catalog)]
+ProviderCapabilitiesDep = Annotated[
+    GetModelProviderCapabilities, Depends(get_provider_capabilities)
+]
 ProviderListDep = Annotated[ListModelProviders, Depends(get_provider_list)]
 ProviderDep = Annotated[GetModelProvider, Depends(get_provider)]
 ProviderCreatorDep = Annotated[CreateModelProvider, Depends(get_provider_creator)]
@@ -155,6 +165,7 @@ __all__ = [
     "DefaultModelClearerDep",
     "DefaultModelGetterDep",
     "DefaultModelSetterDep",
+    "ProviderCapabilitiesDep",
     "ProviderCatalogDep",
     "ProviderCreatorDep",
     "ProviderCredentialSetterDep",
