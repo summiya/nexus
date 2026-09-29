@@ -181,6 +181,20 @@ class SetConfiguredModelEnabledRequestBody(BaseModel):
     enabled: bool
 
 
+class ModelDefaultsResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    chat: UUID | None
+    embedding: UUID | None
+    reranker: UUID | None
+
+
+class SetModelDefaultRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_public_id: UUID
+
+
 __all__ = [
     "ConfiguredModelResponseBody",
     "ConfiguredProviderResponseBody",
@@ -189,6 +203,7 @@ __all__ = [
     "ListConfiguredProvidersResponseBody",
     "ManualModelRegistrationRequestBody",
     "ModelCandidateResponseBody",
+    "ModelDefaultsResponseBody",
     "ProviderCatalogItemResponseBody",
     "ProviderCatalogResponseBody",
     "ProviderCredentialStateResponseBody",
@@ -196,6 +211,7 @@ __all__ = [
     "ProviderValidationResponseBody",
     "RegisterConfiguredModelsRequestBody",
     "SetConfiguredModelEnabledRequestBody",
+    "SetModelDefaultRequestBody",
     "SetProviderCredentialRequestBody",
     "SetProviderEnabledRequestBody",
     "UpdateProviderRequestBody",

@@ -10,6 +10,7 @@ from nexus.model_providers.api.controller import (
 from nexus.model_providers.api.controller import (
     router as model_providers_router,
 )
+from nexus.model_providers.api.defaults import router as model_defaults_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -17,4 +18,5 @@ api_router.include_router(conversations_router)
 api_router.include_router(files_router)
 api_router.include_router(model_providers_router)
 api_router.include_router(configured_models_router)
+api_router.include_router(model_defaults_router)
 api_router.include_router(health_router)

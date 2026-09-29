@@ -35,6 +35,7 @@ from nexus.model_providers.domain import (
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
+    DefaultModelSelection,
     GeminiSettings,
     ModelCapability,
     ModelProviderConfigurationError,
@@ -108,6 +109,28 @@ def _chat_model(
     )
 
 
+def _model_for_type(
+    organization_public_id: UUID,
+    provider_id: OrganizationProviderId,
+    model_type: ModelType,
+) -> ConfiguredModel:
+    return ConfiguredModel(
+        organization_public_id=organization_public_id,
+        model_id=ConfiguredModelId(uuid4()),
+        provider_id=provider_id,
+        provider_model_name=f"{model_type.value}-{uuid4().hex[:8]}",
+        display_name=f"Primary {model_type.value}",
+        model_type=model_type,
+        capabilities=(
+            frozenset({ModelCapability.STREAMING})
+            if model_type is ModelType.CHAT
+            else frozenset()
+        ),
+        embedding_dimension=1536 if model_type is ModelType.EMBEDDING else None,
+        enabled=True,
+    )
+
+
 def _eligible_provider(
     organization_public_id: UUID,
     *,
@@ -148,7 +171,7 @@ async def _create_complete_configuration(
     persistence: SqlAlchemyModelProviderPersistence,
     organization_public_id: UUID,
 ) -> tuple[ConfiguredProvider, ConfiguredModel]:
-    provider = _provider(organization_public_id)
+    provider = _eligible_provider(organization_public_id)
     model = _chat_model(organization_public_id, provider.provider_id)
     await persistence.create_provider(provider)
     await persistence.create_model(model)
@@ -730,7 +753,7 @@ def test_changing_existing_default_advances_updated_at(
 ) -> None:
     organization_public_id = _seed_organization(migrated_engine)
     persistence = _persistence(persistence_async_session_factory)
-    provider = _provider(organization_public_id)
+    provider = _eligible_provider(organization_public_id)
     first_model = _chat_model(organization_public_id, provider.provider_id)
     second_model = _chat_model(organization_public_id, provider.provider_id)
     asyncio.run(persistence.create_provider(provider))
@@ -767,6 +790,273 @@ def test_changing_existing_default_advances_updated_at(
     )
     assert configuration is not None
     assert configuration.defaults.chat == second_model.model_id
+
+
+@pytest.mark.parametrize("model_type", list(ModelType))
+def test_set_default_accepts_each_model_type_for_eligible_provider(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    model_type: ModelType,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    model = _model_for_type(organization_id, provider.provider_id, model_type)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+
+    defaults = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=model_type,
+            model_id=model.model_id,
+        )
+    )
+
+    assert defaults.for_type(model_type) == model.model_id
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "wrong_type",
+        "disabled_model",
+        "provider_disabled",
+        "provider_unvalidated",
+        "provider_invalid",
+        "credential_missing",
+        "chat_without_streaming",
+    ],
+)
+def test_set_default_rejects_incompatible_or_ineligible_selection(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    scenario: str,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    selected_type = ModelType.CHAT
+    model = _model_for_type(organization_id, provider.provider_id, selected_type)
+    if scenario == "wrong_type":
+        model = _model_for_type(
+            organization_id,
+            provider.provider_id,
+            ModelType.EMBEDDING,
+        )
+    elif scenario == "disabled_model":
+        model = replace(model, enabled=False)
+    elif scenario == "provider_disabled":
+        provider = replace(provider, enabled=False)
+        model = replace(model, provider_id=provider.provider_id)
+    elif scenario == "provider_unvalidated":
+        provider = replace(
+            provider,
+            validation_status=ProviderValidationStatus.UNVALIDATED,
+            last_validated_at=None,
+        )
+    elif scenario == "provider_invalid":
+        provider = replace(
+            provider,
+            validation_status=ProviderValidationStatus.INVALID_CREDENTIALS,
+        )
+    elif scenario == "credential_missing":
+        provider = replace(provider, credential_reference=None)
+    elif scenario == "chat_without_streaming":
+        model = replace(model, capabilities=frozenset({ModelCapability.TOOLS}))
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+
+    with pytest.raises((ModelProviderConflictError, ModelProviderConfigurationError)):
+        asyncio.run(
+            persistence.set_default(
+                organization_public_id=organization_id,
+                model_type=selected_type,
+                model_id=model.model_id,
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    assert configuration.defaults.chat is None
+
+
+def test_set_default_unknown_and_wrong_tenant_models_are_not_found(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    other_organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    other_provider = _eligible_provider(other_organization_id)
+    other_model = _chat_model(other_organization_id, other_provider.provider_id)
+    asyncio.run(persistence.create_provider(other_provider))
+    asyncio.run(persistence.create_model(other_model))
+
+    for model_id in (ConfiguredModelId(uuid4()), other_model.model_id):
+        with pytest.raises(ModelProviderReferenceError):
+            asyncio.run(
+                persistence.set_default(
+                    organization_public_id=organization_id,
+                    model_type=ModelType.CHAT,
+                    model_id=model_id,
+                )
+            )
+
+
+def test_repeated_default_selection_skips_the_upsert(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+    expected = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.CHAT,
+            model_id=model.model_id,
+        )
+    )
+
+    async def unexpected_write(*_args: object, **_kwargs: object) -> bool:
+        raise AssertionError("idempotent selection issued a write")
+
+    monkeypatch.setattr(queries, "set_default", unexpected_write)
+    repeated = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.CHAT,
+            model_id=model.model_id,
+        )
+    )
+
+    assert repeated == expected
+
+
+def test_clearing_already_empty_default_skips_the_delete(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+
+    async def unexpected_write(*_args: object, **_kwargs: object) -> bool:
+        raise AssertionError("idempotent clear issued a write")
+
+    monkeypatch.setattr(queries, "set_default", unexpected_write)
+    defaults = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.RERANKER,
+            model_id=None,
+        )
+    )
+
+    assert defaults == DefaultModelSelection()
+
+
+@pytest.mark.parametrize("unusable_state", ["invalid", "unvalidated", "missing"])
+def test_clear_default_remains_available_when_provider_becomes_unusable(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    unusable_state: str,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+    asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.CHAT,
+            model_id=model.model_id,
+        )
+    )
+    if unusable_state == "invalid":
+        asyncio.run(
+            persistence.record_provider_validation(
+                organization_public_id=organization_id,
+                provider_id=provider.provider_id,
+                expected_settings=provider.settings,
+                expected_credential_reference=provider.credential_reference,
+                status=ProviderValidationStatus.INVALID_CREDENTIALS,
+            )
+        )
+    else:
+        asyncio.run(
+            persistence.set_provider_credential_reference(
+                organization_public_id=organization_id,
+                provider_id=provider.provider_id,
+                expected_credential_reference=provider.credential_reference,
+                credential_reference=(
+                    CredentialReference(uuid4())
+                    if unusable_state == "unvalidated"
+                    else None
+                ),
+            )
+        )
+
+    defaults = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.CHAT,
+            model_id=None,
+        )
+    )
+
+    assert defaults.chat is None
+
+
+def test_changing_one_default_preserves_other_slots(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    first_chat = _model_for_type(organization_id, provider.provider_id, ModelType.CHAT)
+    second_chat = _model_for_type(organization_id, provider.provider_id, ModelType.CHAT)
+    embedding = _model_for_type(
+        organization_id, provider.provider_id, ModelType.EMBEDDING
+    )
+    reranker = _model_for_type(
+        organization_id, provider.provider_id, ModelType.RERANKER
+    )
+    asyncio.run(persistence.create_provider(provider))
+    for model in (first_chat, second_chat, embedding, reranker):
+        asyncio.run(persistence.create_model(model))
+    for model in (first_chat, embedding, reranker):
+        asyncio.run(
+            persistence.set_default(
+                organization_public_id=organization_id,
+                model_type=model.model_type,
+                model_id=model.model_id,
+            )
+        )
+
+    defaults = asyncio.run(
+        persistence.set_default(
+            organization_public_id=organization_id,
+            model_type=ModelType.CHAT,
+            model_id=second_chat.model_id,
+        )
+    )
+
+    assert defaults == DefaultModelSelection(
+        chat=second_chat.model_id,
+        embedding=embedding.model_id,
+        reranker=reranker.model_id,
+    )
 
 
 def test_unexpected_integrity_error_remains_persistence_failure(
@@ -1151,7 +1441,7 @@ def test_concurrent_mutations_serialize_and_preserve_a_valid_aggregate(
 ) -> None:
     organization_public_id = _seed_organization(migrated_engine)
     persistence = _persistence(persistence_async_session_factory)
-    provider = _provider(organization_public_id)
+    provider = _eligible_provider(organization_public_id)
     model = _chat_model(organization_public_id, provider.provider_id)
     asyncio.run(persistence.create_provider(provider))
     asyncio.run(persistence.create_model(model))
@@ -1170,7 +1460,9 @@ def test_concurrent_mutations_serialize_and_preserve_a_valid_aggregate(
 
     results = asyncio.run(race())
 
-    assert sum(result is None for result in results) == 1
+    assert sum(not isinstance(result, Exception) for result in results) == 1
+    if not isinstance(results[0], Exception):
+        assert isinstance(results[0], DefaultModelSelection)
     assert (
         sum(isinstance(result, ModelProviderConfigurationError) for result in results)
         == 1
@@ -1184,6 +1476,128 @@ def test_concurrent_mutations_serialize_and_preserve_a_valid_aggregate(
     else:
         assert configuration.defaults.chat == model.model_id
         assert configuration.models[0].enabled is True
+
+
+def test_concurrent_default_selection_and_provider_disable_serialize_safely(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+
+    async def race() -> tuple[object, object]:
+        results = await asyncio.gather(
+            persistence.set_default(
+                organization_public_id=organization_id,
+                model_type=ModelType.CHAT,
+                model_id=model.model_id,
+            ),
+            persistence.set_provider_enabled(
+                organization_public_id=organization_id,
+                provider_id=provider.provider_id,
+                enabled=False,
+            ),
+            return_exceptions=True,
+        )
+        return results[0], results[1]
+
+    selection_result, disable_result = asyncio.run(race())
+
+    assert (
+        sum(
+            isinstance(result, Exception)
+            for result in (selection_result, disable_result)
+        )
+        == 1
+    )
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    if configuration.defaults.chat is None:
+        assert configuration.providers[0].enabled is False
+        assert isinstance(selection_result, ModelProviderConflictError)
+    else:
+        assert configuration.defaults.chat == model.model_id
+        assert configuration.providers[0].enabled is True
+        assert isinstance(disable_result, ModelProviderConfigurationError)
+
+
+@pytest.mark.parametrize("mutation", ["credential", "settings"])
+def test_provider_mutation_serializes_with_default_selection(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    mutation: str,
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(
+        organization_id,
+        provider_type=(
+            ProviderType.OPENAI
+            if mutation == "credential"
+            else ProviderType.AZURE_OPENAI
+        ),
+    )
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+    new_reference = CredentialReference(uuid4())
+
+    async def mutate_provider() -> object:
+        if mutation == "credential":
+            return await persistence.set_provider_credential_reference(
+                organization_public_id=organization_id,
+                provider_id=provider.provider_id,
+                expected_credential_reference=provider.credential_reference,
+                credential_reference=new_reference,
+            )
+        return await persistence.update_provider_configuration(
+            organization_public_id=organization_id,
+            provider_id=provider.provider_id,
+            display_name=None,
+            settings=AzureOpenAISettings(
+                endpoint="https://changed.example.com",
+                api_version="2026-09-01",
+            ),
+        )
+
+    async def race() -> tuple[object, object]:
+        results = await asyncio.gather(
+            persistence.set_default(
+                organization_public_id=organization_id,
+                model_type=ModelType.CHAT,
+                model_id=model.model_id,
+            ),
+            mutate_provider(),
+            return_exceptions=True,
+        )
+        return results[0], results[1]
+
+    selection_result, mutation_result = asyncio.run(race())
+
+    assert not isinstance(mutation_result, Exception)
+    assert isinstance(
+        selection_result,
+        (DefaultModelSelection, ModelProviderConflictError),
+    )
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    current_provider = configuration.providers[0]
+    assert current_provider.validation_status is ProviderValidationStatus.UNVALIDATED
+    assert current_provider.credential_reference == (
+        new_reference if mutation == "credential" else None
+    )
+    if isinstance(selection_result, DefaultModelSelection):
+        assert configuration.defaults.chat == model.model_id
+    else:
+        assert configuration.defaults.chat is None
 
 
 def test_concurrent_provider_configuration_and_enabled_updates_preserve_both(

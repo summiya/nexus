@@ -522,12 +522,21 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
         organization_public_id: UUID,
         model_type: ModelType,
         model_id: ConfiguredModelId | None,
-    ) -> None:
-        async def update(session: AsyncSession) -> None:
+    ) -> DefaultModelSelection:
+        async def update(session: AsyncSession) -> DefaultModelSelection:
             organization_id, current = await self._locked_configuration(
                 session,
                 organization_public_id,
             )
+            if model_id is None:
+                if current.defaults.for_type(model_type) is None:
+                    return current.defaults
+            else:
+                model = _find_model(current, model_id)
+                provider = _find_provider(current, model.provider_id)
+                _require_provider_eligible(provider)
+                if current.defaults.for_type(model_type) == model_id:
+                    return current.defaults
             defaults = _with_default(current.defaults, model_type, model_id)
             OrganizationModelProviderConfiguration(
                 organization_public_id=current.organization_public_id,
@@ -542,8 +551,9 @@ class SqlAlchemyModelProviderPersistence(ModelProviderPersistence):
                 model_id=model_id,
             ):
                 raise ModelProviderReferenceError("Configured model was not found")
+            return defaults
 
-        await self._run_transaction(update)
+        return await self._run_transaction(update)
 
     async def _locked_configuration(
         self,

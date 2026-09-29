@@ -2901,6 +2901,9 @@ DELETE /api/v1/model-providers/{provider_public_id}
 GET    /api/v1/configured-models
 PATCH  /api/v1/configured-models/{model_public_id}/enabled
 DELETE /api/v1/configured-models/{model_public_id}
+GET    /api/v1/model-defaults
+PUT    /api/v1/model-defaults/{model_type}
+DELETE /api/v1/model-defaults/{model_type}
 ```
 
 Catalog and configured-provider reads require `model_providers.read`.
@@ -2968,6 +2971,31 @@ return `{"items": []}` without revealing provider existence. Registration,
 enable/disable, and deletion require `model_providers.manage`. Enabling requires
 the locked provider state to be enabled, valid, and credentialed; disabling is
 permitted for an unusable provider unless the model is protected as a default.
+
+`GET /api/v1/model-defaults` requires `model_providers.read` and returns all
+three organization slots as configured-model public UUIDs or `null`:
+
+```json
+{
+  "chat": null,
+  "embedding": null,
+  "reranker": null
+}
+```
+
+`PUT /api/v1/model-defaults/{model_type}` requires
+`model_providers.manage`, accepts `{"model_public_id": "<uuid>"}`, and returns
+the authoritative complete selection. The configured model must belong to the
+organization, match the path model type, be enabled, and belong to an enabled,
+valid, credentialed provider; a chat default must support streaming. `DELETE`
+requires the same permission and clears only the selected slot. Repeating a
+set or clear that is already effective is idempotent and does not rewrite its
+timestamp. Provider/configuration conflicts return a fixed safe `CONFLICT`, an
+unavailable model returns `NOT_FOUND`, and persistence failures return a
+retryable `SERVICE_UNAVAILABLE` without exposing internal exception text.
+
+Stored organization defaults do not yet replace the conversation runtime's
+existing `ModelPolicy` allowlist. Runtime default routing remains Phase 8 work.
 
 ---
 
