@@ -110,7 +110,10 @@ def test_transport_connects_to_pinned_ip_and_preserves_host_and_sni() -> None:
             trust_env=False,
             follow_redirects=False,
         ) as client:
-            response = await client.get("https://provider.example/v1/models?q=1")
+            response = await client.get(
+                "https://provider.example/v1/models?q=1",
+                headers={"host": "attacker.invalid"},
+            )
             assert response.status_code == 200
 
     asyncio.run(exercise())
