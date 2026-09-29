@@ -1,7 +1,4 @@
-import {
-  type QueryClient,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,44 +26,41 @@ describe("AppProviders authenticated query cache", () => {
     setAuthStatus("authenticated");
   });
 
-  it(
-    "clears tenant-scoped cached data before another authenticated session can reuse it",
-    async () => {
-      render(
-        <AppProviders>
-          <QueryClientProbe />
-        </AppProviders>,
-      );
+  it("clears tenant-scoped cached data before another authenticated session can reuse it", async () => {
+    render(
+      <AppProviders>
+        <QueryClientProbe />
+      </AppProviders>,
+    );
 
-      await waitFor(() => expect(capturedQueryClient).not.toBeNull());
-      const queryClient = capturedQueryClient;
-      if (queryClient === null) {
-        throw new Error("QueryClient was not mounted.");
-      }
+    await waitFor(() => expect(capturedQueryClient).not.toBeNull());
+    const queryClient = capturedQueryClient;
+    if (queryClient === null) {
+      throw new Error("QueryClient was not mounted.");
+    }
 
-      const chatModelsKey = ["conversations", "chat-models"] as const;
-      act(() => {
-        queryClient.setQueryData(chatModelsKey, {
-          items: [
-            { publicId: "org-a-model", displayName: "Org A private model" },
-          ],
-        });
+    const chatModelsKey = ["conversations", "chat-models"] as const;
+    act(() => {
+      queryClient.setQueryData(chatModelsKey, {
+        items: [
+          { publicId: "org-a-model", displayName: "Org A private model" },
+        ],
       });
-      expect(queryClient.getQueryData(chatModelsKey)).toBeDefined();
+    });
+    expect(queryClient.getQueryData(chatModelsKey)).toBeDefined();
 
-      act(() => {
-        setAuthStatus("unauthenticated");
-      });
+    act(() => {
+      setAuthStatus("unauthenticated");
+    });
 
-      await waitFor(() =>
-        expect(queryClient.getQueryData(chatModelsKey)).toBeUndefined(),
-      );
+    await waitFor(() =>
+      expect(queryClient.getQueryData(chatModelsKey)).toBeUndefined(),
+    );
 
-      act(() => {
-        setAuthStatus("authenticated");
-      });
+    act(() => {
+      setAuthStatus("authenticated");
+    });
 
-      expect(queryClient.getQueryData(chatModelsKey)).toBeUndefined();
-    },
-  );
+    expect(queryClient.getQueryData(chatModelsKey)).toBeUndefined();
+  });
 });
