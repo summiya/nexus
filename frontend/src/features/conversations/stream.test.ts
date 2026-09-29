@@ -118,6 +118,26 @@ describe("Conversation message streaming", () => {
     await stream.return(undefined);
   });
 
+  it("sends content only when using the organization default model", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(streamResponse([startedFrame()]));
+
+    await collectEvents({
+      conversationPublicId: conversationId,
+      content: "Use the default",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/conversations/11111111-1111-4111-8111-111111111111/messages",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ content: "Use the default" }),
+      }),
+    );
+    expect(fetchMock.mock.calls[0][1]?.body).not.toContain("model");
+  });
+
   it("omits the idempotency header when the caller does not supply one", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
