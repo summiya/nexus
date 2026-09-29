@@ -335,7 +335,7 @@ async def _exercise_model_to_chat_flow(
             user_public_id=user_public_id,
             conversation_public_id=conversation.public_id,
             content="Use the configured organization model",
-            model_id=model.model_id,
+            model_id=None,
             idempotency_key=uuid4(),
         )
     )

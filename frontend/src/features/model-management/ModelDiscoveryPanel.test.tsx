@@ -17,6 +17,7 @@ import { ModelDiscoveryPanel } from "./ModelDiscoveryPanel";
 import type { ConfiguredModel } from "./types";
 
 const providerId = "11111111-1111-4111-8111-111111111111";
+const providerRevision = "2026-09-30T00:00:00Z";
 const configured: ConfiguredModel = {
   publicId: "22222222-2222-4222-8222-222222222222",
   providerPublicId: providerId,
@@ -29,20 +30,30 @@ const configured: ConfiguredModel = {
   enabled: true,
 };
 
-function renderPanel(providerReady = true) {
+function renderPanel(
+  providerReady = true,
+  configuredModels: readonly ConfiguredModel[] = [configured],
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const view = (models: readonly ConfiguredModel[]) => (
     <QueryClientProvider client={client}>
       <ModelDiscoveryPanel
         providerPublicId={providerId}
-        configuredModels={[configured]}
+        providerRevision={providerRevision}
+        configuredModels={models}
         providerReady={providerReady}
         providerReadinessMessage="Provider is not ready."
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const rendered = render(view(configuredModels));
+  return {
+    ...rendered,
+    rerenderWithModels: (models: readonly ConfiguredModel[]) =>
+      rendered.rerender(view(models)),
+  };
 }
 
 describe("ModelDiscoveryPanel", () => {
@@ -100,6 +111,33 @@ describe("ModelDiscoveryPanel", () => {
     expect(apiMocks.registerModels).toHaveBeenCalledWith(providerId, {
       registrationMode: "discovered",
       providerModelNames: ["new-chat", "new-embedding"],
+    });
+  });
+
+  it("drops stale selections that are no longer visible candidates", async () => {
+    const user = userEvent.setup();
+    const { rerenderWithModels } = renderPanel();
+
+    await user.click(screen.getByRole("button", { name: "Discover models" }));
+    await user.click(await screen.findByLabelText(/New Chat/));
+
+    const nowConfigured: ConfiguredModel = {
+      ...configured,
+      publicId: "66666666-6666-4666-8666-666666666666",
+      providerModelName: "new-chat",
+      displayName: "New Chat",
+    };
+    rerenderWithModels([configured, nowConfigured]);
+
+    expect(screen.queryByLabelText(/New Chat/)).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText(/New Embedding/));
+    await user.click(
+      screen.getByRole("button", { name: "Register selected (1)" }),
+    );
+
+    expect(apiMocks.registerModels).toHaveBeenCalledWith(providerId, {
+      registrationMode: "discovered",
+      providerModelNames: ["new-embedding"],
     });
   });
 

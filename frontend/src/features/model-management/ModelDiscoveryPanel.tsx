@@ -23,16 +23,21 @@ function discoveryError(error: unknown): string {
 
 export function ModelDiscoveryPanel({
   providerPublicId,
+  providerRevision,
   configuredModels,
   providerReady,
   providerReadinessMessage,
 }: {
   providerPublicId: string;
+  providerRevision: string | null;
   configuredModels: readonly ConfiguredModel[];
   providerReady: boolean;
   providerReadinessMessage: string;
 }) {
-  const discovery = useProviderModelDiscoveryQuery(providerPublicId);
+  const discovery = useProviderModelDiscoveryQuery(
+    providerPublicId,
+    providerRevision,
+  );
   const registration = useRegisterModelsMutation(providerPublicId);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [registrationFailed, setRegistrationFailed] = useState(false);
@@ -40,10 +45,20 @@ export function ModelDiscoveryPanel({
     () => new Set(configuredModels.map((model) => model.providerModelName)),
     [configuredModels],
   );
-  const candidates =
-    discovery.data?.filter(
-      (candidate) => !configuredNames.has(candidate.providerModelName),
-    ) ?? [];
+  const candidates = useMemo(
+    () =>
+      discovery.data?.filter(
+        (candidate) => !configuredNames.has(candidate.providerModelName),
+      ) ?? [],
+    [configuredNames, discovery.data],
+  );
+  const candidateNames = useMemo(
+    () => new Set(candidates.map((candidate) => candidate.providerModelName)),
+    [candidates],
+  );
+  const selectedCandidateNames = [...selected].filter((name) =>
+    candidateNames.has(name),
+  );
 
   function toggleCandidate(candidate: ModelCandidate) {
     setSelected((current) => {
@@ -65,7 +80,7 @@ export function ModelDiscoveryPanel({
     try {
       await registration.mutateAsync({
         registrationMode: "discovered",
-        providerModelNames: [...selected],
+        providerModelNames: selectedCandidateNames,
       });
       setSelected(new Set());
     } catch {
@@ -162,13 +177,15 @@ export function ModelDiscoveryPanel({
               className="primary-button model-register-button"
               type="button"
               disabled={
-                !providerReady || selected.size === 0 || registration.isPending
+                !providerReady ||
+                selectedCandidateNames.length === 0 ||
+                registration.isPending
               }
               onClick={() => void registerSelected()}
             >
               {registration.isPending
                 ? "Registering…"
-                : `Register selected (${selected.size})`}
+                : `Register selected (${selectedCandidateNames.length})`}
             </button>
           </div>
         )

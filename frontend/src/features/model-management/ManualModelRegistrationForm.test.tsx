@@ -43,6 +43,11 @@ describe("ManualModelRegistrationForm", () => {
     renderForm();
 
     await user.click(screen.getByRole("button", { name: "Add deployment" }));
+    expect(
+      screen.getByText(
+        /Nexus does not verify these capabilities during registration/,
+      ),
+    ).toBeVisible();
     await user.type(
       screen.getByLabelText("Azure deployment name"),
       "chat-prod",

@@ -98,8 +98,9 @@ export function ManualModelRegistrationForm({
       ) : (
         <form className="provider-form" onSubmit={submit} noValidate>
           <p className="model-declaration-note">
-            Model metadata is administrator-declared and is verified only when
-            the model is invoked.
+            Model metadata is administrator-declared. Nexus does not verify
+            these capabilities during registration; actual provider behavior is
+            enforced when features are used.
           </p>
           <div className="form-field">
             <label htmlFor={`manual-model-name-${providerPublicId}`}>

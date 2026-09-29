@@ -17,8 +17,15 @@ export const modelManagementKeys = {
   all: ["model-management"] as const,
   configuredModels: () => ["model-management", "configured-models"] as const,
   defaults: () => ["model-management", "defaults"] as const,
-  discovery: (providerPublicId: string) =>
+  discoveryProvider: (providerPublicId: string) =>
     ["model-management", "discovery", providerPublicId] as const,
+  discovery: (providerPublicId: string, providerRevision: string | null) =>
+    [
+      "model-management",
+      "discovery",
+      providerPublicId,
+      providerRevision,
+    ] as const,
 };
 
 export function useConfiguredModelsQuery(enabled: boolean) {
@@ -37,9 +44,12 @@ export function useModelDefaultsQuery(enabled: boolean) {
   });
 }
 
-export function useProviderModelDiscoveryQuery(providerPublicId: string) {
+export function useProviderModelDiscoveryQuery(
+  providerPublicId: string,
+  providerRevision: string | null,
+) {
   return useQuery({
-    queryKey: modelManagementKeys.discovery(providerPublicId),
+    queryKey: modelManagementKeys.discovery(providerPublicId, providerRevision),
     queryFn: () => discoverProviderModels(providerPublicId),
     enabled: false,
     retry: false,
@@ -57,7 +67,7 @@ export function useRegisterModelsMutation(providerPublicId: string) {
           queryKey: modelManagementKeys.configuredModels(),
         }),
         queryClient.invalidateQueries({
-          queryKey: modelManagementKeys.discovery(providerPublicId),
+          queryKey: modelManagementKeys.discoveryProvider(providerPublicId),
         }),
         queryClient.invalidateQueries({
           queryKey: conversationKeys.chatModels(),

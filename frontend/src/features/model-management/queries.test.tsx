@@ -29,6 +29,7 @@ import {
 
 const providerId = "11111111-1111-4111-8111-111111111111";
 const modelId = "22222222-2222-4222-8222-222222222222";
+const providerRevision = "2026-09-30T00:00:00Z";
 
 function createClient(): QueryClient {
   return new QueryClient({
@@ -66,10 +67,18 @@ describe("Model Management queries", () => {
       "model-management",
       "defaults",
     ]);
-    expect(modelManagementKeys.discovery(providerId)).toEqual([
+    expect(modelManagementKeys.discoveryProvider(providerId)).toEqual([
       "model-management",
       "discovery",
       providerId,
+    ]);
+    expect(
+      modelManagementKeys.discovery(providerId, providerRevision),
+    ).toEqual([
+      "model-management",
+      "discovery",
+      providerId,
+      providerRevision,
     ]);
   });
 
@@ -77,7 +86,7 @@ describe("Model Management queries", () => {
     apiMocks.discoverProviderModels.mockResolvedValue([]);
     const client = createClient();
     const { result } = renderHook(
-      () => useProviderModelDiscoveryQuery(providerId),
+      () => useProviderModelDiscoveryQuery(providerId, providerRevision),
       { wrapper: wrapper(client) },
     );
 
@@ -86,6 +95,22 @@ describe("Model Management queries", () => {
       await result.current.refetch();
     });
     expect(apiMocks.discoverProviderModels).toHaveBeenCalledWith(providerId);
+  });
+
+  it("does not reuse discovery data across provider validation revisions", () => {
+    const client = createClient();
+    client.setQueryData(
+      modelManagementKeys.discovery(providerId, "2026-09-29T00:00:00Z"),
+      [{ providerModelName: "stale-model" }],
+    );
+
+    const { result } = renderHook(
+      () => useProviderModelDiscoveryQuery(providerId, providerRevision),
+      { wrapper: wrapper(client) },
+    );
+
+    expect(result.current.data).toBeUndefined();
+    expect(apiMocks.discoverProviderModels).not.toHaveBeenCalled();
   });
 
   it("invalidates registration data without globally clearing the cache", async () => {
@@ -110,7 +135,7 @@ describe("Model Management queries", () => {
       queryKey: modelManagementKeys.configuredModels(),
     });
     expect(invalidate).toHaveBeenCalledWith({
-      queryKey: modelManagementKeys.discovery(providerId),
+      queryKey: modelManagementKeys.discoveryProvider(providerId),
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: conversationKeys.chatModels(),

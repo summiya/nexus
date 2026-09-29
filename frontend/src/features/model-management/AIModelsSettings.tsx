@@ -202,6 +202,7 @@ function ProviderModelsSection({
       {canManage && automaticDiscoveryProviders.has(provider.providerType) ? (
         <ModelDiscoveryPanel
           providerPublicId={provider.publicId}
+          providerRevision={provider.lastValidatedAt}
           configuredModels={models}
           providerReady={providerReady}
           providerReadinessMessage={providerReadinessMessage}
