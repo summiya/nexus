@@ -1334,6 +1334,13 @@ responses contain only `credential_configured`. Frontend read/manage capability
 flags are presentation controls, not authorization. Every backend operation
 still performs organization-scoped permission and tenant checks.
 
+The AI-model settings UI follows the same boundary. It may disable discovery,
+registration, enablement, or default-selection controls when the provider's
+safe read projection is visibly ineligible, but this is UX only. It receives no
+credential reference or plaintext, and the backend independently enforces
+permissions, tenant ownership, provider readiness, model eligibility, and
+aggregate integrity for every operation.
+
 Changing an Azure OpenAI endpoint or OpenAI-compatible base URL invalidates the
 stored credential reference so an administrator cannot redirect a write-only
 credential to a different server. Domain URL validation is intentionally

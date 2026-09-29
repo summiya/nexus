@@ -8,6 +8,7 @@ import type { SelectableChatModel } from "./types";
 
 const defaultModelId = "11111111-1111-4111-8111-111111111111";
 const alternateModelId = "22222222-2222-4222-8222-222222222222";
+const researchModelId = "33333333-3333-4333-8333-333333333333";
 const models: SelectableChatModel[] = [
   {
     publicId: defaultModelId,
@@ -20,6 +21,12 @@ const models: SelectableChatModel[] = [
     displayName: "Claude Sonnet",
     providerType: "anthropic",
     providerDisplayName: "Anthropic",
+  },
+  {
+    publicId: researchModelId,
+    displayName: "GPT-5 Research",
+    providerType: "openai",
+    providerDisplayName: "OpenAI Research",
   },
 ];
 
@@ -45,18 +52,23 @@ function renderSelector(
 }
 
 describe("ConversationModelSelector", () => {
-  it("shows the default and safe provider labels", () => {
+  it("groups models by configured provider and shows the default", () => {
     renderSelector();
 
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
       defaultModelId,
     );
     expect(
-      screen.getByRole("option", { name: "GPT-5 · OpenAI — Default" }),
+      screen.getByRole("option", { name: "GPT-5 — Default" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Claude Sonnet · Anthropic" }),
+      screen.getByRole("option", { name: "Claude Sonnet" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "OpenAI" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "OpenAI Research" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("group")).toHaveLength(3);
   });
 
   it("reports an explicit selection and clears it when returning to default", async () => {

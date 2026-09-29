@@ -104,6 +104,32 @@ describe("App", () => {
     expect(window.location.hash).toBe("#security");
   });
 
+  it("routes AI Models inside organization settings", async () => {
+    window.history.replaceState({}, "", "/settings/ai-models");
+    vi.mocked(globalThis.fetch).mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/model-providers/capabilities")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ can_read: false, can_manage: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(conversationListResponse());
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "AI Models" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "AI Models" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("renders the Files route inside the authenticated application shell", () => {
     window.history.replaceState({}, "", "/files");
 

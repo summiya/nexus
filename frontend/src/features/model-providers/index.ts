@@ -26,3 +26,4 @@ export type {
   ProviderValidationStatus,
   UpdateProviderInput,
 } from "./types";
+export { providerTypes } from "./types";
