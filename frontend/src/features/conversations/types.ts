@@ -46,6 +46,28 @@ export interface CreatedConversation {
   title: string | null;
 }
 
+export const chatModelProviderTypes = [
+  "openai",
+  "anthropic",
+  "azure_openai",
+  "gemini",
+  "openai_compatible",
+] as const;
+
+export type ChatModelProviderType = (typeof chatModelProviderTypes)[number];
+
+export interface SelectableChatModel {
+  publicId: string;
+  displayName: string;
+  providerType: ChatModelProviderType;
+  providerDisplayName: string;
+}
+
+export interface SelectableChatModels {
+  items: SelectableChatModel[];
+  defaultModelPublicId: string | null;
+}
+
 export interface ConversationGenerationMetadata {
   publicId: string;
   modelPublicId: string | null;

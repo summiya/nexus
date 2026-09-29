@@ -206,6 +206,10 @@ def test_runtime_chat_gateway_is_application_scoped() -> None:
             app.state.container.conversations.stream_message.resolve_chat_model
             is app.state.container.model_providers.resolve_chat_model
         )
+        assert (
+            app.state.container.model_providers.list_selectable_chat_models.persistence
+            is app.state.container.model_providers.resolve_chat_model.persistence
+        )
 
 
 def test_conversation_composition_receives_database_session_factory() -> None:

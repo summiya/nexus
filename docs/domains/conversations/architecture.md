@@ -123,6 +123,23 @@ start and await external LLM stream
 
 No SQLAlchemy session or database transaction remains open while Nexus waits for provider events.
 
+## Chat model selection
+
+The Conversation UI reads `GET /api/v1/chat-models`, a safe authenticated
+runtime-selection surface distinct from provider administration. It exposes
+only selectable configured-model IDs and display labels plus the usable chat
+default. Provider invocation names, credentials, credential references,
+endpoints, and settings remain server-side.
+
+An explicit model choice is local workspace state, not Conversation state. The
+frontend omits `model_public_id` while showing the organization default, sends
+the UUID only for an explicit alternative, preserves a captured choice through
+New Chat creation, and resets it on unrelated Conversation navigation. A
+successful model-list refresh clears an explicit choice that is no longer
+selectable; Nexus never silently chooses the first remaining model. Runtime
+resolution still rechecks tenant ownership and current eligibility for every
+submission.
+
 PostgreSQL enforces at most one `RUNNING` Generation per Conversation with
 the explicitly named partial unique index
 `uq_generations_one_running_per_conversation`. A competing preparation rolls

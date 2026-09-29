@@ -495,12 +495,41 @@ p {
 .conversation-generation-status-failed {
   color: #fca5a5;
 }
+.conversation-input-panel {
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(8, 14, 23, 0.86);
+}
+.conversation-model-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem clamp(1.25rem, 4vw, 2rem) 0;
+}
+.conversation-model-selector label {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.conversation-model-selector select {
+  min-width: min(20rem, 100%);
+}
+.conversation-model-selector [role="status"],
+.conversation-model-state {
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+.conversation-model-selector [role="alert"] {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.conversation-model-selector [role="alert"] p {
+  color: #fca5a5;
+}
 .conversation-composer {
   display: grid;
   gap: 0.55rem;
   padding: 1rem clamp(1.25rem, 4vw, 2rem);
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(8, 14, 23, 0.86);
 }
 .conversation-composer label {
   color: #cbd5e1;
@@ -668,6 +697,13 @@ p {
   .conversation-composer-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+  .conversation-model-selector {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .conversation-model-selector select {
+    width: 100%;
   }
   .conversation-send-button {
     width: 100%;

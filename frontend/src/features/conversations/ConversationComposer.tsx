@@ -15,6 +15,7 @@ interface ConversationComposerProps {
   feedback: ConversationComposerFeedback | null;
   phase: ConversationComposerPhase;
   onSubmit: (content: string) => Promise<SubmissionResult>;
+  submissionDisabled?: boolean;
 }
 
 const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
@@ -33,6 +34,7 @@ export function ConversationComposer({
   feedback,
   phase,
   onSubmit,
+  submissionDisabled = false,
 }: ConversationComposerProps) {
   const [draft, setDraft] = useState("");
   const active = phase !== "idle";
@@ -40,7 +42,7 @@ export function ConversationComposer({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (active || normalizedDraft.length === 0) {
+    if (active || submissionDisabled || normalizedDraft.length === 0) {
       return;
     }
 
@@ -79,7 +81,9 @@ export function ConversationComposer({
         />
         <button
           className="primary-button conversation-send-button"
-          disabled={active || normalizedDraft.length === 0}
+          disabled={
+            active || submissionDisabled || normalizedDraft.length === 0
+          }
           type="submit"
         >
           {phase === "creating"

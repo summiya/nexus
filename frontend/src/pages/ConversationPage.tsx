@@ -4,11 +4,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   ConversationComposer,
   ConversationMessageHistory,
+  ConversationModelSelector,
   ConversationSidebar,
   type CreatedConversation,
   type SubmissionResult,
   useCreateConversationMutation,
   useConversationSubmission,
+  useChatModelsQuery,
 } from "../features/conversations";
 
 interface FirstMessageOperation {
@@ -28,10 +30,14 @@ function ConversationWorkspace({
   } = useCreateConversationMutation();
   const { feedback, liveTurn, phase, resetForConversationChange, submit } =
     useConversationSubmission();
+  const chatModelsQuery = useChatModelsQuery();
   const [creationFeedback, setCreationFeedback] = useState<{
     kind: "conversation_creation_failed";
   } | null>(null);
   const [composerRevision, setComposerRevision] = useState(0);
+  const [explicitModelPublicId, setExplicitModelPublicId] = useState<
+    string | null
+  >(null);
   const activeFirstMessageRef = useRef<FirstMessageOperation | null>(null);
   const expectedConversationPublicIdRef = useRef<string | null>(null);
   const nextFirstMessageOperationIdRef = useRef(0);
@@ -61,17 +67,44 @@ function ConversationWorkspace({
     expectedConversationPublicIdRef.current = null;
     resetCreation();
     setCreationFeedback(null);
+    setExplicitModelPublicId(null);
     setComposerRevision((revision) => revision + 1);
     resetForConversationChange();
   }, [conversationPublicId, resetCreation, resetForConversationChange]);
 
+  useEffect(() => {
+    if (!chatModelsQuery.isSuccess || explicitModelPublicId === null) {
+      return;
+    }
+
+    if (
+      !chatModelsQuery.data.items.some(
+        (model) => model.publicId === explicitModelPublicId,
+      )
+    ) {
+      setExplicitModelPublicId(null);
+    }
+  }, [chatModelsQuery.data, chatModelsQuery.isSuccess, explicitModelPublicId]);
+
   async function submitMessage(content: string): Promise<SubmissionResult> {
     setCreationFeedback(null);
+    const selectableModels = chatModelsQuery.data;
+    const selectedExplicitModelPublicId =
+      explicitModelPublicId !== null &&
+      selectableModels?.items.some(
+        (model) => model.publicId === explicitModelPublicId,
+      ) &&
+      explicitModelPublicId !== selectableModels.defaultModelPublicId
+        ? explicitModelPublicId
+        : null;
 
     if (conversationPublicId !== undefined) {
       return submit({
         conversationPublicId,
         content,
+        ...(selectedExplicitModelPublicId === null
+          ? {}
+          : { modelPublicId: selectedExplicitModelPublicId }),
       });
     }
 
@@ -112,6 +145,9 @@ function ConversationWorkspace({
       return await submit({
         conversationPublicId: createdConversation.publicId,
         content,
+        ...(selectedExplicitModelPublicId === null
+          ? {}
+          : { modelPublicId: selectedExplicitModelPublicId }),
       });
     } finally {
       if (activeFirstMessageRef.current === operation) {
@@ -120,15 +156,40 @@ function ConversationWorkspace({
     }
   }
 
+  const effectivePhase =
+    conversationPublicId === undefined && creationPending ? "creating" : phase;
+  const hasUsableExplicitSelection =
+    explicitModelPublicId !== null &&
+    chatModelsQuery.data?.items.some(
+      (model) => model.publicId === explicitModelPublicId,
+    ) === true;
+  const modelSubmissionDisabled =
+    !chatModelsQuery.isSuccess ||
+    chatModelsQuery.data.items.length === 0 ||
+    (chatModelsQuery.data.defaultModelPublicId === null &&
+      !hasUsableExplicitSelection);
+
+  const modelSelector = (
+    <ConversationModelSelector
+      models={chatModelsQuery.data?.items ?? []}
+      defaultModelPublicId={chatModelsQuery.data?.defaultModelPublicId ?? null}
+      explicitModelPublicId={explicitModelPublicId}
+      isLoading={chatModelsQuery.isPending}
+      isError={chatModelsQuery.isError}
+      disabled={effectivePhase !== "idle"}
+      onChange={setExplicitModelPublicId}
+      onRetry={() => {
+        void chatModelsQuery.refetch();
+      }}
+    />
+  );
+
   const composer = (
     <ConversationComposer
       key={composerRevision}
       feedback={creationFeedback ?? feedback}
-      phase={
-        conversationPublicId === undefined && creationPending
-          ? "creating"
-          : phase
-      }
+      phase={effectivePhase}
+      submissionDisabled={modelSubmissionDisabled}
       onSubmit={submitMessage}
     />
   );
@@ -141,7 +202,10 @@ function ConversationWorkspace({
           <h2>Start a new conversation</h2>
           <p>Choose a conversation from the sidebar or begin a new chat.</p>
         </div>
-        {composer}
+        <div className="conversation-input-panel">
+          {modelSelector}
+          {composer}
+        </div>
       </>
     );
   }
@@ -152,7 +216,10 @@ function ConversationWorkspace({
         conversationPublicId={conversationPublicId}
         liveTurn={liveTurn}
       />
-      {composer}
+      <div className="conversation-input-panel">
+        {modelSelector}
+        {composer}
+      </div>
     </>
   );
 }

@@ -189,6 +189,22 @@ class ModelDefaultsResponseBody(BaseModel):
     reranker: UUID | None
 
 
+class ChatModelResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    public_id: UUID
+    display_name: str
+    provider_type: ProviderType
+    provider_display_name: str
+
+
+class ListChatModelsResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ChatModelResponseBody]
+    default_model_public_id: UUID | None
+
+
 class SetModelDefaultRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -196,9 +212,11 @@ class SetModelDefaultRequestBody(BaseModel):
 
 
 __all__ = [
+    "ChatModelResponseBody",
     "ConfiguredModelResponseBody",
     "ConfiguredProviderResponseBody",
     "CreateProviderRequestBody",
+    "ListChatModelsResponseBody",
     "ListConfiguredModelsResponseBody",
     "ListConfiguredProvidersResponseBody",
     "ManualModelRegistrationRequestBody",

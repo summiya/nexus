@@ -3,12 +3,17 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConversationSummary, CreatedConversation } from "./types";
+import type {
+  ConversationSummary,
+  CreatedConversation,
+  SelectableChatModels,
+} from "./types";
 
 const apiMocks = vi.hoisted(() => ({
   createConversation: vi.fn(),
   getConversationMessages: vi.fn(),
   listConversations: vi.fn(),
+  listChatModels: vi.fn(),
 }));
 
 vi.mock("./api", () => apiMocks);
@@ -18,6 +23,7 @@ import {
   useConversationMessagesQuery,
   useConversationsQuery,
   useCreateConversationMutation,
+  useChatModelsQuery,
 } from "./queries";
 
 const conversationId = "11111111-1111-4111-8111-111111111111";
@@ -49,6 +55,7 @@ describe("Conversation queries", () => {
     apiMocks.createConversation.mockReset();
     apiMocks.getConversationMessages.mockReset();
     apiMocks.listConversations.mockReset();
+    apiMocks.listChatModels.mockReset();
   });
 
   it("defines stable feature, list, and conversation-scoped message keys", () => {
@@ -61,6 +68,29 @@ describe("Conversation queries", () => {
     ]);
     expect(conversationKeys.messages(secondConversationId)).not.toEqual(
       conversationKeys.messages(conversationId),
+    );
+    expect(conversationKeys.chatModels()).toEqual([
+      "conversations",
+      "chat-models",
+    ]);
+  });
+
+  it("wires the chat-model hook to its stable cache key", async () => {
+    const modelSelection: SelectableChatModels = {
+      items: [],
+      defaultModelPublicId: null,
+    };
+    apiMocks.listChatModels.mockResolvedValue(modelSelection);
+    const queryClient = createTestQueryClient();
+    const { result } = renderHook(() => useChatModelsQuery(), {
+      wrapper: wrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.data).toEqual(modelSelection));
+
+    expect(apiMocks.listChatModels).toHaveBeenCalledOnce();
+    expect(queryClient.getQueryData(conversationKeys.chatModels())).toEqual(
+      modelSelection,
     );
   });
 

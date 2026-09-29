@@ -24,6 +24,11 @@ from nexus.model_providers.application.discover_provider_models import (
 )
 from nexus.model_providers.application.get_provider import GetModelProvider
 from nexus.model_providers.application.list_providers import ListModelProviders
+from nexus.model_providers.application.list_selectable_chat_models import (
+    ListSelectableChatModels,
+    SelectableChatModel,
+    SelectableChatModels,
+)
 from nexus.model_providers.application.resolve_chat_model import (
     ResolveChatModel,
 )
@@ -52,12 +57,15 @@ __all__ = [
     "ListConfiguredModels",
     "ListModelProviders",
     "ListProviderCatalog",
+    "ListSelectableChatModels",
     "ProviderCatalogItem",
     "ProviderDiscoveryPolicy",
     "ProviderValidationPolicy",
     "RegisterConfiguredModels",
     "ResolveChatModel",
     "ResolvedChatModel",
+    "SelectableChatModel",
+    "SelectableChatModels",
     "SetConfiguredModelEnabled",
     "SetDefaultModel",
     "SetModelProviderCredential",

@@ -10,6 +10,9 @@ import {
   type ConversationSummary,
   type CreateConversationInput,
   type CreatedConversation,
+  chatModelProviderTypes,
+  type SelectableChatModel,
+  type SelectableChatModels,
 } from "./types";
 
 const uuidSchema = z.string().uuid();
@@ -71,6 +74,35 @@ const conversationMessagesResponseSchema = z
     items: z.array(conversationMessageSchema),
   })
   .strict();
+
+const selectableChatModelSchema = z
+  .object({
+    public_id: uuidSchema,
+    display_name: z.string().min(1),
+    provider_type: z.enum(chatModelProviderTypes),
+    provider_display_name: z.string().min(1),
+  })
+  .strict();
+
+const selectableChatModelsResponseSchema = z
+  .object({
+    items: z.array(selectableChatModelSchema),
+    default_model_public_id: uuidSchema.nullable(),
+  })
+  .strict()
+  .superRefine((response, context) => {
+    if (
+      response.default_model_public_id !== null &&
+      !response.items.some(
+        (item) => item.public_id === response.default_model_public_id,
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Default chat model is not selectable.",
+      });
+    }
+  });
 
 function invalidConversationResponse(): Error {
   return new Error("The Conversation service returned an invalid response.");
@@ -141,6 +173,17 @@ function toConversationMessage(
   };
 }
 
+function toSelectableChatModel(
+  response: z.infer<typeof selectableChatModelSchema>,
+): SelectableChatModel {
+  return {
+    publicId: response.public_id,
+    displayName: response.display_name,
+    providerType: response.provider_type,
+    providerDisplayName: response.provider_display_name,
+  };
+}
+
 export async function listConversations(): Promise<ConversationSummary[]> {
   const response = await apiRequest<unknown>("/conversations", {
     method: "GET",
@@ -171,4 +214,15 @@ export async function getConversationMessages(
   );
   const parsed = parseResponse(conversationMessagesResponseSchema, response);
   return parsed.items.map(toConversationMessage);
+}
+
+export async function listChatModels(): Promise<SelectableChatModels> {
+  const response = await apiRequest<unknown>("/chat-models", {
+    method: "GET",
+  });
+  const parsed = parseResponse(selectableChatModelsResponseSchema, response);
+  return {
+    items: parsed.items.map(toSelectableChatModel),
+    defaultModelPublicId: parsed.default_model_public_id,
+  };
 }
