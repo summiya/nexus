@@ -2902,6 +2902,7 @@ The implemented authenticated provider-management API is:
 
 ```text
 GET    /api/v1/model-providers/catalog
+GET    /api/v1/model-providers/capabilities
 GET    /api/v1/model-providers
 GET    /api/v1/model-providers/{provider_public_id}
 POST   /api/v1/model-providers
@@ -2927,6 +2928,19 @@ contain only public ID, provider type, display name, non-secret settings,
 enabled state, `credential_configured`, `validation_status`, and
 `last_validated_at`; credential references, storage
 locators, and plaintext never leave the backend.
+
+`GET /api/v1/model-providers/capabilities` is authenticated and returns only
+`can_read` and `can_manage`. It checks both permissions directly, so a caller
+without read access receives `false` rather than a forbidden response. An
+authorization-infrastructure failure returns the standard retryable
+`SERVICE_UNAVAILABLE` error. The static route is registered before the dynamic
+provider UUID route.
+
+The provider-administration frontend uses the catalog to render configuration
+fields and supports multiple configured instances for each provider type. It
+creates providers with `enabled: false`; enabling remains a separate action
+after credential entry and validation. Credential values exist only in the
+temporary write form and are never returned by read APIs.
 
 The credential endpoint is write-only. Replacement creates a new opaque
 reference and conditionally switches it, rather than creating another version

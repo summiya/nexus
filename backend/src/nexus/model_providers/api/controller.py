@@ -11,6 +11,7 @@ from nexus.model_providers.api.dependencies import (
     ConfiguredModelEnabledSetterDep,
     ConfiguredModelListDep,
     ConfiguredModelRegistrarDep,
+    ProviderCapabilitiesDep,
     ProviderCatalogDep,
     ProviderCreatorDep,
     ProviderCredentialSetterDep,
@@ -30,6 +31,7 @@ from nexus.model_providers.api.schemas import (
     ListConfiguredModelsResponseBody,
     ListConfiguredProvidersResponseBody,
     ModelCandidateResponseBody,
+    ModelProviderCapabilitiesResponseBody,
     ProviderCatalogItemResponseBody,
     ProviderCatalogResponseBody,
     ProviderCredentialStateResponseBody,
@@ -55,6 +57,23 @@ router = APIRouter(prefix="/model-providers", tags=["model-providers"])
 configured_models_router = APIRouter(
     prefix="/configured-models", tags=["model-providers"]
 )
+
+
+@router.get("/capabilities", response_model=ModelProviderCapabilitiesResponseBody)
+async def get_model_provider_capabilities(
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderCapabilitiesDep,
+) -> ModelProviderCapabilitiesResponseBody:
+    capabilities = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ModelProviderCapabilitiesResponseBody(
+        can_read=capabilities.can_read,
+        can_manage=capabilities.can_manage,
+    )
 
 
 @router.get("/catalog", response_model=ProviderCatalogResponseBody)

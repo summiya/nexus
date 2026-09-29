@@ -23,6 +23,7 @@ from nexus.model_providers.application import (
     DiscoverProviderModels,
     GetDefaultModels,
     GetModelProvider,
+    GetModelProviderCapabilities,
     ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
@@ -51,6 +52,7 @@ from nexus.ports.rate_limit import RateLimiter
 
 @dataclass(frozen=True)
 class ModelProviderComposition:
+    capabilities: GetModelProviderCapabilities
     catalog: ListProviderCatalog
     list_providers: ListModelProviders
     get_provider: GetModelProvider
@@ -110,6 +112,9 @@ def build_model_provider_composition(
         ),
     )
     return ModelProviderComposition(
+        capabilities=GetModelProviderCapabilities(
+            permission_checker=permission_checker,
+        ),
         catalog=ListProviderCatalog(permission_checker=permission_checker),
         list_providers=ListModelProviders(
             persistence=persistence,
