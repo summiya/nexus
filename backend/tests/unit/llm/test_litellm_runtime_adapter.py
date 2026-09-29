@@ -26,8 +26,8 @@ from nexus.llm.domain import (
     LLMTextDeltaEvent,
     LLMTimeoutError,
 )
-from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
 import nexus.llm.infrastructure.adapters.litellm.runtime_adapter as runtime_adapter_module
+from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
 from nexus.llm.infrastructure.adapters.litellm.runtime_adapter import (
     LiteLLMRuntimeAdapter,
 )
