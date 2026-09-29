@@ -223,18 +223,29 @@ async def insert_model(
     )
     if provider_record is None:
         return False
-    session.add(
-        ConfiguredModelRecord(
-            public_id=model.model_id.value,
-            organization_id=organization_id,
-            provider_id=provider_record.id,
-            provider_model_name=model.provider_model_name,
-            display_name=model.display_name,
-            model_type=model.model_type.value,
-            capabilities=_sorted_capabilities(model),
-            embedding_dimension=model.embedding_dimension,
-            enabled=model.enabled,
-        )
+    session.add(_new_model_record(organization_id, provider_record.id, model))
+    await session.flush()
+    return True
+
+
+async def insert_models(
+    session: AsyncSession,
+    *,
+    organization_id: int,
+    models: tuple[ConfiguredModel, ...],
+) -> bool:
+    if not models:
+        return True
+    provider_record = await _provider_record(
+        session,
+        organization_id=organization_id,
+        provider_id=models[0].provider_id,
+    )
+    if provider_record is None:
+        return False
+    session.add_all(
+        _new_model_record(organization_id, provider_record.id, model)
+        for model in models
     )
     await session.flush()
     return True
@@ -405,3 +416,21 @@ def _credential_value(reference: CredentialReference | None) -> UUID | None:
 
 def _sorted_capabilities(model: ConfiguredModel) -> list[str]:
     return sorted({capability.value for capability in model.capabilities})
+
+
+def _new_model_record(
+    organization_id: int,
+    provider_id: int,
+    model: ConfiguredModel,
+) -> ConfiguredModelRecord:
+    return ConfiguredModelRecord(
+        public_id=model.model_id.value,
+        organization_id=organization_id,
+        provider_id=provider_id,
+        provider_model_name=model.provider_model_name,
+        display_name=model.display_name,
+        model_type=model.model_type.value,
+        capabilities=_sorted_capabilities(model),
+        embedding_dimension=model.embedding_dimension,
+        enabled=model.enabled,
+    )

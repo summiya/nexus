@@ -16,6 +16,7 @@ from nexus.model_providers.ports.discovery import (
     ProviderModelDiscoveryUnsupportedError,
 )
 from nexus.model_providers.ports.persistence import (
+    ConfiguredModelUpdateResult,
     ModelProviderConflictError,
     ModelProviderDeleteRestrictedError,
     ModelProviderPersistence,
@@ -26,6 +27,7 @@ from nexus.model_providers.ports.persistence import (
 from nexus.model_providers.ports.validation import ProviderConfigurationValidator
 
 __all__ = [
+    "ConfiguredModelUpdateResult",
     "CredentialNotFoundError",
     "CredentialStore",
     "CredentialStoreConflictError",

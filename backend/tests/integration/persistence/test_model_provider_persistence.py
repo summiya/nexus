@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -104,6 +105,36 @@ def _chat_model(
         model_type=ModelType.CHAT,
         capabilities=frozenset({ModelCapability.TOOLS, ModelCapability.STREAMING}),
         enabled=True,
+    )
+
+
+def _eligible_provider(
+    organization_public_id: UUID,
+    *,
+    provider_type: ProviderType = ProviderType.OPENAI,
+) -> ConfiguredProvider:
+    settings_by_type: dict[ProviderType, ProviderSettings] = {
+        ProviderType.OPENAI: OpenAISettings(),
+        ProviderType.ANTHROPIC: AnthropicSettings(),
+        ProviderType.AZURE_OPENAI: AzureOpenAISettings(
+            endpoint="https://models.example.com",
+            api_version="2026-09-01",
+        ),
+        ProviderType.GEMINI: GeminiSettings(),
+        ProviderType.OPENAI_COMPATIBLE: OpenAICompatibleSettings(
+            base_url="https://models.example.com"
+        ),
+    }
+    return ConfiguredProvider(
+        organization_public_id=organization_public_id,
+        provider_id=OrganizationProviderId(uuid4()),
+        provider_type=provider_type,
+        display_name=f"Provider {uuid4().hex[:8]}",
+        settings=settings_by_type[provider_type],
+        enabled=True,
+        credential_reference=CredentialReference(uuid4()),
+        validation_status=ProviderValidationStatus.VALID,
+        last_validated_at=datetime.now(UTC),
     )
 
 
@@ -907,6 +938,211 @@ def test_sequential_updates_cannot_invalidate_the_default_aggregate(
     assert configuration.providers[0].enabled is True
     assert configuration.models[0].enabled is True
     assert ModelCapability.STREAMING in configuration.models[0].capabilities
+
+
+def test_discovered_batch_is_inserted_atomically_in_request_order(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    models = (
+        _chat_model(organization_id, provider.provider_id),
+        _chat_model(organization_id, provider.provider_id),
+    )
+    asyncio.run(persistence.create_provider(provider))
+
+    asyncio.run(
+        persistence.create_discovered_models(
+            organization_public_id=organization_id,
+            provider_id=provider.provider_id,
+            expected_settings=provider.settings,
+            expected_credential_reference=provider.credential_reference,  # type: ignore[arg-type]
+            models=models,
+        )
+    )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    assert configuration.models == models
+
+
+def test_stale_discovery_snapshot_inserts_nothing(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    old_reference = provider.credential_reference
+    assert old_reference is not None
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(
+        persistence.set_provider_credential_reference(
+            organization_public_id=organization_id,
+            provider_id=provider.provider_id,
+            expected_credential_reference=old_reference,
+            credential_reference=CredentialReference(uuid4()),
+        )
+    )
+
+    with pytest.raises(ModelProviderConflictError):
+        asyncio.run(
+            persistence.create_discovered_models(
+                organization_public_id=organization_id,
+                provider_id=provider.provider_id,
+                expected_settings=provider.settings,
+                expected_credential_reference=old_reference,
+                models=(_chat_model(organization_id, provider.provider_id),),
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    assert configuration.models == ()
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [
+        lambda organization_id: replace(
+            _eligible_provider(organization_id), enabled=False
+        ),
+        lambda organization_id: replace(
+            _eligible_provider(organization_id),
+            validation_status=ProviderValidationStatus.UNVALIDATED,
+            last_validated_at=None,
+        ),
+        lambda organization_id: replace(
+            _eligible_provider(organization_id),
+            validation_status=ProviderValidationStatus.INVALID_CREDENTIALS,
+        ),
+        lambda organization_id: replace(
+            _eligible_provider(organization_id), credential_reference=None
+        ),
+    ],
+)
+def test_enabling_model_requires_fully_eligible_provider(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    provider: Callable[[UUID], ConfiguredProvider],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    configured_provider = provider(organization_id)
+    persistence = _persistence(persistence_async_session_factory)
+    model = replace(
+        _chat_model(organization_id, configured_provider.provider_id), enabled=False
+    )
+    asyncio.run(persistence.create_provider(configured_provider))
+    asyncio.run(persistence.create_model(model))
+
+    with pytest.raises(ModelProviderConflictError):
+        asyncio.run(
+            persistence.set_model_enabled(
+                organization_public_id=organization_id,
+                model_id=model.model_id,
+                enabled=True,
+            )
+        )
+
+
+def test_model_enable_and_disable_use_locked_provider_eligibility(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(organization_id)
+    model = replace(_chat_model(organization_id, provider.provider_id), enabled=False)
+    asyncio.run(persistence.create_provider(provider))
+    asyncio.run(persistence.create_model(model))
+
+    enabled = asyncio.run(
+        persistence.set_model_enabled(
+            organization_public_id=organization_id,
+            model_id=model.model_id,
+            enabled=True,
+        )
+    )
+    assert enabled.model.enabled is True
+    asyncio.run(
+        persistence.set_provider_enabled(
+            organization_public_id=organization_id,
+            provider_id=provider.provider_id,
+            enabled=False,
+        )
+    )
+    disabled = asyncio.run(
+        persistence.set_model_enabled(
+            organization_public_id=organization_id,
+            model_id=model.model_id,
+            enabled=False,
+        )
+    )
+    assert disabled.model.enabled is False
+
+
+def test_manual_registration_requires_current_eligible_compatible_provider(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = _eligible_provider(
+        organization_id, provider_type=ProviderType.OPENAI_COMPATIBLE
+    )
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+
+    asyncio.run(
+        persistence.create_manual_model(
+            organization_public_id=organization_id,
+            model=model,
+        )
+    )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    assert configuration.models == (model,)
+
+
+def test_manual_registration_rejects_provider_that_became_unvalidated(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id = _seed_organization(migrated_engine)
+    persistence = _persistence(persistence_async_session_factory)
+    provider = replace(
+        _eligible_provider(
+            organization_id,
+            provider_type=ProviderType.OPENAI_COMPATIBLE,
+        ),
+        validation_status=ProviderValidationStatus.UNVALIDATED,
+        last_validated_at=None,
+    )
+    model = _chat_model(organization_id, provider.provider_id)
+    asyncio.run(persistence.create_provider(provider))
+
+    with pytest.raises(ModelProviderConflictError):
+        asyncio.run(
+            persistence.create_manual_model(
+                organization_public_id=organization_id,
+                model=model,
+            )
+        )
+
+    configuration = asyncio.run(
+        persistence.load_configuration(organization_public_id=organization_id)
+    )
+    assert configuration is not None
+    assert configuration.models == ()
 
 
 def test_concurrent_mutations_serialize_and_preserve_a_valid_aggregate(

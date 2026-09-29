@@ -15,6 +15,7 @@ from nexus.model_providers.domain import (
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
     ProviderSettings,
+    ProviderType,
     ProviderValidationStatus,
 )
 
@@ -41,6 +42,12 @@ class ProviderUpdateResult:
 
     provider: ConfiguredProvider
     cleared_credential_reference: CredentialReference | None = None
+
+
+@dataclass(frozen=True)
+class ConfiguredModelUpdateResult:
+    model: ConfiguredModel
+    provider_type: ProviderType
 
 
 class ModelProviderPersistence(Protocol):
@@ -99,7 +106,32 @@ class ModelProviderPersistence(Protocol):
 
     async def create_model(self, model: ConfiguredModel) -> None: ...
 
+    async def create_discovered_models(
+        self,
+        *,
+        organization_public_id: UUID,
+        provider_id: OrganizationProviderId,
+        expected_settings: ProviderSettings,
+        expected_credential_reference: CredentialReference,
+        models: tuple[ConfiguredModel, ...],
+    ) -> None: ...
+
+    async def create_manual_model(
+        self,
+        *,
+        organization_public_id: UUID,
+        model: ConfiguredModel,
+    ) -> None: ...
+
     async def update_model(self, model: ConfiguredModel) -> None: ...
+
+    async def set_model_enabled(
+        self,
+        *,
+        organization_public_id: UUID,
+        model_id: ConfiguredModelId,
+        enabled: bool,
+    ) -> ConfiguredModelUpdateResult: ...
 
     async def delete_model(
         self,
@@ -118,6 +150,7 @@ class ModelProviderPersistence(Protocol):
 
 
 __all__ = [
+    "ConfiguredModelUpdateResult",
     "ModelProviderConflictError",
     "ModelProviderDeleteRestrictedError",
     "ModelProviderPersistence",

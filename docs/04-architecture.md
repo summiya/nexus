@@ -366,7 +366,10 @@ Provider model discovery is a transient capability behind the provider-neutral
 `ProviderModelCatalog` port. It requires `model_providers.manage`, loads a
 tenant-scoped provider snapshot, rate-limits, resolves the credential, and
 performs network I/O only after the persistence session has ended. Candidates
-are not written into configured-model persistence.
+are not written into configured-model persistence. Discovery is limited to two
+requests per provider per ten seconds and ten requests per organization per
+minute by default. This permits the normal catalog-read followed by one fresh
+registration discovery without persistent or cached discovery state.
 
 OpenAI, Anthropic, and Gemini discovery combines authenticated provider
 availability, documented provider metadata, and exactly pinned local LiteLLM
@@ -394,6 +397,21 @@ Discovery shares the validation transport's HTTPS, public-unicast,
 DNS-pinning, TLS-hostname, no-redirect, and no-environment-proxy controls. It
 requests identity encoding and rejects encoded, oversized, malformed,
 over-paginated, or over-count responses without returning partial results.
+
+Configured-model registration reuses the existing organization aggregate.
+OpenAI, Anthropic, and Gemini registrations select 1-50 exact case-sensitive
+candidate names and perform one fresh authoritative discovery for the complete
+batch. After network I/O, persistence locks the organization, reloads the
+provider, requires it to remain enabled, valid, and credentialed, and compares
+its settings and credential reference with the discovery snapshot. The entire
+ordered batch is inserted atomically or not at all.
+
+Azure OpenAI and OpenAI-compatible configured models are registered manually.
+The deployment or alias, display name, model type, capabilities, and embedding
+dimension are administrator-declared configuration validated by Nexus domain
+invariants; they are not provider-verified. Incorrect names or capability
+declarations may fail during Phase 8 invocation, which must return a safe Nexus
+error without raw provider details.
 
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.
