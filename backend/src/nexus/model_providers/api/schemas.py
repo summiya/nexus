@@ -24,6 +24,7 @@ ProviderModelName = Annotated[
     str,
     Field(min_length=1, max_length=MAX_PROVIDER_MODEL_NAME_LENGTH),
 ]
+PositiveStrictInteger = Annotated[int, Field(strict=True, gt=0)]
 
 
 class ProviderCatalogItemResponseBody(BaseModel):
@@ -165,7 +166,7 @@ class ManualModelRegistrationRequestBody(BaseModel):
     display_name: str = Field(min_length=1, max_length=MAX_DISPLAY_NAME_LENGTH)
     model_type: ModelType
     capabilities: set[ModelCapability]
-    embedding_dimension: int | None
+    embedding_dimension: PositiveStrictInteger | None
 
 
 type RegisterConfiguredModelsRequestBody = Annotated[

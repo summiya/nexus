@@ -16,9 +16,12 @@ from nexus.model_providers.application._provider_model_discovery import (
     ProviderDiscoveryResult,
 )
 from nexus.model_providers.domain import (
+    AnthropicSettings,
+    AzureOpenAISettings,
     ConfiguredModel,
     ConfiguredModelId,
     CredentialReference,
+    GeminiSettings,
     ModelCandidate,
     ModelCapability,
     ModelType,
@@ -40,6 +43,15 @@ class AllowPermission:
     async def has_permission(self, *, permission_key: str, **_kwargs: object) -> bool:
         self.permission = permission_key
         return True
+
+
+@dataclass
+class DenyPermission:
+    permission: str | None = None
+
+    async def has_permission(self, *, permission_key: str, **_kwargs: object) -> bool:
+        self.permission = permission_key
+        return False
 
 
 class FakePersistence:
@@ -90,12 +102,24 @@ class FakeDiscovery:
 
 
 def _provider(provider_type: ProviderType = ProviderType.OPENAI) -> ConfiguredProvider:
+    settings = {
+        ProviderType.OPENAI: OpenAISettings(),
+        ProviderType.ANTHROPIC: AnthropicSettings(),
+        ProviderType.AZURE_OPENAI: AzureOpenAISettings(
+            endpoint="https://models.openai.azure.com",
+            api_version="2026-01-01",
+        ),
+        ProviderType.GEMINI: GeminiSettings(),
+        ProviderType.OPENAI_COMPATIBLE: OpenAICompatibleSettings(
+            base_url="https://models.example.com"
+        ),
+    }[provider_type]
     return ConfiguredProvider(
         organization_public_id=uuid4(),
         provider_id=OrganizationProviderId(uuid4()),
         provider_type=provider_type,
         display_name="Provider",
-        settings=OpenAISettings(),
+        settings=settings,
         enabled=True,
         credential_reference=CredentialReference(uuid4()),
         validation_status=ProviderValidationStatus.VALID,
@@ -138,6 +162,40 @@ def test_discovered_batch_uses_one_discovery_and_preserves_request_order() -> No
     assert persistence.discovered_calls == 1
     assert [item.model.provider_model_name for item in result] == ["first", "second"]
     assert all(item.model.enabled for item in result)
+
+
+def test_exactly_fifty_discovered_models_use_one_discovery_and_atomic_write() -> None:
+    provider = _provider()
+    persistence = FakePersistence(provider)
+    requested_names = tuple(f"model-{index:02d}" for index in range(50))
+    discovery = FakeDiscovery(
+        provider,
+        tuple(
+            _candidate(name, f"Model {index:02d}")
+            for index, name in reversed(tuple(enumerate(requested_names)))
+        ),
+    )
+    service = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=AllowPermission(),  # type: ignore[arg-type]
+        discovery=discovery,  # type: ignore[arg-type]
+    )
+
+    result = asyncio.run(
+        service.register_discovered(
+            organization_public_id=provider.organization_public_id,
+            user_public_id=uuid4(),
+            provider_public_id=provider.provider_id.value,
+            provider_model_names=requested_names,
+        )
+    )
+
+    assert discovery.calls == 1
+    assert persistence.discovered_calls == 1
+    assert tuple(item.model.provider_model_name for item in result) == requested_names
+    assert tuple(model.provider_model_name for model in persistence.models) == (
+        requested_names
+    )
 
 
 @pytest.mark.parametrize(
@@ -192,6 +250,96 @@ def test_missing_candidate_fails_entire_batch() -> None:
         )
 
     assert raised.value.code is ErrorCode.CONFLICT
+    assert persistence.discovered_calls == 0
+
+
+def test_embedding_candidate_without_dimension_fails_without_persistence() -> None:
+    provider = _provider()
+    persistence = FakePersistence(provider)
+    candidate = ModelCandidate(
+        provider_model_name="embedding-model",
+        display_name="Embedding model",
+        model_type=ModelType.EMBEDDING,
+        capabilities=frozenset(),
+        embedding_dimension=None,
+    )
+    discovery = FakeDiscovery(provider, (candidate,))
+    service = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=AllowPermission(),  # type: ignore[arg-type]
+        discovery=discovery,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(NexusError) as raised:
+        asyncio.run(
+            service.register_discovered(
+                organization_public_id=provider.organization_public_id,
+                user_public_id=uuid4(),
+                provider_public_id=provider.provider_id.value,
+                provider_model_names=("embedding-model",),
+            )
+        )
+
+    assert raised.value.code is ErrorCode.CONFLICT
+    assert discovery.calls == 1
+    assert persistence.discovered_calls == 0
+
+
+def test_denied_registration_stops_before_discovery_and_persistence() -> None:
+    provider = _provider()
+    persistence = FakePersistence(provider)
+    discovery = FakeDiscovery(provider, (_candidate("model", "Model"),))
+    permission = DenyPermission()
+    service = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=permission,  # type: ignore[arg-type]
+        discovery=discovery,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(NexusError) as raised:
+        asyncio.run(
+            service.register_discovered(
+                organization_public_id=provider.organization_public_id,
+                user_public_id=uuid4(),
+                provider_public_id=provider.provider_id.value,
+                provider_model_names=("model",),
+            )
+        )
+
+    assert raised.value.code is ErrorCode.FORBIDDEN
+    assert permission.permission == "model_providers.manage"
+    assert discovery.calls == 0
+    assert persistence.discovered_calls == 0
+
+
+@pytest.mark.parametrize(
+    "provider_type",
+    [ProviderType.AZURE_OPENAI, ProviderType.OPENAI_COMPATIBLE],
+)
+def test_manual_only_provider_rejects_discovered_mode_without_discovery(
+    provider_type: ProviderType,
+) -> None:
+    provider = _provider(provider_type)
+    persistence = FakePersistence(provider)
+    discovery = FakeDiscovery(provider, (_candidate("model", "Model"),))
+    service = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=AllowPermission(),  # type: ignore[arg-type]
+        discovery=discovery,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(NexusError) as raised:
+        asyncio.run(
+            service.register_discovered(
+                organization_public_id=provider.organization_public_id,
+                user_public_id=uuid4(),
+                provider_public_id=provider.provider_id.value,
+                provider_model_names=("model",),
+            )
+        )
+
+    assert raised.value.code is ErrorCode.CONFLICT
+    assert discovery.calls == 0
     assert persistence.discovered_calls == 0
 
 
@@ -291,6 +439,39 @@ def test_manual_registration_uses_declared_metadata_without_discovery() -> None:
     assert result[0].model.provider_model_name == "operator-alias"
     assert result[0].model.display_name == "Operator alias"
     assert result[0].model.enabled is True
+
+
+@pytest.mark.parametrize(
+    "provider_type",
+    [ProviderType.OPENAI, ProviderType.ANTHROPIC, ProviderType.GEMINI],
+)
+def test_discovery_provider_rejects_manual_mode(provider_type: ProviderType) -> None:
+    provider = _provider(provider_type)
+    persistence = FakePersistence(provider)
+    discovery = FakeDiscovery(provider, ())
+    service = RegisterConfiguredModels(
+        persistence=persistence,  # type: ignore[arg-type]
+        permission_checker=AllowPermission(),  # type: ignore[arg-type]
+        discovery=discovery,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(NexusError) as raised:
+        asyncio.run(
+            service.register_manual(
+                organization_public_id=provider.organization_public_id,
+                user_public_id=uuid4(),
+                provider_public_id=provider.provider_id.value,
+                provider_model_name="model",
+                display_name="Model",
+                model_type=ModelType.CHAT,
+                capabilities=frozenset({ModelCapability.STREAMING}),
+                embedding_dimension=None,
+            )
+        )
+
+    assert raised.value.code is ErrorCode.CONFLICT
+    assert discovery.calls == 0
+    assert persistence.manual_calls == 0
 
 
 def test_list_filters_are_collection_scoped_and_wrong_provider_is_empty() -> None:
