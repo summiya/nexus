@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 from nexus.config.settings import Settings
 from nexus.files.ports import ObjectStorage

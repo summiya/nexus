@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from nexus.model_providers.domain import (
     MAX_PROVIDER_CREDENTIAL_SECRET_BYTES,
+    ModelCapability,
+    ModelType,
     ProviderType,
     ProviderValidationStatus,
 )
@@ -103,13 +105,31 @@ class ProviderValidationResponseBody(BaseModel):
     last_validated_at: datetime
 
 
+class ModelCandidateResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_model_name: str
+    display_name: str
+    model_type: ModelType
+    capabilities: list[ModelCapability]
+    embedding_dimension: int | None
+
+
+class ProviderModelCatalogResponseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ModelCandidateResponseBody]
+
+
 __all__ = [
     "ConfiguredProviderResponseBody",
     "CreateProviderRequestBody",
     "ListConfiguredProvidersResponseBody",
+    "ModelCandidateResponseBody",
     "ProviderCatalogItemResponseBody",
     "ProviderCatalogResponseBody",
     "ProviderCredentialStateResponseBody",
+    "ProviderModelCatalogResponseBody",
     "ProviderValidationResponseBody",
     "SetProviderCredentialRequestBody",
     "SetProviderEnabledRequestBody",

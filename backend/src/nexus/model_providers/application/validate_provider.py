@@ -13,6 +13,7 @@ from nexus.model_providers.application._shared import (
     authorize,
     conflict,
     credential_unavailable,
+    enforce_rate_limits,
     get_provider,
     unavailable,
 )
@@ -71,10 +72,24 @@ class ValidateModelProvider:
             organization_public_id=organization_public_id,
             provider_id=provider_id,
         )
-        await self._enforce_rate_limits(
-            organization_public_id=organization_public_id,
-            provider_id=provider_id,
-        )
+        try:
+            await enforce_rate_limits(
+                self.rate_limiter,
+                key_prefix="model-provider-validation",
+                organization_public_id=organization_public_id,
+                provider_id=provider_id,
+                provider_max_requests=self.policy.provider_max_requests,
+                provider_window_seconds=self.policy.provider_window_seconds,
+                organization_max_requests=self.policy.organization_max_requests,
+                organization_window_seconds=self.policy.organization_window_seconds,
+            )
+        except RateLimitError as exc:
+            logger.warning("model_provider_validation_rate_limiter_unavailable")
+            raise NexusError(
+                ErrorCode.SERVICE_UNAVAILABLE,
+                "The service is temporarily unavailable.",
+                retryable=True,
+            ) from exc
 
         reference = provider.credential_reference
         if reference is None:
@@ -123,47 +138,6 @@ class ValidateModelProvider:
             validation_status=status.value,
         )
         return updated
-
-    async def _enforce_rate_limits(
-        self,
-        *,
-        organization_public_id: UUID,
-        provider_id: OrganizationProviderId,
-    ) -> None:
-        limits = (
-            (
-                f"model-provider-validation:organization:{organization_public_id}",
-                self.policy.organization_max_requests,
-                self.policy.organization_window_seconds,
-            ),
-            (
-                (
-                    "model-provider-validation:provider:"
-                    f"{organization_public_id}:{provider_id.value}"
-                ),
-                self.policy.provider_max_requests,
-                self.policy.provider_window_seconds,
-            ),
-        )
-        try:
-            for key, limit, window_seconds in limits:
-                if not await self.rate_limiter.allow(
-                    key=key,
-                    limit=limit,
-                    window_seconds=window_seconds,
-                ):
-                    raise NexusError(
-                        ErrorCode.RATE_LIMITED,
-                        "Too many requests. Please try again later.",
-                        retryable=True,
-                    )
-        except RateLimitError as exc:
-            logger.warning("model_provider_validation_rate_limiter_unavailable")
-            raise NexusError(
-                ErrorCode.SERVICE_UNAVAILABLE,
-                "The service is temporarily unavailable.",
-                retryable=True,
-            ) from exc
 
 
 __all__ = ["ProviderValidationPolicy", "ValidateModelProvider"]

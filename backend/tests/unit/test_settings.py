@@ -66,6 +66,11 @@ SETTINGS_ENV_KEYS = [
     "MODEL_PROVIDER_VALIDATION_RATE_LIMIT_WINDOW_SECONDS",
     "MODEL_PROVIDER_VALIDATION_ORGANIZATION_RATE_LIMIT_MAX_REQUESTS",
     "MODEL_PROVIDER_VALIDATION_ORGANIZATION_RATE_LIMIT_WINDOW_SECONDS",
+    "MODEL_PROVIDER_DISCOVERY_TIMEOUT_SECONDS",
+    "MODEL_PROVIDER_DISCOVERY_RATE_LIMIT_MAX_REQUESTS",
+    "MODEL_PROVIDER_DISCOVERY_RATE_LIMIT_WINDOW_SECONDS",
+    "MODEL_PROVIDER_DISCOVERY_ORGANIZATION_RATE_LIMIT_MAX_REQUESTS",
+    "MODEL_PROVIDER_DISCOVERY_ORGANIZATION_RATE_LIMIT_WINDOW_SECONDS",
 ]
 
 
@@ -157,6 +162,13 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert settings.model_provider_validation_organization_rate_limit_max_requests == 20
     assert (
         settings.model_provider_validation_organization_rate_limit_window_seconds == 60
+    )
+    assert settings.model_provider_discovery_timeout_seconds == 15.0
+    assert settings.model_provider_discovery_rate_limit_max_requests == 1
+    assert settings.model_provider_discovery_rate_limit_window_seconds == 10
+    assert settings.model_provider_discovery_organization_rate_limit_max_requests == 10
+    assert (
+        settings.model_provider_discovery_organization_rate_limit_window_seconds == 60
     )
 
 

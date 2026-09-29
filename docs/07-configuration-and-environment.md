@@ -180,6 +180,23 @@ is one attempt per provider per five seconds and twenty attempts per
 organization per minute. These values configure application behavior only and
 contain no provider credentials.
 
+Provider model discovery uses a separate overall timeout and Redis-backed
+limits. Defaults are one discovery per provider per ten seconds and ten per
+organization per minute. Provider bodies are read incrementally with a 1 MiB
+per-response limit, at most ten pages, and at most 1,000 provider rows.
+
+The following must be present in the process environment before Python imports
+LiteLLM, including in Azure application settings:
+
+```env
+LITELLM_LOCAL_MODEL_COST_MAP=True
+```
+
+Startup fails closed when it is absent or false. Nexus does not mutate the
+environment to enable it, and deployments without it will not start. LiteLLM
+is exactly pinned because bundled metadata contributes to model
+classification; upgrades are explicit and require catalog regression tests.
+
 ---
 
 ## 9. Frontend configuration

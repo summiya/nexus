@@ -14,6 +14,7 @@ from nexus.model_providers.api.dependencies import (
     ProviderDep,
     ProviderEnabledSetterDep,
     ProviderListDep,
+    ProviderModelDiscoveryDep,
     ProviderUpdaterDep,
     ProviderValidatorDep,
 )
@@ -21,9 +22,11 @@ from nexus.model_providers.api.schemas import (
     ConfiguredProviderResponseBody,
     CreateProviderRequestBody,
     ListConfiguredProvidersResponseBody,
+    ModelCandidateResponseBody,
     ProviderCatalogItemResponseBody,
     ProviderCatalogResponseBody,
     ProviderCredentialStateResponseBody,
+    ProviderModelCatalogResponseBody,
     ProviderValidationResponseBody,
     SetProviderCredentialRequestBody,
     SetProviderEnabledRequestBody,
@@ -204,6 +207,39 @@ async def validate_configured_provider(
     return ProviderValidationResponseBody(
         status=provider.validation_status,
         last_validated_at=provider.last_validated_at,
+    )
+
+
+@router.get(
+    "/{provider_public_id}/models",
+    response_model=ProviderModelCatalogResponseBody,
+)
+async def discover_configured_provider_models(
+    provider_public_id: UUID,
+    response: Response,
+    auth_context: CurrentAuthContextDep,
+    service: ProviderModelDiscoveryDep,
+) -> ProviderModelCatalogResponseBody:
+    candidates = await service.execute(
+        organization_public_id=auth_context.organization_public_id,
+        user_public_id=auth_context.user_public_id,
+        provider_public_id=provider_public_id,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return ProviderModelCatalogResponseBody(
+        items=[
+            ModelCandidateResponseBody(
+                provider_model_name=candidate.provider_model_name,
+                display_name=candidate.display_name,
+                model_type=candidate.model_type,
+                capabilities=sorted(
+                    candidate.capabilities,
+                    key=lambda capability: capability.value,
+                ),
+                embedding_dimension=candidate.embedding_dimension,
+            )
+            for candidate in candidates
+        ]
     )
 
 

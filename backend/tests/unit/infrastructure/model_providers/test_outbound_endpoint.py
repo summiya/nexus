@@ -36,6 +36,11 @@ class StubResolver:
         "100.64.0.1",
         "::1",
         "::ffff:127.0.0.1",
+        "224.0.0.1",
+        "239.255.255.250",
+        "ff02::1",
+        "ff05::1",
+        "fec0::1",
     ],
 )
 def test_non_global_addresses_are_rejected(address: str) -> None:

@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.config.settings import Settings
-from nexus.infrastructure.model_providers import HttpProviderConfigurationValidator
+from nexus.infrastructure.model_providers import (
+    HttpProviderConfigurationValidator,
+    HttpProviderModelCatalog,
+)
 from nexus.infrastructure.persistence.authorization import SqlAlchemyPermissionChecker
 from nexus.infrastructure.persistence.model_provider import (
     SqlAlchemyModelProviderPersistence,
@@ -15,16 +18,22 @@ from nexus.infrastructure.persistence.model_provider import (
 from nexus.model_providers.application import (
     CreateModelProvider,
     DeleteModelProvider,
+    DiscoverProviderModels,
     GetModelProvider,
     ListModelProviders,
     ListProviderCatalog,
+    ProviderDiscoveryPolicy,
     ProviderValidationPolicy,
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
     ValidateModelProvider,
 )
-from nexus.model_providers.ports import CredentialStore, ProviderConfigurationValidator
+from nexus.model_providers.ports import (
+    CredentialStore,
+    ProviderConfigurationValidator,
+    ProviderModelCatalog,
+)
 from nexus.ports.rate_limit import RateLimiter
 
 
@@ -39,6 +48,7 @@ class ModelProviderComposition:
     set_provider_credential: SetModelProviderCredential
     delete_provider: DeleteModelProvider
     validate_provider: ValidateModelProvider
+    discover_models: DiscoverProviderModels
 
 
 def build_model_provider_composition(
@@ -48,6 +58,7 @@ def build_model_provider_composition(
     credential_store: CredentialStore | None,
     rate_limiter: RateLimiter,
     validator: ProviderConfigurationValidator | None = None,
+    model_catalog: ProviderModelCatalog | None = None,
 ) -> ModelProviderComposition:
     persistence = SqlAlchemyModelProviderPersistence(session_factory)
     permission_checker = SqlAlchemyPermissionChecker(session_factory)
@@ -110,6 +121,35 @@ def build_model_provider_composition(
                 ),
                 organization_window_seconds=(
                     app_settings.model_provider_validation_organization_rate_limit_window_seconds
+                ),
+            ),
+        ),
+        discover_models=DiscoverProviderModels(
+            persistence=persistence,
+            permission_checker=permission_checker,
+            credential_store=credential_store,
+            catalog=(
+                model_catalog
+                if model_catalog is not None
+                else HttpProviderModelCatalog(
+                    timeout_seconds=(
+                        app_settings.model_provider_discovery_timeout_seconds
+                    )
+                )
+            ),
+            rate_limiter=rate_limiter,
+            policy=ProviderDiscoveryPolicy(
+                provider_max_requests=(
+                    app_settings.model_provider_discovery_rate_limit_max_requests
+                ),
+                provider_window_seconds=(
+                    app_settings.model_provider_discovery_rate_limit_window_seconds
+                ),
+                organization_max_requests=(
+                    app_settings.model_provider_discovery_organization_rate_limit_max_requests
+                ),
+                organization_window_seconds=(
+                    app_settings.model_provider_discovery_organization_rate_limit_window_seconds
                 ),
             ),
         ),

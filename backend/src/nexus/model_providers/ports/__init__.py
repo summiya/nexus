@@ -7,6 +7,14 @@ from nexus.model_providers.ports.credentials import (
     CredentialStoreConflictError,
     CredentialStoreError,
 )
+from nexus.model_providers.ports.discovery import (
+    ProviderModelCatalog,
+    ProviderModelCatalogError,
+    ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
+    ProviderModelDiscoveryUnavailableError,
+    ProviderModelDiscoveryUnsupportedError,
+)
 from nexus.model_providers.ports.persistence import (
     ModelProviderConflictError,
     ModelProviderDeleteRestrictedError,
@@ -28,6 +36,12 @@ __all__ = [
     "ModelProviderPersistenceError",
     "ModelProviderReferenceError",
     "ProviderConfigurationValidator",
+    "ProviderModelCatalog",
+    "ProviderModelCatalogError",
+    "ProviderModelDiscoveryAuthenticationError",
+    "ProviderModelDiscoveryRejectedError",
+    "ProviderModelDiscoveryUnavailableError",
+    "ProviderModelDiscoveryUnsupportedError",
     "ProviderUpdateResult",
     "credential_storage_name",
 ]

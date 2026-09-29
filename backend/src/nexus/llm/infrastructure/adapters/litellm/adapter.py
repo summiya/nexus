@@ -8,8 +8,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
-import litellm
-
+from nexus.config.litellm import require_local_litellm_metadata
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMError,
@@ -36,6 +35,16 @@ from nexus.llm.infrastructure.adapters.litellm.mapping import (
 from nexus.llm.infrastructure.adapters.litellm.tool_call_assembler import (
     LiteLLMToolCallAssembler,
 )
+
+
+def _load_litellm_module():
+    require_local_litellm_metadata()
+    import litellm
+
+    return litellm
+
+
+litellm = _load_litellm_module()
 
 
 @dataclass(frozen=True)

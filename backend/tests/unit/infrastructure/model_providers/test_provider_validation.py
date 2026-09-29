@@ -6,6 +6,7 @@ from typing import Any, Self
 
 import pytest
 
+from nexus.infrastructure.model_providers import provider_http as http_module
 from nexus.infrastructure.model_providers import provider_validation as module
 from nexus.infrastructure.model_providers.provider_validation import (
     HttpProviderConfigurationValidator,
@@ -161,9 +162,9 @@ def test_transport_disables_environment_and_redirects(
         captured["session"] = session
         return session
 
-    monkeypatch.setattr(module, "resolve_public_addresses", resolve)
-    monkeypatch.setattr(module.aiohttp, "TCPConnector", lambda **kwargs: kwargs)
-    monkeypatch.setattr(module.aiohttp, "ClientSession", session_factory)
+    monkeypatch.setattr(http_module, "resolve_public_addresses", resolve)
+    monkeypatch.setattr(http_module.aiohttp, "TCPConnector", lambda **kwargs: kwargs)
+    monkeypatch.setattr(http_module.aiohttp, "ClientSession", session_factory)
     validator = HttpProviderConfigurationValidator(timeout_seconds=3)
 
     outcome = asyncio.run(

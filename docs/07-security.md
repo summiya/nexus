@@ -894,6 +894,13 @@ URL-fetching tools must consider:
 
 Outbound HTTP access should use an allowlist or controlled egress policy where feasible.
 
+Model-provider validation and discovery resolve every destination immediately
+before connecting, require public-unicast IP addresses, pin the checked result,
+preserve the original hostname for TLS, disable redirects and environment
+proxies, and reject multicast and deprecated IPv6 site-local destinations.
+Discovery additionally requests identity encoding and bounds bytes, pages, and
+model rows before parsing.
+
 Agents must not be able to freely probe internal infrastructure.
 
 ---

@@ -341,7 +341,8 @@ Provider URL domain validation remains syntax-only: bounded HTTPS, a valid
 hostname/port, and no embedded credentials. Provider credential validation
 resolves and checks DNS inside one bounded operation immediately before every
 provider call. It evaluates every resolved address, unwraps IPv4-mapped IPv6,
-and permits an address only when `ipaddress.is_global` is true. The outbound
+and requires a public-unicast address: `ipaddress.is_global` must be true and
+multicast plus deprecated IPv6 site-local addresses are explicitly rejected. The outbound
 connector is pinned to those checked addresses while the original hostname is
 preserved for TLS verification, SNI, and the HTTP Host header. Redirects and
 environment proxy configuration are disabled. The policy accounts for legacy numeric
@@ -360,6 +361,39 @@ current status and database-generated validation timestamp are stored on the
 provider and reset whenever settings or the credential reference changes.
 Results are compare-and-set against the settings/reference snapshot so an old
 request cannot validate a newer configuration.
+
+Provider model discovery is a transient capability behind the provider-neutral
+`ProviderModelCatalog` port. It requires `model_providers.manage`, loads a
+tenant-scoped provider snapshot, rate-limits, resolves the credential, and
+performs network I/O only after the persistence session has ended. Candidates
+are not written into configured-model persistence.
+
+OpenAI, Anthropic, and Gemini discovery combines authenticated provider
+availability, documented provider metadata, and exactly pinned local LiteLLM
+metadata. Unknown classifications are omitted. Gemini uses a non-empty
+`baseModelId` when present; foundation-model responses that omit it fall back
+to the validated `models/<id>` resource suffix. The returned
+`provider_model_name` is always the bare model ID and never includes
+`models/`. Azure OpenAI and OpenAI-compatible automatic discovery are
+explicitly unsupported because deployment names and operator aliases cannot be
+inferred safely.
+
+Discovery status handling intentionally differs from provider validation.
+During discovery, both `401` and `403` mean the configured credential or its
+authorization cannot be used for catalog access and map to a non-retryable
+conflict. Other non-transient `4xx` responses such as `400` and `404` are
+also non-retryable conflicts with a fixed safe rejection message. They do not
+mean automatic discovery is unsupported. Only Azure OpenAI and OpenAI-compatible
+use `MODEL_DISCOVERY_UNSUPPORTED` to signal that manual registration is
+required. Transient `408`, `425`, `429`, and `5xx` responses map to
+retryable service unavailability. This differs from Phase 5 validation, where
+a generic `403` is treated as unsupported configuration because Azure OpenAI
+may use it for firewall or network restrictions.
+
+Discovery shares the validation transport's HTTPS, public-unicast,
+DNS-pinning, TLS-hostname, no-redirect, and no-environment-proxy controls. It
+requests identity encoding and rejects encoded, oversized, malformed,
+over-paginated, or over-count responses without returning partial results.
 
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.

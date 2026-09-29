@@ -15,6 +15,7 @@ from nexus.model_providers.ports import (
     ModelProviderPersistence,
     ModelProviderPersistenceError,
 )
+from nexus.ports.rate_limit import RateLimiter
 
 READ_PERMISSION = "model_providers.read"
 MANAGE_PERMISSION = "model_providers.manage"
@@ -99,3 +100,39 @@ def credential_unavailable() -> NexusError:
         CREDENTIAL_UNAVAILABLE,
         retryable=True,
     )
+
+
+async def enforce_rate_limits(
+    limiter: RateLimiter,
+    *,
+    key_prefix: str,
+    organization_public_id: UUID,
+    provider_id: OrganizationProviderId,
+    provider_max_requests: int,
+    provider_window_seconds: int,
+    organization_max_requests: int,
+    organization_window_seconds: int,
+) -> None:
+    limits = (
+        (
+            f"{key_prefix}:organization:{organization_public_id}",
+            organization_max_requests,
+            organization_window_seconds,
+        ),
+        (
+            f"{key_prefix}:provider:{organization_public_id}:{provider_id.value}",
+            provider_max_requests,
+            provider_window_seconds,
+        ),
+    )
+    for key, limit, window_seconds in limits:
+        if not await limiter.allow(
+            key=key,
+            limit=limit,
+            window_seconds=window_seconds,
+        ):
+            raise NexusError(
+                ErrorCode.RATE_LIMITED,
+                "Too many requests. Please try again later.",
+                retryable=True,
+            )

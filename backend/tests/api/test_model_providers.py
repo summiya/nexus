@@ -21,6 +21,7 @@ from nexus.model_providers.api.dependencies import (
     get_provider_deleter,
     get_provider_enabled_setter,
     get_provider_list,
+    get_provider_model_discovery,
     get_provider_updater,
     get_provider_validator,
 )
@@ -28,6 +29,9 @@ from nexus.model_providers.application import ProviderCatalogItem
 from nexus.model_providers.domain import (
     ConfiguredProvider,
     CredentialReference,
+    ModelCandidate,
+    ModelCapability,
+    ModelType,
     OpenAICompatibleSettings,
     OrganizationProviderId,
     ProviderCredentialSecret,
@@ -63,6 +67,30 @@ class FakeList:
     ) -> tuple[ConfiguredProvider, ...]:
         self.calls.append((organization_public_id, user_public_id))
         return (self.provider,)
+
+
+class FakeDiscovery:
+    def __init__(self) -> None:
+        self.calls: list[tuple[UUID, UUID, UUID]] = []
+
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        user_public_id: UUID,
+        provider_public_id: UUID,
+    ) -> tuple[ModelCandidate, ...]:
+        self.calls.append((organization_public_id, user_public_id, provider_public_id))
+        return (
+            ModelCandidate(
+                provider_model_name="gpt-test",
+                display_name="GPT Test",
+                model_type=ModelType.CHAT,
+                capabilities=frozenset(
+                    {ModelCapability.TOOLS, ModelCapability.STREAMING}
+                ),
+            ),
+        )
 
 
 class FakeMutation:
@@ -172,6 +200,39 @@ def test_provider_reads_mask_all_credential_storage_details() -> None:
         ]
     }
     for forbidden in ("credential_reference", "npc-v1", "secret", "api-key"):
+        assert forbidden not in response.text
+
+
+def test_model_discovery_uses_trusted_context_and_returns_safe_contract() -> None:
+    app, organization_id, user_id, provider = _app()
+    service = FakeDiscovery()
+    app.dependency_overrides[get_provider_model_discovery] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/api/v1/model-providers/{provider.provider_id.value}/models"
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert service.calls == [(organization_id, user_id, provider.provider_id.value)]
+    assert response.json() == {
+        "items": [
+            {
+                "provider_model_name": "gpt-test",
+                "display_name": "GPT Test",
+                "model_type": "chat",
+                "capabilities": ["streaming", "tools"],
+                "embedding_dimension": None,
+            }
+        ]
+    }
+    for forbidden in (
+        "credential_reference",
+        "credential",
+        "organization_public_id",
+        "provider_public_id",
+    ):
         assert forbidden not in response.text
 
 

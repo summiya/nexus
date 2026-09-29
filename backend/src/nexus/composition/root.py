@@ -24,6 +24,7 @@ from nexus.composition.storage import (
     StorageComposition,
     build_storage_composition,
 )
+from nexus.config.litellm import require_local_litellm_metadata
 from nexus.config.settings import Settings
 from nexus.conversations.application import (
     CreateConversation,
@@ -41,7 +42,11 @@ from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.llm.application import ModelPolicy
 from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
 from nexus.llm.ports import LLMGateway
-from nexus.model_providers.ports import CredentialStore, ProviderConfigurationValidator
+from nexus.model_providers.ports import (
+    CredentialStore,
+    ProviderConfigurationValidator,
+    ProviderModelCatalog,
+)
 from nexus.ports.rate_limit import RateLimiter
 
 
@@ -143,9 +148,11 @@ async def build_app_container(
     download_grant_issuer: DownloadGrantIssuer | None = None,
     credential_store: CredentialStore | None = None,
     provider_configuration_validator: ProviderConfigurationValidator | None = None,
+    provider_model_catalog: ProviderModelCatalog | None = None,
 ) -> AppContainer:
     """Build one explicit object graph from one settings instance."""
 
+    require_local_litellm_metadata()
     llm = build_llm_composition(app_settings, gateway=llm_gateway)
     resolved_event_publisher = (
         event_publisher if event_publisher is not None else InProcessEventPublisher()
@@ -196,6 +203,7 @@ async def build_app_container(
             credential_store=provider_credentials.store,
             rate_limiter=authentication.rate_limiter,
             validator=provider_configuration_validator,
+            model_catalog=provider_model_catalog,
         )
         files = build_file_composition(
             app_settings,
