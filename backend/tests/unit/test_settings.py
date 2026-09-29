@@ -71,6 +71,7 @@ SETTINGS_ENV_KEYS = [
     "MODEL_PROVIDER_DISCOVERY_RATE_LIMIT_WINDOW_SECONDS",
     "MODEL_PROVIDER_DISCOVERY_ORGANIZATION_RATE_LIMIT_MAX_REQUESTS",
     "MODEL_PROVIDER_DISCOVERY_ORGANIZATION_RATE_LIMIT_WINDOW_SECONDS",
+    "MODEL_PROVIDER_RUNTIME_TIMEOUT_SECONDS",
 ]
 
 
@@ -170,6 +171,7 @@ def test_settings_uses_expected_safe_defaults(clean_environment) -> None:
     assert (
         settings.model_provider_discovery_organization_rate_limit_window_seconds == 60
     )
+    assert settings.model_provider_runtime_timeout_seconds == 120.0
 
 
 def test_blank_optional_credential_store_environment_values_are_unconfigured(

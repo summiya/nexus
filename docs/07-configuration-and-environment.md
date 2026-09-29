@@ -187,6 +187,16 @@ followed immediately by one authoritative registration discovery. Provider
 bodies are read incrementally with a 1 MiB
 per-response limit, at most ten pages, and at most 1,000 provider rows.
 
+Provider runtime transport uses
+`MODEL_PROVIDER_RUNTIME_TIMEOUT_SECONDS` (120 seconds by default) as one
+monotonic deadline across DNS resolution, connection acquisition, TLS,
+response headers, and streamed response reads. The secure transport pins the
+first address from the already validated resolution set and never performs a
+fresh DNS lookup or follows redirects. V1 deliberately does not fail over to a
+second approved address because retrying a generation request after an
+ambiguous send could duplicate provider work; operators gain safety and
+determinism at the cost of reduced per-request address failover.
+
 The following must be present in the process environment before Python imports
 LiteLLM, including in Azure application settings:
 

@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     model_provider_discovery_organization_rate_limit_window_seconds: int = Field(
         default=60, gt=0
     )
+    model_provider_runtime_timeout_seconds: float = Field(
+        default=120.0,
+        gt=0,
+        allow_inf_nan=False,
+    )
 
     @field_validator(
         "credential_store_provider",

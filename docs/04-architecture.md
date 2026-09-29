@@ -453,9 +453,18 @@ Nexus does not hold a database transaction across credential I/O, re-read and
 silently switch a credential reference, or introduce distributed locking.
 
 Phase 8A does not connect this resolver to Conversation streaming or change
-`LLMRequest`, `LLMGateway`, LiteLLM invocation, or `ModelPolicy`. Phase 8B owns
-provider-specific invocation mapping and runtime integration. Any later bounded
-credential caching also belongs to runtime-integration work.
+`LLMRequest`, `LLMGateway`, LiteLLM invocation, or `ModelPolicy`. Phase 8B.1
+provides the request-scoped secure HTTP transport used by the later runtime
+adapter. It resolves and validates the configured endpoint once, connects to
+the first approved address while preserving Host and TLS SNI, disables
+environment proxies and redirects, and applies one monotonic deadline through
+stream reads. Request-scoped clients own and deterministically close their
+transport; LiteLLM is not allowed to create an unpinned retry client.
+
+Phase 8B.2 remains responsible for the runtime gateway and provider-specific
+mapping from `ResolvedChatModel` into LiteLLM invocation arguments. Conversation
+integration remains Phase 8C. Any later bounded credential caching also belongs
+to runtime-integration work.
 
 ---
 

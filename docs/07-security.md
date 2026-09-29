@@ -1361,7 +1361,18 @@ semantics: a later administrative or credential change governs subsequent
 resolutions but does not require a database transaction or distributed lock
 around an already-resolved invocation. Provider invocation in Phase 8B must
 continue enforcing the resolve-time DNS, public-unicast, pinned-address,
-TLS-hostname, no-proxy, and no-redirect controls defined above.
+TLS-hostname, no-proxy, and no-redirect controls defined above. The Phase 8B.1
+runtime transport enforces those controls at the actual HTTPX connection: it
+rewrites only the connection address, preserves the original Host authority and
+TLS SNI, rejects origin drift, performs no fresh DNS lookup, and applies a
+single monotonic deadline to DNS, connect/TLS/header acquisition, and response
+stream reads. Transport failures use fixed Nexus LLM errors and must not expose
+hostnames, IP addresses, endpoints, or raw provider exception details.
+
+V1 selects the first address from the fully approved resolution set and does
+not automatically fail over a generation POST. This avoids duplicating an
+invocation after an ambiguous send. Later failover, if introduced, may use only
+the already approved address set and must not perform fresh DNS resolution.
 
 ---
 
