@@ -25,6 +25,7 @@ from nexus.model_providers.domain import (
 )
 from nexus.model_providers.ports import (
     ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
     ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
@@ -419,10 +420,10 @@ def test_oversized_or_encoded_body_fails_safely(
 @pytest.mark.parametrize(
     ("status", "error_type"),
     [
-        (400, ProviderModelDiscoveryUnavailableError),
+        (400, ProviderModelDiscoveryRejectedError),
         (401, ProviderModelDiscoveryAuthenticationError),
         (403, ProviderModelDiscoveryAuthenticationError),
-        (404, ProviderModelDiscoveryUnavailableError),
+        (404, ProviderModelDiscoveryRejectedError),
         (408, ProviderModelDiscoveryUnavailableError),
         (425, ProviderModelDiscoveryUnavailableError),
         (429, ProviderModelDiscoveryUnavailableError),

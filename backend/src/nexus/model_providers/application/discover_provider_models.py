@@ -20,6 +20,7 @@ from nexus.model_providers.ports import (
     ModelProviderPersistence,
     ProviderModelCatalog,
     ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
     ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
@@ -105,6 +106,11 @@ class DiscoverProviderModels:
             raise NexusError(
                 ErrorCode.CONFLICT,
                 "The provider credential cannot be used for model discovery.",
+            ) from exc
+        except ProviderModelDiscoveryRejectedError as exc:
+            raise NexusError(
+                ErrorCode.CONFLICT,
+                "The provider rejected the model discovery request.",
             ) from exc
         except ProviderModelDiscoveryUnavailableError as exc:
             raise self._unavailable() from exc

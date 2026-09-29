@@ -17,7 +17,11 @@ class ProviderModelCatalogError(RuntimeError):
 
 
 class ProviderModelDiscoveryAuthenticationError(ProviderModelCatalogError):
-    """The provider rejected the configured credential."""
+    """The provider rejected the configured credential or authorization."""
+
+
+class ProviderModelDiscoveryRejectedError(ProviderModelCatalogError):
+    """The provider rejected a non-retryable model discovery request."""
 
 
 class ProviderModelDiscoveryUnsupportedError(ProviderModelCatalogError):
@@ -44,6 +48,7 @@ __all__ = [
     "ProviderModelCatalog",
     "ProviderModelCatalogError",
     "ProviderModelDiscoveryAuthenticationError",
+    "ProviderModelDiscoveryRejectedError",
     "ProviderModelDiscoveryUnavailableError",
     "ProviderModelDiscoveryUnsupportedError",
 ]

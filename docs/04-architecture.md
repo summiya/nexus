@@ -370,11 +370,25 @@ are not written into configured-model persistence.
 
 OpenAI, Anthropic, and Gemini discovery combines authenticated provider
 availability, documented provider metadata, and exactly pinned local LiteLLM
-metadata. Unknown classifications are omitted. Gemini uses the bare
-`baseModelId` as the invocation identifier; its `models/...` resource name is
-never returned as `provider_model_name`. Azure OpenAI and OpenAI-compatible
-automatic discovery are explicitly unsupported because deployment names and
-operator aliases cannot be inferred safely.
+metadata. Unknown classifications are omitted. Gemini uses a non-empty
+`baseModelId` when present; foundation-model responses that omit it fall back
+to the validated `models/<id>` resource suffix. The returned
+`provider_model_name` is always the bare model ID and never includes
+`models/`. Azure OpenAI and OpenAI-compatible automatic discovery are
+explicitly unsupported because deployment names and operator aliases cannot be
+inferred safely.
+
+Discovery status handling intentionally differs from provider validation.
+During discovery, both `401` and `403` mean the configured credential or its
+authorization cannot be used for catalog access and map to a non-retryable
+conflict. Other non-transient `4xx` responses such as `400` and `404` are
+also non-retryable conflicts with a fixed safe rejection message. They do not
+mean automatic discovery is unsupported. Only Azure OpenAI and OpenAI-compatible
+use `MODEL_DISCOVERY_UNSUPPORTED` to signal that manual registration is
+required. Transient `408`, `425`, `429`, and `5xx` responses map to
+retryable service unavailability. This differs from Phase 5 validation, where
+a generic `403` is treated as unsupported configuration because Azure OpenAI
+may use it for firewall or network restrictions.
 
 Discovery shares the validation transport's HTTPS, public-unicast,
 DNS-pinning, TLS-hostname, no-redirect, and no-environment-proxy controls. It

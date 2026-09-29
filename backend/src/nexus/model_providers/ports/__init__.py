@@ -11,6 +11,7 @@ from nexus.model_providers.ports.discovery import (
     ProviderModelCatalog,
     ProviderModelCatalogError,
     ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
     ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "ProviderModelCatalog",
     "ProviderModelCatalogError",
     "ProviderModelDiscoveryAuthenticationError",
+    "ProviderModelDiscoveryRejectedError",
     "ProviderModelDiscoveryUnavailableError",
     "ProviderModelDiscoveryUnsupportedError",
     "ProviderUpdateResult",

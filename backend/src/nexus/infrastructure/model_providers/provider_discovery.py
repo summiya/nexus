@@ -33,6 +33,7 @@ from nexus.model_providers.domain import (
 )
 from nexus.model_providers.ports import (
     ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
     ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
@@ -80,9 +81,11 @@ class HttpProviderModelCatalog:
                     settings=settings,
                     secret=secret,
                 )
-        except ProviderModelDiscoveryAuthenticationError:
-            raise
-        except ProviderModelDiscoveryUnsupportedError:
+        except (
+            ProviderModelDiscoveryAuthenticationError,
+            ProviderModelDiscoveryRejectedError,
+            ProviderModelDiscoveryUnsupportedError,
+        ):
             raise
         except asyncio.CancelledError:
             raise
@@ -166,8 +169,8 @@ class HttpProviderModelCatalog:
             raise ProviderModelDiscoveryUnavailableError(
                 "Provider model discovery is unavailable."
             )
-        raise ProviderModelDiscoveryUnavailableError(
-            "Provider model discovery returned an unusable response."
+        raise ProviderModelDiscoveryRejectedError(
+            "The provider rejected the model discovery request."
         )
 
     def _openai_candidates(

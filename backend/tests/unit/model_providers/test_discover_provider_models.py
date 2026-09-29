@@ -28,6 +28,7 @@ from nexus.model_providers.domain import (
 from nexus.model_providers.ports import (
     CredentialStoreError,
     ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryRejectedError,
     ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
@@ -249,6 +250,10 @@ def test_unsupported_discovery_has_distinct_error_code() -> None:
             ErrorCode.CONFLICT,
         ),
         (
+            ProviderModelDiscoveryRejectedError("provider rejection detail"),
+            ErrorCode.CONFLICT,
+        ),
+        (
             ProviderModelDiscoveryUnavailableError("provider network detail"),
             ErrorCode.SERVICE_UNAVAILABLE,
         ),
@@ -276,3 +281,17 @@ def test_cancellation_propagates() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         _execute(service, provider)
+
+
+def test_provider_request_rejection_is_non_retryable_conflict() -> None:
+    provider = _provider()
+    service, _permission, _store, catalog, _limiter = _service(provider)
+    catalog.error = ProviderModelDiscoveryRejectedError("provider raw detail")
+
+    with pytest.raises(NexusError) as raised:
+        _execute(service, provider)
+
+    assert raised.value.code is ErrorCode.CONFLICT
+    assert raised.value.retryable is False
+    assert raised.value.message == "The provider rejected the model discovery request."
+    assert "provider raw detail" not in raised.value.message
