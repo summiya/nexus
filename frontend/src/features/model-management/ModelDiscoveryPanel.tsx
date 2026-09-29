@@ -53,7 +53,16 @@ export function ModelDiscoveryPanel({
     [configuredNames, discovery.data],
   );
   const candidateNames = useMemo(
-    () => new Set(candidates.map((candidate) => candidate.providerModelName)),
+    () =>
+      new Set(
+        candidates
+          .filter(
+            (candidate) =>
+              candidate.modelType !== "embedding" ||
+              candidate.embeddingDimension !== null,
+          )
+          .map((candidate) => candidate.providerModelName),
+      ),
     [candidates],
   );
   const selectedCandidateNames = [...selected].filter((name) =>
@@ -62,7 +71,9 @@ export function ModelDiscoveryPanel({
 
   function toggleCandidate(candidate: ModelCandidate) {
     setSelected((current) => {
-      const next = new Set(current);
+      const next = new Set(
+        [...current].filter((name) => candidateNames.has(name)),
+      );
       if (next.has(candidate.providerModelName)) {
         next.delete(candidate.providerModelName);
       } else if (next.size < MAX_DISCOVERED_SELECTIONS) {
