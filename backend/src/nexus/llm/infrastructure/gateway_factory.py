@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
+from nexus.config.litellm import require_local_litellm_metadata
 from nexus.llm.ports import LLMGateway
 
 
@@ -14,5 +14,8 @@ def create_llm_gateway(gateway_name: str) -> LLMGateway:
     """Construct the configured gateway without dynamic provider loading."""
 
     if gateway_name == "litellm":
+        require_local_litellm_metadata()
+        from nexus.llm.infrastructure.adapters.litellm import LiteLLMAdapter
+
         return LiteLLMAdapter()
     raise UnsupportedLLMGatewayError("Unsupported LLM gateway configuration")

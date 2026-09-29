@@ -341,7 +341,8 @@ Provider URL domain validation remains syntax-only: bounded HTTPS, a valid
 hostname/port, and no embedded credentials. Provider credential validation
 resolves and checks DNS inside one bounded operation immediately before every
 provider call. It evaluates every resolved address, unwraps IPv4-mapped IPv6,
-and permits an address only when `ipaddress.is_global` is true. The outbound
+and requires a public-unicast address: `ipaddress.is_global` must be true and
+multicast plus deprecated IPv6 site-local addresses are explicitly rejected. The outbound
 connector is pinned to those checked addresses while the original hostname is
 preserved for TLS verification, SNI, and the HTTP Host header. Redirects and
 environment proxy configuration are disabled. The policy accounts for legacy numeric
@@ -360,6 +361,25 @@ current status and database-generated validation timestamp are stored on the
 provider and reset whenever settings or the credential reference changes.
 Results are compare-and-set against the settings/reference snapshot so an old
 request cannot validate a newer configuration.
+
+Provider model discovery is a transient capability behind the provider-neutral
+`ProviderModelCatalog` port. It requires `model_providers.manage`, loads a
+tenant-scoped provider snapshot, rate-limits, resolves the credential, and
+performs network I/O only after the persistence session has ended. Candidates
+are not written into configured-model persistence.
+
+OpenAI, Anthropic, and Gemini discovery combines authenticated provider
+availability, documented provider metadata, and exactly pinned local LiteLLM
+metadata. Unknown classifications are omitted. Gemini uses the bare
+`baseModelId` as the invocation identifier; its `models/...` resource name is
+never returned as `provider_model_name`. Azure OpenAI and OpenAI-compatible
+automatic discovery are explicitly unsupported because deployment names and
+operator aliases cannot be inferred safely.
+
+Discovery shares the validation transport's HTTPS, public-unicast,
+DNS-pinning, TLS-hostname, no-redirect, and no-environment-proxy controls. It
+requests identity encoding and rejects encoded, oversized, malformed,
+over-paginated, or over-count responses without returning partial results.
 
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.

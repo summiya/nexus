@@ -23,6 +23,7 @@ from nexus.model_providers.domain.credential import (
     ProviderCredentialSecret,
 )
 from nexus.model_providers.domain.errors import ModelProviderConfigurationError
+from nexus.model_providers.domain.model_candidate import ModelCandidate
 from nexus.model_providers.domain.provider_settings import (
     provider_endpoint_url,
     provider_required_setting_names,
@@ -45,6 +46,7 @@ __all__ = [
     "CredentialReference",
     "DefaultModelSelection",
     "GeminiSettings",
+    "ModelCandidate",
     "ModelCapability",
     "ModelProviderConfigurationError",
     "ModelType",

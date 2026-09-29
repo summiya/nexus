@@ -88,7 +88,11 @@ async def resolve_public_addresses(
             ) from exc
         if isinstance(address, IPv6Address) and address.ipv4_mapped is not None:
             address = address.ipv4_mapped
-        if not address.is_global:
+        if (
+            not address.is_global
+            or address.is_multicast
+            or (isinstance(address, IPv6Address) and address.is_site_local)
+        ):
             raise UnsafeProviderEndpointError("Provider endpoint is not supported.")
     return addresses
 

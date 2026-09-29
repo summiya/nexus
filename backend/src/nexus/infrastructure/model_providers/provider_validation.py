@@ -10,12 +10,11 @@ import aiohttp
 
 from nexus.infrastructure.model_providers.outbound_endpoint import (
     HostResolver,
-    PinnedResolver,
     SystemHostResolver,
     UnsafeProviderEndpointError,
     parse_https_endpoint,
-    resolve_public_addresses,
 )
+from nexus.infrastructure.model_providers.provider_http import pinned_provider_get
 from nexus.model_providers.domain import (
     AnthropicSettings,
     AzureOpenAISettings,
@@ -70,30 +69,12 @@ class HttpProviderConfigurationValidator:
         self,
         request: _ValidationRequest,
     ) -> ProviderValidationStatus:
-        parsed = parse_https_endpoint(request.url)
-        addresses = await resolve_public_addresses(parsed, resolver=self.resolver)
-        hostname = parsed.hostname
-        if hostname is None:  # guarded by parse_https_endpoint
-            raise UnsafeProviderEndpointError("Provider endpoint is not supported.")
-        connector = aiohttp.TCPConnector(
-            resolver=PinnedResolver(hostname=hostname, addresses=addresses),
-            use_dns_cache=False,
-            limit=1,
-        )
-        timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-        async with (
-            aiohttp.ClientSession(
-                connector=connector,
-                timeout=timeout,
-                trust_env=False,
-                auto_decompress=False,
-            ) as session,
-            session.get(
-                request.url,
-                headers=request.headers,
-                allow_redirects=False,
-            ) as response,
-        ):
+        async with pinned_provider_get(
+            url=request.url,
+            headers=request.headers,
+            resolver=self.resolver,
+            timeout_seconds=self.timeout_seconds,
+        ) as response:
             status = response.status
             response.close()
         return _status_outcome(status)

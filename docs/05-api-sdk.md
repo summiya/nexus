@@ -2895,6 +2895,7 @@ PUT    /api/v1/model-providers/{provider_public_id}
 PATCH  /api/v1/model-providers/{provider_public_id}/enabled
 PUT    /api/v1/model-providers/{provider_public_id}/credential
 POST   /api/v1/model-providers/{provider_public_id}/validate
+GET    /api/v1/model-providers/{provider_public_id}/models
 DELETE /api/v1/model-providers/{provider_public_id}
 ```
 
@@ -2925,6 +2926,20 @@ and unsupported configuration are successful validation-operation results.
 Authorization, rate-limit, credential-store, persistence, and stale-result
 failures use the normal Nexus error envelope. Validation is limited both per
 provider and per organization.
+
+`GET /api/v1/model-providers/{provider_public_id}/models` requires
+`model_providers.manage` because it resolves the organization's stored
+credential and exercises it against the external provider. The provider must
+be enabled, valid, and have a credential. The no-store response contains only
+bounded normalized model names, display names, Nexus model types,
+capabilities, and optional embedding dimensions.
+
+Automatic discovery supports OpenAI, Anthropic, and Gemini. Azure OpenAI
+deployment names and OpenAI-compatible operator-defined aliases cannot be
+inferred safely and return `MODEL_DISCOVERY_UNSUPPORTED` with HTTP 409. A later
+explicit registration phase supplies those values. Nexus never substitutes an
+Azure base model ID for a deployment name or classifies a compatible-provider
+alias by matching its text to another provider's model.
 
 ---
 
