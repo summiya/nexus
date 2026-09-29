@@ -453,11 +453,6 @@ def _check_model_count(values: Sized) -> None:
         raise ValueError("Provider model count limit exceeded")
 
 
-def with_query(url: str, query: Mapping[str, str]) -> str:
-    parsed = parse_https_endpoint(url)
-    return urlunsplit(parsed._replace(query=urlencode(query)))
-
-
 __all__ = [
     "MAX_DISCOVERY_MODELS",
     "MAX_DISCOVERY_PAGES",
