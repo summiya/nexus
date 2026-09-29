@@ -16,10 +16,12 @@ from nexus.infrastructure.persistence.model_provider import (
     SqlAlchemyModelProviderPersistence,
 )
 from nexus.model_providers.application import (
+    ClearDefaultModel,
     CreateModelProvider,
     DeleteConfiguredModel,
     DeleteModelProvider,
     DiscoverProviderModels,
+    GetDefaultModels,
     GetModelProvider,
     ListConfiguredModels,
     ListModelProviders,
@@ -28,6 +30,7 @@ from nexus.model_providers.application import (
     ProviderValidationPolicy,
     RegisterConfiguredModels,
     SetConfiguredModelEnabled,
+    SetDefaultModel,
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
@@ -60,6 +63,9 @@ class ModelProviderComposition:
     register_models: RegisterConfiguredModels
     set_model_enabled: SetConfiguredModelEnabled
     delete_model: DeleteConfiguredModel
+    get_defaults: GetDefaultModels
+    set_default: SetDefaultModel
+    clear_default: ClearDefaultModel
 
 
 def build_model_provider_composition(
@@ -179,6 +185,18 @@ def build_model_provider_composition(
             permission_checker=permission_checker,
         ),
         delete_model=DeleteConfiguredModel(
+            persistence=persistence,
+            permission_checker=permission_checker,
+        ),
+        get_defaults=GetDefaultModels(
+            persistence=persistence,
+            permission_checker=permission_checker,
+        ),
+        set_default=SetDefaultModel(
+            persistence=persistence,
+            permission_checker=permission_checker,
+        ),
+        clear_default=ClearDefaultModel(
             persistence=persistence,
             permission_checker=permission_checker,
         ),

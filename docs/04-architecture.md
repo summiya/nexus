@@ -413,6 +413,20 @@ invariants; they are not provider-verified. Incorrect names or capability
 declarations may fail during Phase 8 invocation, which must return a safe Nexus
 error without raw provider details.
 
+Organization default-model selection is stored in the same aggregate for the
+`chat`, `embedding`, and `reranker` slots. Selection requires a model of the
+matching type that is enabled and, at selection time, belongs to an enabled,
+validated, credentialed provider. Chat defaults must also declare streaming
+support. Setting and clearing a slot lock the organization configuration,
+rebuild the aggregate, and persist atomically; repeating an already-effective
+operation is a no-op. A provider that later becomes unavailable or loses its
+credential does not silently rewrite the stored selection. Phase 8 runtime
+routing must evaluate current provider usability before invocation.
+
+The existing conversation `ModelPolicy` allowlist and `llm_allowed_models`
+configuration remain unchanged in this phase. Organization defaults do not yet
+route runtime requests.
+
 Runtime provider credential resolution and any bounded caching belong to Phase
 8 or later runtime-integration work, not this storage-boundary phase.
 

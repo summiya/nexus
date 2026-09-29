@@ -11,6 +11,7 @@ from nexus.model_providers.domain import (
     ConfiguredModelId,
     ConfiguredProvider,
     CredentialReference,
+    DefaultModelSelection,
     ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
@@ -146,7 +147,7 @@ class ModelProviderPersistence(Protocol):
         organization_public_id: UUID,
         model_type: ModelType,
         model_id: ConfiguredModelId | None,
-    ) -> None: ...
+    ) -> DefaultModelSelection: ...
 
 
 __all__ = [

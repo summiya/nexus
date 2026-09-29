@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import inspect
+from typing import get_type_hints
 
+from nexus.model_providers.domain import DefaultModelSelection
 from nexus.model_providers.ports import (
     ModelProviderConflictError,
     ModelProviderDeleteRestrictedError,
@@ -44,3 +46,9 @@ def test_persistence_errors_are_capability_specific() -> None:
     assert issubclass(ModelProviderConflictError, Exception)
     assert issubclass(ModelProviderReferenceError, Exception)
     assert issubclass(ModelProviderDeleteRestrictedError, Exception)
+
+
+def test_set_default_returns_the_authoritative_selection() -> None:
+    hints = get_type_hints(ModelProviderPersistence.set_default)
+
+    assert hints["return"] is DefaultModelSelection

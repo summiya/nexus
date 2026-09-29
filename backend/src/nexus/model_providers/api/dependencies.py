@@ -6,16 +6,19 @@ from fastapi import Depends
 
 from nexus.api.dependencies import AppContainerDep
 from nexus.model_providers.application import (
+    ClearDefaultModel,
     CreateModelProvider,
     DeleteConfiguredModel,
     DeleteModelProvider,
     DiscoverProviderModels,
+    GetDefaultModels,
     GetModelProvider,
     ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
     RegisterConfiguredModels,
     SetConfiguredModelEnabled,
+    SetDefaultModel,
     SetModelProviderCredential,
     SetModelProviderEnabled,
     UpdateModelProvider,
@@ -87,6 +90,18 @@ def get_configured_model_deleter(container: AppContainerDep) -> DeleteConfigured
     return container.model_providers.delete_model
 
 
+def get_default_model_getter(container: AppContainerDep) -> GetDefaultModels:
+    return container.model_providers.get_defaults
+
+
+def get_default_model_setter(container: AppContainerDep) -> SetDefaultModel:
+    return container.model_providers.set_default
+
+
+def get_default_model_clearer(container: AppContainerDep) -> ClearDefaultModel:
+    return container.model_providers.clear_default
+
+
 ProviderCatalogDep = Annotated[ListProviderCatalog, Depends(get_provider_catalog)]
 ProviderListDep = Annotated[ListModelProviders, Depends(get_provider_list)]
 ProviderDep = Annotated[GetModelProvider, Depends(get_provider)]
@@ -115,6 +130,11 @@ ConfiguredModelEnabledSetterDep = Annotated[
 ConfiguredModelDeleterDep = Annotated[
     DeleteConfiguredModel, Depends(get_configured_model_deleter)
 ]
+DefaultModelGetterDep = Annotated[GetDefaultModels, Depends(get_default_model_getter)]
+DefaultModelSetterDep = Annotated[SetDefaultModel, Depends(get_default_model_setter)]
+DefaultModelClearerDep = Annotated[
+    ClearDefaultModel, Depends(get_default_model_clearer)
+]
 
 
 __all__ = [
@@ -122,6 +142,9 @@ __all__ = [
     "ConfiguredModelEnabledSetterDep",
     "ConfiguredModelListDep",
     "ConfiguredModelRegistrarDep",
+    "DefaultModelClearerDep",
+    "DefaultModelGetterDep",
+    "DefaultModelSetterDep",
     "ProviderCatalogDep",
     "ProviderCreatorDep",
     "ProviderCredentialSetterDep",

@@ -12,6 +12,11 @@ from nexus.model_providers.application.configured_models import (
     SetConfiguredModelEnabled,
 )
 from nexus.model_providers.application.create_provider import CreateModelProvider
+from nexus.model_providers.application.default_models import (
+    ClearDefaultModel,
+    GetDefaultModels,
+    SetDefaultModel,
+)
 from nexus.model_providers.application.delete_provider import DeleteModelProvider
 from nexus.model_providers.application.discover_provider_models import (
     DiscoverProviderModels,
@@ -32,11 +37,13 @@ from nexus.model_providers.application.validate_provider import (
 )
 
 __all__ = [
+    "ClearDefaultModel",
     "ConfiguredModelItem",
     "CreateModelProvider",
     "DeleteConfiguredModel",
     "DeleteModelProvider",
     "DiscoverProviderModels",
+    "GetDefaultModels",
     "GetModelProvider",
     "ListConfiguredModels",
     "ListModelProviders",
@@ -46,6 +53,7 @@ __all__ = [
     "ProviderValidationPolicy",
     "RegisterConfiguredModels",
     "SetConfiguredModelEnabled",
+    "SetDefaultModel",
     "SetModelProviderCredential",
     "SetModelProviderEnabled",
     "UpdateModelProvider",
