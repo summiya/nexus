@@ -68,7 +68,7 @@ def build_llm_composition(
     app_settings: Settings,
     runtime_gateway: RuntimeChatGateway | None = None,
 ) -> LLMComposition:
-    """Build one shared provider-independent LLM gateway and its policy."""
+    """Build the application-scoped runtime chat gateway."""
 
     if runtime_gateway is None:
         # LiteLLM reads its local-metadata setting during import. Keep this
@@ -90,7 +90,7 @@ def build_conversation_composition(
     runtime_chat_gateway: RuntimeChatGateway,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> ConversationComposition:
-    """Build the existing conversation use cases without changing their behavior."""
+    """Build Conversation use cases with explicit runtime-model dependencies."""
 
     persistence = SqlAlchemyConversationPersistence(session_factory)
     return ConversationComposition(
