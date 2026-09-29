@@ -48,7 +48,7 @@ export interface CreatedConversation {
 
 export interface ConversationGenerationMetadata {
   publicId: string;
-  model: string;
+  modelPublicId: string | null;
   status: GenerationStatus;
   finishReason: GenerationFinishReason | null;
   inputTokens: number;
@@ -70,7 +70,7 @@ export interface ConversationMessage {
 export interface StreamConversationMessageInput {
   conversationPublicId: string;
   content: string;
-  model: string;
+  modelPublicId?: string | null;
   idempotencyKey?: string;
   signal?: AbortSignal;
 }
@@ -79,7 +79,7 @@ export interface GenerationStartedEvent {
   type: "generation.started";
   conversationId: string;
   generationId: string;
-  model: string;
+  modelPublicId: string;
 }
 
 export interface MessageDeltaEvent {

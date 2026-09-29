@@ -50,34 +50,6 @@ def test_importing_asgi_module_without_setting_does_not_import_litellm() -> None
     assert result.returncode == 0, result.stderr
 
 
-def test_gateway_fails_before_importing_litellm_when_setting_is_missing() -> None:
-    source_root = Path(__file__).resolve().parents[3] / "src"
-    environment = os.environ.copy()
-    environment.pop("LITELLM_LOCAL_MODEL_COST_MAP", None)
-    environment["PYTHONPATH"] = str(source_root)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import sys; "
-                "from nexus.llm.infrastructure.gateway_factory import create_llm_gateway; "
-                "\ntry: create_llm_gateway('litellm')\n"
-                "except ValueError: pass\n"
-                "else: raise AssertionError('expected configuration failure')\n"
-                "assert 'litellm' not in sys.modules"
-            ),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-
-
 def test_metadata_lookup_fails_before_importing_litellm_when_setting_is_missing() -> (
     None
 ):

@@ -12,13 +12,13 @@ from nexus.events import EventPublisher
 from nexus.files.ports import DownloadGrantIssuer, ObjectStorage, UploadGrantIssuer
 from nexus.infrastructure.mailer import EmailProvider
 from nexus.infrastructure.persistence.session import Database
-from nexus.llm.ports import LLMGateway
 from nexus.logging import configure_logging, get_logger
 from nexus.middleware import RequestContextMiddleware
 from nexus.model_providers.ports import (
     CredentialStore,
     ProviderConfigurationValidator,
     ProviderModelCatalog,
+    RuntimeChatGateway,
 )
 from nexus.ports.rate_limit import RateLimiter
 
@@ -28,7 +28,7 @@ logger = get_logger("nexus")
 def create_app(
     app_settings: Settings | None = None,
     event_publisher: EventPublisher | None = None,
-    llm_gateway: LLMGateway | None = None,
+    runtime_chat_gateway: RuntimeChatGateway | None = None,
     database: Database | None = None,
     rate_limiter: RateLimiter | None = None,
     email_provider: EmailProvider | None = None,
@@ -48,7 +48,7 @@ def create_app(
         container = await build_app_container(
             resolved_settings,
             event_publisher=event_publisher,
-            llm_gateway=llm_gateway,
+            runtime_chat_gateway=runtime_chat_gateway,
             database=database,
             rate_limiter=rate_limiter,
             email_provider=email_provider,

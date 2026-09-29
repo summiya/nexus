@@ -48,7 +48,7 @@ def _assembler() -> ConversationEventAssembler:
         public_id=uuid4(),
         conversation_public_id=conversation.public_id,
         user_message_public_id=uuid4(),
-        model="gpt-test",
+        configured_model_public_id=uuid4(),
         status=GenerationStatus.RUNNING,
         started_at=NOW,
     )

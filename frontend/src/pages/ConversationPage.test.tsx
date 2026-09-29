@@ -214,7 +214,6 @@ describe("ConversationPage", () => {
     expect(conversationMocks.submit).toHaveBeenCalledWith({
       conversationPublicId: firstConversationId,
       content: "Explain streams",
-      model: "gpt-4o-mini",
     });
     expect(conversationMocks.createConversation).not.toHaveBeenCalled();
   });
@@ -296,7 +295,6 @@ describe("ConversationPage", () => {
     expect(conversationMocks.submit).toHaveBeenCalledWith({
       conversationPublicId: firstConversationId,
       content: "First message",
-      model: "gpt-4o-mini",
     });
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
     expect(conversationMocks.resetForConversationChange).not.toHaveBeenCalled();

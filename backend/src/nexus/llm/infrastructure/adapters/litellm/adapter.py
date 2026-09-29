@@ -49,7 +49,7 @@ litellm = _load_litellm_module()
 
 @dataclass(frozen=True)
 class LiteLLMAdapter:
-    """Concrete non-streaming LiteLLM implementation of the LLMGateway port."""
+    """Shared normalized LiteLLM response and event mapping implementation."""
 
     client: _LiteLLMClientProtocol = field(default_factory=lambda: LiteLLMClient())
 

@@ -8,7 +8,8 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, event, func, select
+from sqlalchemy import Engine, event, func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
@@ -146,7 +147,7 @@ def _generation(
         public_id=uuid4(),
         conversation_public_id=conversation_public_id,
         user_message_public_id=user_message_public_id,
-        model="gpt-test",
+        configured_model_public_id=uuid4(),
         status=GenerationStatus.RUNNING,
         started_at=TIMESTAMP,
     )
@@ -214,7 +215,7 @@ def _persist_turn(
     assistant_content: str,
     user_created_at: datetime = TIMESTAMP,
     assistant_created_at: datetime = TIMESTAMP,
-    model: str = "gpt-test",
+    configured_model_public_id: UUID | None = None,
     finish_reason: GenerationFinishReason = GenerationFinishReason.STOP,
     input_tokens: int = 0,
     output_tokens: int = 0,
@@ -227,7 +228,7 @@ def _persist_turn(
     )
     generation = replace(
         _generation(conversation.public_id, user_message.public_id),
-        model=model,
+        configured_model_public_id=(configured_model_public_id or uuid4()),
         started_at=user_created_at,
     )
     _prepare_generation(
@@ -474,7 +475,7 @@ def test_list_messages_returns_completed_assistant_generation_metadata(
         assistant_content="Answer",
         user_created_at=TIMESTAMP,
         assistant_created_at=TIMESTAMP + timedelta(seconds=1),
-        model="gpt-metadata",
+        configured_model_public_id=uuid4(),
         finish_reason=GenerationFinishReason.LENGTH,
         input_tokens=100,
         output_tokens=50,
@@ -494,7 +495,7 @@ def test_list_messages_returns_completed_assistant_generation_metadata(
     assert listed[0].generation is None
     assert listed[1].generation == ConversationGenerationMetadata(
         public_id=generation.public_id,
-        model="gpt-metadata",
+        model_public_id=generation.configured_model_public_id,
         status=GenerationStatus.COMPLETED,
         finish_reason=GenerationFinishReason.LENGTH,
         input_tokens=100,
@@ -504,6 +505,81 @@ def test_list_messages_returns_completed_assistant_generation_metadata(
         completed_at=TIMESTAMP + timedelta(seconds=1),
         error_kind=None,
     )
+
+
+def test_legacy_generation_history_has_no_configured_model_identity(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    _, _, generation = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Legacy question",
+        assistant_content="Legacy answer",
+    )
+
+    with Session(migrated_engine) as session:
+        stored = session.scalar(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        )
+        assert stored is not None
+        stored.model = "legacy-provider-model"
+        stored.configured_model_public_id = None
+        session.commit()
+
+    listed = _list_messages(
+        persistence,
+        organization_public_id,
+        conversation.public_id,
+    )
+
+    assert listed[-1].generation is not None
+    assert listed[-1].generation.model_public_id is None
+
+
+@pytest.mark.parametrize(
+    ("legacy_model", "configured_model_public_id"),
+    [(None, None), ("provider-model", uuid4()), ("   ", None)],
+)
+def test_generation_database_requires_exactly_one_valid_model_identity(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+    legacy_model: str | None,
+    configured_model_public_id: UUID | None,
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    _, _, generation = _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="Question",
+        assistant_content="Answer",
+    )
+
+    with Session(migrated_engine) as session, pytest.raises(IntegrityError):
+        session.execute(
+            text(
+                "UPDATE generations SET model = :model, "
+                "configured_model_public_id = :configured_model_public_id "
+                "WHERE public_id = :public_id"
+            ),
+            {
+                "model": legacy_model,
+                "configured_model_public_id": configured_model_public_id,
+                "public_id": generation.public_id,
+            },
+        )
+        session.commit()
 
 
 def test_list_messages_returns_none_for_unassociated_system_and_assistant_messages(
@@ -1078,6 +1154,48 @@ def test_generation_update_rejects_another_tenant_without_leaking_state(
         assert stored.status == GenerationStatus.RUNNING.value
         assert stored.completed_at is None
         assert stored.error_kind is None
+
+
+def test_terminal_transition_rejects_a_different_configured_model_identity(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
+    conversation = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, conversation)
+    message = _message(conversation.public_id, "request")
+    generation = _generation(conversation.public_id, message.public_id)
+    _prepare_generation(
+        persistence,
+        organization_public_id,
+        conversation,
+        message,
+        generation,
+    )
+    mismatched = replace(
+        generation,
+        configured_model_public_id=uuid4(),
+        status=GenerationStatus.FAILED,
+        completed_at=TIMESTAMP + timedelta(seconds=1),
+        error_kind="provider_timeout",
+    )
+
+    with pytest.raises(ConversationReferenceError):
+        asyncio.run(
+            persistence.fail_generation(
+                organization_public_id=organization_public_id,
+                generation=mismatched,
+            )
+        )
+
+    with Session(migrated_engine) as session:
+        stored = session.scalars(
+            select(GenerationModel).where(
+                GenerationModel.public_id == generation.public_id
+            )
+        ).one()
+        assert stored.status == GenerationStatus.RUNNING.value
 
 
 def test_fail_generation_persists_terminal_lifecycle(

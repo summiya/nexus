@@ -72,9 +72,7 @@ class LiteLLMRuntimeAdapter(RuntimeChatGateway):
 
     timeout_seconds: float
     resolver: HostResolver = field(default_factory=SystemHostResolver)
-    http_client_factory: RuntimeHTTPClientFactory = (
-        create_secure_runtime_http_client
-    )
+    http_client_factory: RuntimeHTTPClientFactory = create_secure_runtime_http_client
     litellm_client: _LiteLLMRuntimeClient = field(default_factory=LiteLLMClient)
 
     async def generate(

@@ -95,7 +95,7 @@ def _generation(conversation: Conversation) -> tuple[Message, Generation]:
         public_id=uuid4(),
         conversation_public_id=conversation.public_id,
         user_message_public_id=message.public_id,
-        model="gpt-test",
+        configured_model_public_id=uuid4(),
         status=GenerationStatus.RUNNING,
         started_at=TIMESTAMP,
     )
@@ -248,7 +248,7 @@ def test_prepare_generation_returns_limited_history_in_chronological_order(
             public_id=uuid4(),
             conversation_public_id=conversation.public_id,
             user_message_public_id=message.public_id,
-            model="gpt-test",
+            configured_model_public_id=uuid4(),
             status=GenerationStatus.RUNNING,
             started_at=message.created_at,
         )

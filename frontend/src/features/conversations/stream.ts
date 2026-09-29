@@ -18,7 +18,7 @@ const generationStartedSchema = z
   .object({
     conversation_id: uuidSchema,
     generation_id: uuidSchema,
-    model: z.string(),
+    model_public_id: uuidSchema,
   })
   .strict();
 
@@ -96,7 +96,7 @@ function toConversationEvent({
         type: event,
         conversationId: payload.conversation_id,
         generationId: payload.generation_id,
-        model: payload.model,
+        modelPublicId: payload.model_public_id,
       } satisfies GenerationStartedEvent;
     }
     case "message.delta": {
@@ -304,7 +304,12 @@ export async function* streamConversationMessage(
     {
       method: "POST",
       headers,
-      body: { content: input.content, model: input.model },
+      body: {
+        content: input.content,
+        ...(input.modelPublicId === undefined
+          ? {}
+          : { model_public_id: input.modelPublicId }),
+      },
       signal: input.signal,
     },
   );

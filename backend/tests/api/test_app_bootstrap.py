@@ -21,17 +21,21 @@ from nexus.infrastructure.persistence.conversation import (
 from nexus.infrastructure.rate_limit import RedisRateLimiter
 from nexus.infrastructure.upload_context import AesGcmUploadContextProtector
 from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
-from nexus.llm.infrastructure.gateway_factory import UnsupportedLLMGatewayError
 from nexus.main import create_app
+from nexus.model_providers.domain import ResolvedChatModel
 
 
-class FakeLLMGateway:
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        del request
+class FakeRuntimeChatGateway:
+    async def generate(
+        self, *, request: LLMRequest, target: ResolvedChatModel
+    ) -> LLMResponse:
+        del request, target
         raise NotImplementedError
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
-        del request
+    def stream(
+        self, *, request: LLMRequest, target: ResolvedChatModel
+    ) -> AsyncIterator[LLMEvent]:
+        del request, target
         return _empty_llm_stream()
 
 
@@ -188,13 +192,20 @@ def test_default_event_publisher_is_application_scoped() -> None:
         )
 
 
-def test_llm_gateway_and_model_policy_are_application_scoped() -> None:
-    gateway = FakeLLMGateway()
-    app = create_test_app(build_settings(), llm_gateway=gateway)
+def test_runtime_chat_gateway_is_application_scoped() -> None:
+    gateway = FakeRuntimeChatGateway()
+    app = create_test_app(build_settings(), runtime_chat_gateway=gateway)
 
     with TestClient(app):
-        assert app.state.container.llm.gateway is gateway
-        assert app.state.container.conversations.stream_message.llm_gateway is gateway
+        assert app.state.container.llm.runtime_gateway is gateway
+        assert (
+            app.state.container.conversations.stream_message.runtime_chat_gateway
+            is gateway
+        )
+        assert (
+            app.state.container.conversations.stream_message.resolve_chat_model
+            is app.state.container.model_providers.resolve_chat_model
+        )
 
 
 def test_conversation_composition_receives_database_session_factory() -> None:
@@ -232,19 +243,6 @@ def test_file_composition_receives_shared_runtime_dependencies() -> None:
             app.state.container.files.issue_download.download_grant_issuer
             is download_issuer
         )
-
-
-def test_unsupported_llm_gateway_fails_during_application_composition() -> None:
-    app = create_test_app(build_settings(llm_gateway="unsupported"))
-
-    with (
-        pytest.raises(
-            UnsupportedLLMGatewayError,
-            match="Unsupported LLM gateway configuration",
-        ),
-        TestClient(app),
-    ):
-        pass
 
 
 def test_event_publisher_can_be_injected_and_resolved_through_fastapi() -> None:

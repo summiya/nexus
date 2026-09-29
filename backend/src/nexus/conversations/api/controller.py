@@ -40,6 +40,7 @@ from nexus.conversations.application.stream_message import (
     StreamConversationMessageRequest,
 )
 from nexus.conversations.domain import ConversationMessageHistoryItem
+from nexus.model_providers.domain import ConfiguredModelId
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -118,7 +119,7 @@ def _to_message_response(
         generation=(
             ConversationGenerationResponseBody(
                 public_id=generation.public_id,
-                model=generation.model,
+                model_public_id=(generation.model_public_id),
                 status=generation.status,
                 finish_reason=generation.finish_reason,
                 input_tokens=generation.input_tokens,
@@ -151,7 +152,11 @@ async def stream_conversation_message(
             user_public_id=auth_context.user_public_id,
             conversation_public_id=conversation_public_id,
             content=body.content,
-            model=body.model,
+            model_id=(
+                ConfiguredModelId(body.model_public_id)
+                if body.model_public_id is not None
+                else None
+            ),
             idempotency_key=idempotency_key,
         )
     )
@@ -178,7 +183,7 @@ def _to_server_sent_event(event: ConversationEvent) -> ServerSentEvent:
         data: dict[str, object] = {
             "conversation_id": str(event.conversation_public_id),
             "generation_id": str(event.generation_public_id),
-            "model": event.model,
+            "model_public_id": str(event.model_public_id),
         }
     elif isinstance(event, MessageDelta):
         data = {

@@ -29,7 +29,7 @@ export interface LiveConversationTurn {
 interface SubmitConversationMessageInput {
   conversationPublicId: string;
   content: string;
-  model: string;
+  modelPublicId?: string | null;
 }
 
 interface ActiveSubmission {
@@ -127,7 +127,7 @@ export function useConversationSubmission() {
     async ({
       conversationPublicId,
       content,
-      model,
+      modelPublicId,
     }: SubmitConversationMessageInput): Promise<SubmissionResult> => {
       if (activeSubmissionRef.current !== null) {
         return "ignored";
@@ -174,7 +174,7 @@ export function useConversationSubmission() {
         for await (const event of streamConversationMessage({
           conversationPublicId,
           content,
-          model,
+          modelPublicId,
           idempotencyKey,
           signal: operation.controller.signal,
         })) {

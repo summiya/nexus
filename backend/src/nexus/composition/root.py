@@ -39,9 +39,7 @@ from nexus.infrastructure.persistence.conversation import (
     SqlAlchemyConversationPersistence,
 )
 from nexus.infrastructure.persistence.session import Database, build_database
-from nexus.llm.application import ModelPolicy
-from nexus.llm.infrastructure.gateway_factory import create_llm_gateway
-from nexus.llm.ports import LLMGateway
+from nexus.model_providers.application import ResolveChatModel
 from nexus.model_providers.ports import (
     CredentialStore,
     ProviderConfigurationValidator,
@@ -55,9 +53,7 @@ from nexus.ports.rate_limit import RateLimiter
 class LLMComposition:
     """Application-scoped LLM dependencies composed at startup."""
 
-    gateway: LLMGateway
     runtime_gateway: RuntimeChatGateway
-    model_policy: ModelPolicy
 
 
 @dataclass(frozen=True)
@@ -70,14 +66,10 @@ class ConversationComposition:
 
 def build_llm_composition(
     app_settings: Settings,
-    gateway: LLMGateway | None = None,
     runtime_gateway: RuntimeChatGateway | None = None,
 ) -> LLMComposition:
     """Build one shared provider-independent LLM gateway and its policy."""
 
-    resolved_gateway = (
-        gateway if gateway is not None else create_llm_gateway(app_settings.llm_gateway)
-    )
     if runtime_gateway is None:
         # LiteLLM reads its local-metadata setting during import. Keep this
         # import behind startup's fail-closed guard rather than importing
@@ -89,17 +81,13 @@ def build_llm_composition(
         runtime_gateway = LiteLLMRuntimeAdapter(
             timeout_seconds=app_settings.model_provider_runtime_timeout_seconds
         )
-    return LLMComposition(
-        gateway=resolved_gateway,
-        runtime_gateway=runtime_gateway,
-        model_policy=ModelPolicy.from_models(app_settings.llm_allowed_models),
-    )
+    return LLMComposition(runtime_gateway=runtime_gateway)
 
 
 def build_conversation_composition(
     app_settings: Settings,
-    llm_gateway: LLMGateway,
-    model_policy: ModelPolicy,
+    resolve_chat_model: ResolveChatModel,
+    runtime_chat_gateway: RuntimeChatGateway,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> ConversationComposition:
     """Build the existing conversation use cases without changing their behavior."""
@@ -111,8 +99,8 @@ def build_conversation_composition(
         list_conversations=ListConversations(persistence=persistence),
         stream_message=StreamConversationMessage(
             persistence=persistence,
-            llm_gateway=llm_gateway,
-            model_policy=model_policy,
+            resolve_chat_model=resolve_chat_model,
+            runtime_chat_gateway=runtime_chat_gateway,
             history_limit=app_settings.conversation_history_limit,
             history_max_chars=app_settings.conversation_history_max_chars,
             message_max_length=app_settings.conversation_message_max_length,
@@ -154,7 +142,6 @@ async def build_app_container(
     app_settings: Settings,
     *,
     event_publisher: EventPublisher | None = None,
-    llm_gateway: LLMGateway | None = None,
     runtime_chat_gateway: RuntimeChatGateway | None = None,
     database: Database | None = None,
     rate_limiter: RateLimiter | None = None,
@@ -171,7 +158,6 @@ async def build_app_container(
     require_local_litellm_metadata()
     llm = build_llm_composition(
         app_settings,
-        gateway=llm_gateway,
         runtime_gateway=runtime_chat_gateway,
     )
     resolved_event_publisher = (
@@ -201,12 +187,6 @@ async def build_app_container(
     storage: StorageComposition | None = None
     provider_credentials: ProviderCredentialComposition | None = None
     try:
-        conversations = build_conversation_composition(
-            app_settings,
-            llm_gateway=llm.gateway,
-            model_policy=llm.model_policy,
-            session_factory=resolved_database.session_factory,
-        )
         storage = await build_storage_composition(
             app_settings,
             object_storage=object_storage,
@@ -224,6 +204,12 @@ async def build_app_container(
             rate_limiter=authentication.rate_limiter,
             validator=provider_configuration_validator,
             model_catalog=provider_model_catalog,
+        )
+        conversations = build_conversation_composition(
+            app_settings,
+            resolve_chat_model=model_providers.resolve_chat_model,
+            runtime_chat_gateway=llm.runtime_gateway,
+            session_factory=resolved_database.session_factory,
         )
         files = build_file_composition(
             app_settings,

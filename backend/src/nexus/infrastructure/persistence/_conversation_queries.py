@@ -289,7 +289,8 @@ async def insert_generation(
             conversation_id=conversation_id,
             user_message_id=user_message_id,
             assistant_message_id=assistant_message_id,
-            model=generation.model,
+            model=None,
+            configured_model_public_id=generation.configured_model_public_id,
             status=generation.status.value,
             idempotency_key=generation.idempotency_key,
             finish_reason=(
@@ -352,7 +353,7 @@ async def lock_generation_for_terminal_transition(
     model, user_message_public_id = row
     if (
         user_message_public_id != generation.user_message_public_id
-        or model.model != generation.model
+        or model.configured_model_public_id != generation.configured_model_public_id
     ):
         raise ConversationReferenceError(
             "Generation identity does not match the stored Generation"
@@ -486,7 +487,7 @@ def _to_generation_metadata(
 ) -> ConversationGenerationMetadata:
     return ConversationGenerationMetadata(
         public_id=model.public_id,
-        model=model.model,
+        model_public_id=model.configured_model_public_id,
         status=GenerationStatus(model.status),
         finish_reason=(
             GenerationFinishReason(model.finish_reason)

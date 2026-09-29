@@ -423,9 +423,9 @@ operation is a no-op. A provider that later becomes unavailable or loses its
 credential does not silently rewrite the stored selection. Phase 8 runtime
 routing must evaluate current provider usability before invocation.
 
-The existing conversation `ModelPolicy` allowlist and `llm_allowed_models`
-configuration remain unchanged in this phase. Organization defaults do not yet
-route runtime requests.
+Conversation generation now selects only organization-configured models. The
+legacy `ModelPolicy`, environment allowlist, and client-supplied provider model
+string have been removed.
 
 Runtime chat-model resolution is an organization-scoped application boundary:
 
@@ -452,9 +452,8 @@ snapshot; later configuration or credential changes affect later resolutions.
 Nexus does not hold a database transaction across credential I/O, re-read and
 silently switch a credential reference, or introduce distributed locking.
 
-Phase 8A does not connect this resolver to Conversation streaming or change
-`LLMRequest`, `LLMGateway`, LiteLLM invocation, or `ModelPolicy`. Phase 8B.1
-provides the request-scoped secure HTTP transport used by the later runtime
+Phase 8A established this resolver independently of Conversation streaming.
+Phase 8B.1 provides the request-scoped secure HTTP transport used by the runtime
 adapter. It resolves and validates the configured endpoint once, connects to
 the first approved address while preserving Host and TLS SNI, disables
 environment proxies and redirects, and applies one monotonic deadline through
@@ -482,10 +481,10 @@ construction, and every generate or stream invocation owns and closes its
 provider client and pinned transport. Stream cancellation and early consumer
 close also settle those resources before propagating.
 
-The composition root exposes both gateways during the migration. Existing
-Conversations still use the legacy `LLMGateway`; Phase 8C will migrate that
-application path to `RuntimeChatGateway`. Any later bounded credential caching
-also belongs to runtime-integration work.
+Phase 8C injects `ResolveChatModel` and `RuntimeChatGateway` directly into the
+Conversation use case. Conversation authorization precedes model and credential
+resolution, and one immutable resolved target is used for the full request.
+Any later bounded credential caching belongs to future runtime work.
 
 ---
 
