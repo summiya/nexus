@@ -173,7 +173,16 @@ describe("App", () => {
         screen.getByRole("navigation", { name: "Main navigation" }),
       ).getByRole("link", { name: "Conversations" }),
     ).toHaveAttribute("aria-current", "page");
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    const requestedUrls = vi
+      .mocked(globalThis.fetch)
+      .mock.calls.map(([input]) =>
+        input instanceof Request ? input.url : input.toString(),
+      );
+    expect(
+      requestedUrls.filter((url) =>
+        url.endsWith(`/conversations/${conversationId}/messages`),
+      ),
+    ).toHaveLength(1);
   });
 
   it("keeps Conversation routes behind the existing authentication gate", async () => {

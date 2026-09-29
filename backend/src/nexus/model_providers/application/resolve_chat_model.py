@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from nexus.errors import ErrorCode, NexusError
+from nexus.model_providers.application._runtime_model_eligibility import (
+    is_runtime_provider_eligible,
+    is_streaming_chat_model,
+)
 from nexus.model_providers.application._shared import (
     conflict,
     credential_unavailable,
@@ -16,12 +20,9 @@ from nexus.model_providers.domain import (
     ConfiguredModel,
     ConfiguredModelId,
     ConfiguredProvider,
-    ModelCapability,
     ModelProviderConfigurationError,
-    ModelType,
     OrganizationModelProviderConfiguration,
     OrganizationProviderId,
-    ProviderValidationStatus,
     ResolvedChatModel,
 )
 from nexus.model_providers.ports import (
@@ -113,11 +114,7 @@ def _resolve_model(
 
 
 def _require_model_eligible(model: ConfiguredModel) -> None:
-    if (
-        not model.enabled
-        or model.model_type is not ModelType.CHAT
-        or ModelCapability.STREAMING not in model.capabilities
-    ):
+    if not is_streaming_chat_model(model):
         raise conflict()
 
 
@@ -134,10 +131,7 @@ def _resolve_provider(
 
 
 def _require_provider_eligible(provider: ConfiguredProvider) -> None:
-    if (
-        not provider.enabled
-        or provider.validation_status is not ProviderValidationStatus.VALID
-    ):
+    if not is_runtime_provider_eligible(provider):
         raise conflict()
 
 

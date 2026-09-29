@@ -26,6 +26,7 @@ from nexus.model_providers.application import (
     ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
+    ListSelectableChatModels,
     ProviderDiscoveryPolicy,
     ProviderValidationPolicy,
     RegisterConfiguredModels,
@@ -68,6 +69,7 @@ class ModelProviderComposition:
     set_default: SetDefaultModel
     clear_default: ClearDefaultModel
     resolve_chat_model: ResolveChatModel
+    list_selectable_chat_models: ListSelectableChatModels
 
 
 def build_model_provider_composition(
@@ -205,6 +207,9 @@ def build_model_provider_composition(
         resolve_chat_model=ResolveChatModel(
             persistence=persistence,
             credential_store=credential_store,
+        ),
+        list_selectable_chat_models=ListSelectableChatModels(
+            persistence=persistence,
         ),
     )
 

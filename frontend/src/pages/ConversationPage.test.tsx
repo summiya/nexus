@@ -30,7 +30,29 @@ const conversationMocks = vi.hoisted(() => ({
   hookUnmounts: 0,
   resetCreation: vi.fn(),
   resetForConversationChange: vi.fn(),
+  refetchChatModels: vi.fn(),
+  refreshChatModelHook: () => {},
+  chatModelsStatus: "success" as "success" | "pending" | "error",
+  chatModelsData: {
+    items: [
+      {
+        publicId: "99999999-9999-4999-8999-999999999999",
+        displayName: "GPT-5",
+        providerType: "openai" as const,
+        providerDisplayName: "OpenAI",
+      },
+      {
+        publicId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        displayName: "Claude Sonnet",
+        providerType: "anthropic" as const,
+        providerDisplayName: "Anthropic",
+      },
+    ],
+    defaultModelPublicId: "99999999-9999-4999-8999-999999999999" as
+      string | null,
+  },
   liveTurn: null as LiveConversationTurn | null,
+  phase: "idle" as "idle" | "submitting" | "generating",
   submit: vi.fn().mockResolvedValue("accepted"),
 }));
 
@@ -91,10 +113,25 @@ vi.mock("../features/conversations", async () => {
       return {
         feedback: null,
         liveTurn: conversationMocks.liveTurn,
-        phase: "idle",
+        phase: conversationMocks.phase,
         resetForConversationChange:
           conversationMocks.resetForConversationChange,
         submit: conversationMocks.submit,
+      };
+    },
+    useChatModelsQuery: () => {
+      const [, setRevision] = React.useState(0);
+      conversationMocks.refreshChatModelHook = () =>
+        setRevision((revision) => revision + 1);
+      return {
+        data:
+          conversationMocks.chatModelsStatus === "success"
+            ? conversationMocks.chatModelsData
+            : undefined,
+        isPending: conversationMocks.chatModelsStatus === "pending",
+        isError: conversationMocks.chatModelsStatus === "error",
+        isSuccess: conversationMocks.chatModelsStatus === "success",
+        refetch: conversationMocks.refetchChatModels,
       };
     },
   };
@@ -104,6 +141,8 @@ import { ConversationPage } from "./ConversationPage";
 
 const firstConversationId = "11111111-1111-4111-8111-111111111111";
 const secondConversationId = "22222222-2222-4222-8222-222222222222";
+const defaultModelId = "99999999-9999-4999-8999-999999999999";
+const alternateModelId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const createdConversation: CreatedConversation = {
   publicId: firstConversationId,
   organizationPublicId: "33333333-3333-4333-8333-333333333333",
@@ -164,7 +203,30 @@ describe("ConversationPage", () => {
     conversationMocks.hookUnmounts = 0;
     conversationMocks.resetCreation.mockReset();
     conversationMocks.resetForConversationChange.mockReset();
+    conversationMocks.refetchChatModels
+      .mockReset()
+      .mockResolvedValue(undefined);
+    conversationMocks.refreshChatModelHook = () => {};
+    conversationMocks.chatModelsStatus = "success";
+    conversationMocks.chatModelsData = {
+      items: [
+        {
+          publicId: defaultModelId,
+          displayName: "GPT-5",
+          providerType: "openai",
+          providerDisplayName: "OpenAI",
+        },
+        {
+          publicId: alternateModelId,
+          displayName: "Claude Sonnet",
+          providerType: "anthropic",
+          providerDisplayName: "Anthropic",
+        },
+      ],
+      defaultModelPublicId: defaultModelId,
+    };
     conversationMocks.liveTurn = null;
+    conversationMocks.phase = "idle";
     conversationMocks.submit.mockReset().mockResolvedValue("accepted");
   });
 
@@ -201,7 +263,7 @@ describe("ConversationPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("submits the selected route ID and configured model", async () => {
+  it("submits the selected route ID using server-default model semantics", async () => {
     const user = userEvent.setup();
     renderPage(`/conversations/${firstConversationId}`);
 
@@ -216,6 +278,129 @@ describe("ConversationPage", () => {
       content: "Explain streams",
     });
     expect(conversationMocks.createConversation).not.toHaveBeenCalled();
+  });
+
+  it("submits an explicit model and omits it again after selecting the default", async () => {
+    const user = userEvent.setup();
+    renderPage(`/conversations/${firstConversationId}`);
+    const selector = screen.getByRole("combobox", { name: "Model" });
+    const message = screen.getByRole("textbox", { name: "Message" });
+
+    await user.selectOptions(selector, alternateModelId);
+    await user.type(message, "Use Claude");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(conversationMocks.submit).toHaveBeenLastCalledWith({
+      conversationPublicId: firstConversationId,
+      content: "Use Claude",
+      modelPublicId: alternateModelId,
+    });
+
+    await user.selectOptions(selector, defaultModelId);
+    await user.type(message, "Use the default");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(conversationMocks.submit).toHaveBeenLastCalledWith({
+      conversationPublicId: firstConversationId,
+      content: "Use the default",
+    });
+  });
+
+  it("requires an explicit choice when no usable default exists", async () => {
+    const user = userEvent.setup();
+    conversationMocks.chatModelsData = {
+      ...conversationMocks.chatModelsData,
+      defaultModelPublicId: null,
+    };
+    renderPage(`/conversations/${firstConversationId}`);
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Choose first",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Model" }),
+      alternateModelId,
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(conversationMocks.submit).toHaveBeenCalledWith({
+      conversationPublicId: firstConversationId,
+      content: "Choose first",
+      modelPublicId: alternateModelId,
+    });
+  });
+
+  it("blocks submission when no chat model is available", async () => {
+    const user = userEvent.setup();
+    conversationMocks.chatModelsData = {
+      items: [],
+      defaultModelPublicId: null,
+    };
+    renderPage(`/conversations/${firstConversationId}`);
+
+    expect(
+      screen.getByText(
+        "No chat model is available. Ask an administrator to configure one.",
+      ),
+    ).toBeVisible();
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Keep this draft",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(conversationMocks.submit).not.toHaveBeenCalled();
+  });
+
+  it("handles model-query failure with safe retry behavior", async () => {
+    const user = userEvent.setup();
+    conversationMocks.chatModelsStatus = "error";
+    renderPage(`/conversations/${firstConversationId}`);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Chat models are temporarily unavailable.",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(conversationMocks.refetchChatModels).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it.each(["submitting", "generating"] as const)(
+    "disables model selection while %s",
+    (phase) => {
+      conversationMocks.phase = phase;
+      renderPage(`/conversations/${firstConversationId}`);
+
+      expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
+    },
+  );
+
+  it("clears a stale explicit choice after a successful model refresh", async () => {
+    const user = userEvent.setup();
+    renderPage(`/conversations/${firstConversationId}`);
+    const selector = screen.getByRole("combobox", { name: "Model" });
+
+    await user.selectOptions(selector, alternateModelId);
+    expect(selector).toHaveValue(alternateModelId);
+
+    conversationMocks.chatModelsData = {
+      items: [conversationMocks.chatModelsData.items[0]],
+      defaultModelPublicId: defaultModelId,
+    };
+    act(() => conversationMocks.refreshChatModelHook());
+
+    await waitFor(() => expect(selector).toHaveValue(defaultModelId));
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "Use refreshed default",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(conversationMocks.submit).toHaveBeenLastCalledWith({
+      conversationPublicId: firstConversationId,
+      content: "Use refreshed default",
+    });
   });
 
   it("passes the selected Conversation live turn to message history", () => {
@@ -256,6 +441,10 @@ describe("ConversationPage", () => {
       screen.getByRole("textbox", { name: "Message" }),
       "Draft for A",
     );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Model" }),
+      alternateModelId,
+    );
     await user.click(
       screen.getByRole("link", { name: "Open second Conversation" }),
     );
@@ -264,6 +453,9 @@ describe("ConversationPage", () => {
       secondConversationId,
     );
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
+      defaultModelId,
+    );
     await waitFor(() =>
       expect(
         conversationMocks.resetForConversationChange,
@@ -300,6 +492,44 @@ describe("ConversationPage", () => {
     expect(conversationMocks.resetForConversationChange).not.toHaveBeenCalled();
     expect(conversationMocks.hookMounts).toBe(1);
     expect(conversationMocks.hookUnmounts).toBe(0);
+  });
+
+  it("uses the model snapshot captured before asynchronous New Chat creation", async () => {
+    const user = userEvent.setup();
+    const pendingCreation = deferred<CreatedConversation>();
+    conversationMocks.createConversation.mockReturnValueOnce(
+      pendingCreation.promise,
+    );
+    renderPage("/conversations");
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Model" }),
+      alternateModelId,
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Message" }),
+      "First message with Claude",
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    conversationMocks.chatModelsData = {
+      items: [conversationMocks.chatModelsData.items[0]],
+      defaultModelPublicId: defaultModelId,
+    };
+    act(() => conversationMocks.refreshChatModelHook());
+
+    await act(async () => {
+      pendingCreation.resolve(createdConversation);
+      await pendingCreation.promise;
+    });
+
+    await waitFor(() =>
+      expect(conversationMocks.submit).toHaveBeenCalledWith({
+        conversationPublicId: firstConversationId,
+        content: "First message with Claude",
+        modelPublicId: alternateModelId,
+      }),
+    );
   });
 
   it("keeps a New Chat live turn through the expected created route transition", async () => {
@@ -356,6 +586,7 @@ describe("ConversationPage", () => {
       "Creating conversation…",
     );
     expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeDisabled();
 
     await act(async () => {
       pendingCreation.resolve(createdConversation);

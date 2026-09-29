@@ -3011,6 +3011,38 @@ retryable `SERVICE_UNAVAILABLE` without exposing internal exception text.
 Stored organization chat defaults drive Conversation runtime resolution when a
 request omits `model_public_id`.
 
+The authenticated Conversation model-selection endpoint is intentionally
+separate from these administration APIs:
+
+```http
+GET /api/v1/chat-models
+Cache-Control: private, no-store
+```
+
+It does not require `model_providers.read`. It returns only currently eligible
+enabled streaming chat models whose providers are enabled, valid, and have a
+credential reference:
+
+```json
+{
+  "items": [
+    {
+      "public_id": "6aa80769-a456-4fa4-b891-f31253163559",
+      "display_name": "GPT-5",
+      "provider_type": "openai",
+      "provider_display_name": "OpenAI"
+    }
+  ],
+  "default_model_public_id": "6aa80769-a456-4fa4-b891-f31253163559"
+}
+```
+
+The default is `null` when no usable chat default exists. Provider model names,
+credentials, credential references, endpoints, settings, and validation errors
+are never returned. The UI sends `model_public_id` only for an explicit
+non-default choice; otherwise it omits the field and leaves default resolution
+to the server.
+
 ---
 
 # 90. File API

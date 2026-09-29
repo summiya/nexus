@@ -13,16 +13,19 @@ function renderComposer({
   feedback = null,
   phase = "idle",
   result = "accepted",
+  submissionDisabled = false,
 }: {
   feedback?: ConversationComposerFeedback | null;
   phase?: ConversationComposerPhase;
   result?: SubmissionResult;
+  submissionDisabled?: boolean;
 } = {}) {
   const onSubmit = vi.fn().mockResolvedValue(result);
   const rendered = render(
     <ConversationComposer
       feedback={feedback}
       phase={phase}
+      submissionDisabled={submissionDisabled}
       onSubmit={onSubmit}
     />,
   );
@@ -108,6 +111,18 @@ describe("ConversationComposer", () => {
       expect(onSubmit).not.toHaveBeenCalled();
     },
   );
+
+  it("blocks model-dependent submission while preserving an editable draft", async () => {
+    const user = userEvent.setup();
+    const { onSubmit } = renderComposer({ submissionDisabled: true });
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+
+    await user.type(textarea, "Draft while models load");
+    expect(textarea).toHaveValue("Draft while models load");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 
   it.each(["uncertain", "not_submitted"] satisfies SubmissionResult[])(
     "retains the draft when submission result is %s",

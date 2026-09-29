@@ -8,6 +8,7 @@ import {
 import {
   createConversation,
   getConversationMessages,
+  listChatModels,
   listConversations,
 } from "./api";
 
@@ -16,6 +17,7 @@ export const conversationKeys = {
   list: () => ["conversations", "list"] as const,
   messages: (conversationPublicId: string) =>
     ["conversations", "messages", conversationPublicId] as const,
+  chatModels: () => ["conversations", "chat-models"] as const,
 };
 
 function normalizeConversationPublicId(
@@ -54,5 +56,12 @@ export function useCreateConversationMutation() {
     mutationFn: createConversation,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: conversationKeys.list() }),
+  });
+}
+
+export function useChatModelsQuery() {
+  return useQuery({
+    queryKey: conversationKeys.chatModels(),
+    queryFn: listChatModels,
   });
 }

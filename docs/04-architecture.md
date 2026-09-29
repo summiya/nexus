@@ -486,6 +486,15 @@ Conversation use case. Conversation authorization precedes model and credential
 resolution, and one immutable resolved target is used for the full request.
 Any later bounded credential caching belongs to future runtime work.
 
+The Conversation UI obtains safe choices from the authenticated,
+organization-scoped `GET /api/v1/chat-models` runtime-selection API. That API is
+separate from model-provider administration and does not require
+`model_providers.read`. It returns only configured-model UUIDs, model and
+provider display names, provider type, and the currently usable chat default;
+it neither resolves credentials nor calls a provider. When the user has not
+made an explicit selection, the frontend omits `model_public_id` so the server
+continues to resolve the authoritative current default.
+
 ---
 
 ## 5.3 Retrieval

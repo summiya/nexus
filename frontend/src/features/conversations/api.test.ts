@@ -5,6 +5,7 @@ import { NexusApiError } from "../../services/api/error";
 import {
   createConversation,
   getConversationMessages,
+  listChatModels,
   listConversations,
 } from "./api";
 
@@ -16,6 +17,7 @@ const workspaceId = "55555555-5555-4555-8555-555555555555";
 const projectId = "66666666-6666-4666-8666-666666666666";
 const messageId = "77777777-7777-4777-8777-777777777777";
 const generationId = "88888888-8888-4888-8888-888888888888";
+const modelId = "99999999-9999-4999-8999-999999999999";
 const createdAt = "2026-09-23T08:30:00+04:00";
 const updatedAt = "2026-09-23T09:45:00+04:00";
 
@@ -194,6 +196,94 @@ describe("Conversation API", () => {
       let thrownError: unknown;
       try {
         await listConversations();
+      } catch (error) {
+        thrownError = error;
+      }
+
+      expect(thrownError).toEqual(
+        new Error("The Conversation service returned an invalid response."),
+      );
+      expect(String(thrownError)).not.toContain("do-not-leak");
+    });
+  });
+
+  describe("listChatModels", () => {
+    it("uses the authenticated selector endpoint and maps a strict response", async () => {
+      configureApiAuthentication({
+        getAccessToken: () => "access-token",
+        refreshAccessToken: vi.fn(),
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        jsonResponse({
+          items: [
+            {
+              public_id: modelId,
+              display_name: "GPT-5",
+              provider_type: "openai",
+              provider_display_name: "OpenAI",
+            },
+          ],
+          default_model_public_id: modelId,
+        }),
+      );
+
+      await expect(listChatModels()).resolves.toEqual({
+        items: [
+          {
+            publicId: modelId,
+            displayName: "GPT-5",
+            providerType: "openai",
+            providerDisplayName: "OpenAI",
+          },
+        ],
+        defaultModelPublicId: modelId,
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:8000/api/v1/chat-models",
+        expect.objectContaining({ method: "GET" }),
+      );
+      const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+      expect(headers.get("Authorization")).toBe("Bearer access-token");
+    });
+
+    it("accepts an empty list with no default", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        jsonResponse({ items: [], default_model_public_id: null }),
+      );
+
+      await expect(listChatModels()).resolves.toEqual({
+        items: [],
+        defaultModelPublicId: null,
+      });
+    });
+
+    it.each([
+      {
+        items: [
+          {
+            public_id: modelId,
+            display_name: "GPT-5",
+            provider_type: "unknown",
+            provider_display_name: "Provider",
+          },
+        ],
+        default_model_public_id: null,
+      },
+      {
+        items: [],
+        default_model_public_id: modelId,
+      },
+      {
+        items: [],
+        default_model_public_id: null,
+        credential: "do-not-leak",
+      },
+    ])("rejects malformed selector responses safely", async (body) => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(body));
+
+      let thrownError: unknown;
+      try {
+        await listChatModels();
       } catch (error) {
         thrownError = error;
       }

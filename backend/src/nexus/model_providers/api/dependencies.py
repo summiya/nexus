@@ -16,6 +16,7 @@ from nexus.model_providers.application import (
     ListConfiguredModels,
     ListModelProviders,
     ListProviderCatalog,
+    ListSelectableChatModels,
     RegisterConfiguredModels,
     SetConfiguredModelEnabled,
     SetDefaultModel,
@@ -102,6 +103,12 @@ def get_default_model_clearer(container: AppContainerDep) -> ClearDefaultModel:
     return container.model_providers.clear_default
 
 
+def get_selectable_chat_model_list(
+    container: AppContainerDep,
+) -> ListSelectableChatModels:
+    return container.model_providers.list_selectable_chat_models
+
+
 ProviderCatalogDep = Annotated[ListProviderCatalog, Depends(get_provider_catalog)]
 ProviderListDep = Annotated[ListModelProviders, Depends(get_provider_list)]
 ProviderDep = Annotated[GetModelProvider, Depends(get_provider)]
@@ -135,6 +142,9 @@ DefaultModelSetterDep = Annotated[SetDefaultModel, Depends(get_default_model_set
 DefaultModelClearerDep = Annotated[
     ClearDefaultModel, Depends(get_default_model_clearer)
 ]
+SelectableChatModelListDep = Annotated[
+    ListSelectableChatModels, Depends(get_selectable_chat_model_list)
+]
 
 
 __all__ = [
@@ -155,4 +165,5 @@ __all__ = [
     "ProviderModelDiscoveryDep",
     "ProviderUpdaterDep",
     "ProviderValidatorDep",
+    "SelectableChatModelListDep",
 ]

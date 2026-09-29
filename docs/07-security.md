@@ -1390,6 +1390,14 @@ from unknown identifiers and cannot trigger credential access or Generation
 persistence. One immutable resolved runtime target is used for the current
 request; later configuration changes govern later resolutions.
 
+The user-facing chat selector uses a dedicated organization-scoped read API,
+not the provider administration API. It discloses only configured-model UUIDs,
+safe display labels, provider type, and the usable default. It does not resolve
+credential plaintext or expose credential references, provider invocation
+names, endpoints, settings, or raw provider failures. Frontend filtering is UX
+only: every submitted UUID is still tenant-scoped and revalidated by the Phase
+8C runtime resolver before credential access.
+
 ---
 
 # 44. Multi-Model Security
