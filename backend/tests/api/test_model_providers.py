@@ -339,6 +339,57 @@ def test_manual_registration_requires_display_name() -> None:
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+@pytest.mark.parametrize("embedding_dimension", [True, False, 3.0, "3", 0, -1])
+def test_manual_registration_requires_strict_positive_embedding_dimension(
+    embedding_dimension: object,
+) -> None:
+    app, _, _, provider = _app()
+    service = FakeConfiguredModels(_model(provider.organization_public_id, provider))
+    app.dependency_overrides[get_configured_model_registrar] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/model-providers/{provider.provider_id.value}/configured-models",
+            json={
+                "registration_mode": "manual",
+                "provider_model_name": "embedding-model",
+                "display_name": "Embedding model",
+                "model_type": "embedding",
+                "capabilities": [],
+                "embedding_dimension": embedding_dimension,
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert service.calls == []
+
+
+@pytest.mark.parametrize("embedding_dimension", [None, 1])
+def test_manual_registration_accepts_null_or_positive_integer_embedding_dimension(
+    embedding_dimension: int | None,
+) -> None:
+    app, _, _, provider = _app()
+    service = FakeConfiguredModels(_model(provider.organization_public_id, provider))
+    app.dependency_overrides[get_configured_model_registrar] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/model-providers/{provider.provider_id.value}/configured-models",
+            json={
+                "registration_mode": "manual",
+                "provider_model_name": "embedding-model",
+                "display_name": "Embedding model",
+                "model_type": "embedding",
+                "capabilities": [],
+                "embedding_dimension": embedding_dimension,
+            },
+        )
+
+    assert response.status_code == 201
+    assert service.calls[0]["embedding_dimension"] == embedding_dimension
+
+
 def test_update_dto_does_not_accept_provider_type() -> None:
     app, _, _, provider = _app()
 
