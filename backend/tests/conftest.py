@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from unittest.mock import Mock
 
@@ -7,10 +8,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from nexus.config.settings import Settings
-from nexus.files.ports import ObjectStorage
-from nexus.infrastructure.mailer import EmailMessage
-from nexus.main import create_app
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+from nexus.config.settings import Settings  # noqa: E402
+from nexus.files.ports import ObjectStorage  # noqa: E402
+from nexus.infrastructure.mailer import EmailMessage  # noqa: E402
+from nexus.main import create_app  # noqa: E402
 
 
 class AllowAllRateLimiter:

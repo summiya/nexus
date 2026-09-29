@@ -154,6 +154,21 @@ def test_discovery_uses_manage_permission_and_resolves_credential() -> None:
     assert [call[1:] for call in limiter.calls] == [(10, 60), (1, 10)]
 
 
+def test_manage_permission_denial_stops_before_rate_limit_credentials_and_discovery() -> None:
+    provider = _provider()
+    service, permission, store, catalog, limiter = _service(provider)
+    permission.allowed = False
+
+    with pytest.raises(NexusError) as raised:
+        _execute(service, provider)
+
+    assert raised.value.code is ErrorCode.FORBIDDEN
+    assert permission.permission == "model_providers.manage"
+    assert limiter.calls == []
+    assert store.calls == 0
+    assert catalog.calls == 0
+
+
 @pytest.mark.parametrize(
     "provider",
     [

@@ -24,6 +24,8 @@ from nexus.model_providers.domain import (
     ProviderType,
 )
 from nexus.model_providers.ports import (
+    ProviderModelDiscoveryAuthenticationError,
+    ProviderModelDiscoveryUnavailableError,
     ProviderModelDiscoveryUnsupportedError,
 )
 
@@ -54,7 +56,7 @@ def test_pinned_litellm_metadata_classifies_representative_provider_ids(
 
     openai_info = module._model_info("openai", "gpt-4o-mini")
     anthropic_info = module._model_info("anthropic", "claude-sonnet-4-20250514")
-    gemini_info = module._model_info("gemini", "gemini-2.0-flash")
+    gemini_info = module._model_info("gemini", "gemini-2.5-flash")
 
     assert openai_info is not None and openai_info["mode"] == "chat"
     assert anthropic_info is not None and anthropic_info["mode"] == "chat"
@@ -226,7 +228,6 @@ def test_gemini_requires_base_id_provider_method_and_litellm_mode(
         "models": [
             {
                 "name": "models/gemini-chat",
-                "baseModelId": "gemini-chat",
                 "displayName": "Gemini Chat",
                 "supportedGenerationMethods": ["generateContent"],
             },
@@ -238,13 +239,13 @@ def test_gemini_requires_base_id_provider_method_and_litellm_mode(
             },
             {
                 "name": "models/gemini-image",
-                "baseModelId": "gemini-image",
+                "baseModelId": None,
                 "displayName": "Gemini Image",
                 "supportedGenerationMethods": ["generateContent"],
             },
             {
-                "name": "models/no-base-id",
-                "displayName": "No base id",
+                "name": "gemini-without-resource-prefix",
+                "displayName": "Malformed resource",
                 "supportedGenerationMethods": ["generateContent"],
             },
         ]
@@ -413,3 +414,257 @@ def test_oversized_or_encoded_body_fails_safely(
 
     with pytest.raises(ValueError):
         asyncio.run(catalog._get_json("https://example.com/models", {}))
+
+
+@pytest.mark.parametrize(
+    ("status", "error_type"),
+    [
+        (400, ProviderModelDiscoveryUnavailableError),
+        (401, ProviderModelDiscoveryAuthenticationError),
+        (403, ProviderModelDiscoveryAuthenticationError),
+        (404, ProviderModelDiscoveryUnavailableError),
+        (408, ProviderModelDiscoveryUnavailableError),
+        (425, ProviderModelDiscoveryUnavailableError),
+        (429, ProviderModelDiscoveryUnavailableError),
+        (500, ProviderModelDiscoveryUnavailableError),
+    ],
+)
+def test_supported_provider_http_errors_never_become_discovery_unsupported(
+    status: int,
+    error_type: type[Exception],
+) -> None:
+    with pytest.raises(error_type):
+        HttpProviderModelCatalog._raise_for_status(status)
+
+
+def test_success_status_is_accepted() -> None:
+    HttpProviderModelCatalog._raise_for_status(200)
+
+
+def test_anthropic_paginates_with_after_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[str] = []
+    pages = [
+        {
+            "data": [
+                {"type": "model", "id": "claude-a", "display_name": "Claude A"}
+            ],
+            "has_more": True,
+            "last_id": "claude-a",
+        },
+        {
+            "data": [
+                {"type": "model", "id": "claude-b", "display_name": "Claude B"}
+            ],
+            "has_more": False,
+            "last_id": "claude-b",
+        },
+    ]
+
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        requests.append(url)
+        return pages[len(requests) - 1]
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(
+        timeout_seconds=1,
+        model_info_lookup=lambda _provider, _model: _info("chat"),
+    )
+
+    candidates = asyncio.run(catalog._anthropic_candidates("credential"))
+
+    assert [item.provider_model_name for item in candidates] == [
+        "claude-a",
+        "claude-b",
+    ]
+    assert requests == [
+        "https://api.anthropic.com/v1/models?limit=100",
+        "https://api.anthropic.com/v1/models?limit=100&after_id=claude-a",
+    ]
+
+
+def test_gemini_paginates_and_normalizes_foundation_model_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[str] = []
+    pages = [
+        {
+            "models": [
+                {
+                    "name": "models/gemini-foundation",
+                    "displayName": "Gemini Foundation",
+                    "supportedGenerationMethods": ["generateContent"],
+                }
+            ],
+            "nextPageToken": "page-2",
+        },
+        {
+            "models": [
+                {
+                    "name": "models/gemini-embed-resource",
+                    "baseModelId": "gemini-embed",
+                    "displayName": "Gemini Embed",
+                    "supportedGenerationMethods": ["embedContent"],
+                },
+                {
+                    "name": "not-a-model-resource",
+                    "displayName": "Malformed",
+                    "supportedGenerationMethods": ["generateContent"],
+                },
+            ]
+        },
+    ]
+
+    def lookup(_provider: str, model: str) -> Mapping[str, object] | None:
+        return {
+            "gemini-foundation": _info("chat"),
+            "gemini-embed": _info("embedding", dimension=768),
+        }.get(model)
+
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        requests.append(url)
+        return pages[len(requests) - 1]
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(timeout_seconds=1, model_info_lookup=lookup)
+
+    candidates = asyncio.run(catalog._gemini_candidates("credential"))
+
+    assert [item.provider_model_name for item in candidates] == [
+        "gemini-foundation",
+        "gemini-embed",
+    ]
+    assert all(not item.provider_model_name.startswith("models/") for item in candidates)
+    assert requests == [
+        "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100",
+        (
+            "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100"
+            "&pageToken=page-2"
+        ),
+    ]
+
+
+def test_anthropic_aggregate_model_limit_is_enforced_across_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        _url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "data": [
+                    {"type": "model", "id": f"model-{i}", "display_name": f"Model {i}"}
+                    for i in range(module.MAX_DISCOVERY_MODELS)
+                ],
+                "has_more": True,
+                "last_id": "model-999",
+            }
+        return {
+            "data": [{"type": "model", "id": "overflow", "display_name": "Overflow"}],
+            "has_more": False,
+            "last_id": "overflow",
+        }
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(
+        timeout_seconds=1,
+        model_info_lookup=lambda _provider, _model: None,
+    )
+
+    with pytest.raises(ValueError, match="model count limit"):
+        asyncio.run(catalog._anthropic_candidates("credential"))
+
+    assert calls == 2
+
+
+def test_anthropic_page_limit_is_enforced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        _url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        nonlocal calls
+        calls += 1
+        return {
+            "data": [],
+            "has_more": True,
+            "last_id": f"cursor-{calls}",
+        }
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(timeout_seconds=1)
+
+    with pytest.raises(ValueError, match="pagination limit"):
+        asyncio.run(catalog._anthropic_candidates("credential"))
+
+    assert calls == module.MAX_DISCOVERY_PAGES
+
+
+def test_later_page_failure_returns_no_partial_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        _url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "data": [
+                    {"type": "model", "id": "claude-a", "display_name": "Claude A"}
+                ],
+                "has_more": True,
+                "last_id": "claude-a",
+            }
+        raise ValueError("malformed second page")
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(
+        timeout_seconds=1,
+        model_info_lookup=lambda _provider, _model: _info("chat"),
+    )
+
+    with pytest.raises(ValueError, match="malformed second page"):
+        asyncio.run(catalog._anthropic_candidates("credential"))
+
+    assert calls == 2
+
+
+def test_malformed_anthropic_pagination_fails_safely(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def get_json(
+        _self: HttpProviderModelCatalog,
+        _url: str,
+        _headers: Mapping[str, str],
+    ) -> Mapping[str, object]:
+        return {"data": [], "has_more": "yes", "last_id": "cursor"}
+
+    monkeypatch.setattr(HttpProviderModelCatalog, "_get_json", get_json)
+    catalog = HttpProviderModelCatalog(timeout_seconds=1)
+
+    with pytest.raises(ValueError, match="pagination is invalid"):
+        asyncio.run(catalog._anthropic_candidates("credential"))

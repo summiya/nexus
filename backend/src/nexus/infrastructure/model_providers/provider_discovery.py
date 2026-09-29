@@ -158,16 +158,16 @@ class HttpProviderModelCatalog:
     def _raise_for_status(status: int) -> None:
         if 200 <= status < 300:
             return
-        if status == 401:
+        if status in {401, 403}:
             raise ProviderModelDiscoveryAuthenticationError(
-                "Provider rejected the configured credential."
+                "Provider rejected the configured credential or authorization."
             )
         if status in {408, 425, 429} or 500 <= status < 600:
             raise ProviderModelDiscoveryUnavailableError(
                 "Provider model discovery is unavailable."
             )
-        raise ProviderModelDiscoveryUnsupportedError(
-            "Provider model discovery is unsupported."
+        raise ProviderModelDiscoveryUnavailableError(
+            "Provider model discovery returned an unusable response."
         )
 
     def _openai_candidates(
@@ -255,21 +255,20 @@ class HttpProviderModelCatalog:
             _check_model_count(range(discovered_rows))
             for row_value in rows:
                 row = _required_mapping(row_value)
-                _required_string(row, "name")
-                if row.get("baseModelId") is None:
+                provider_model_name = _gemini_provider_model_name(row)
+                if provider_model_name is None:
                     continue
-                base_model_id = _required_string(row, "baseModelId")
                 display_name = _required_string(row, "displayName")
                 methods = _required_string_list(row, "supportedGenerationMethods")
-                info = self.model_info_lookup("gemini", base_model_id)
+                info = self.model_info_lookup("gemini", provider_model_name)
                 candidate = _gemini_candidate(
-                    provider_model_name=base_model_id,
+                    provider_model_name=provider_model_name,
                     display_name=display_name,
                     methods=methods,
                     info=info,
                 )
                 if candidate is not None:
-                    candidates[base_model_id] = candidate
+                    candidates[provider_model_name] = candidate
             next_token = payload.get("nextPageToken")
             if next_token is None:
                 return tuple(candidates.values())
@@ -349,6 +348,25 @@ def _candidate_from_model_info(
         capabilities=frozenset(capabilities),
         embedding_dimension=dimension,
     )
+
+
+def _gemini_provider_model_name(row: Mapping[str, object]) -> str | None:
+    base_model_id = row.get("baseModelId")
+    if (
+        isinstance(base_model_id, str)
+        and base_model_id
+        and base_model_id == base_model_id.strip()
+        and not base_model_id.startswith("models/")
+    ):
+        return base_model_id
+
+    resource_name = row.get("name")
+    if not isinstance(resource_name, str) or not resource_name.startswith("models/"):
+        return None
+    model_id = resource_name.removeprefix("models/")
+    if not model_id or model_id != model_id.strip() or "/" in model_id:
+        return None
+    return model_id
 
 
 def _gemini_candidate(

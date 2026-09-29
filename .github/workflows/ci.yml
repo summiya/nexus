@@ -20,6 +20,7 @@ jobs:
       DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexus
       NEXUS_REQUIRE_AZURITE_TESTS: "true"
       NEXUS_REQUIRE_POSTGRES_TESTS: "true"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
 
     services:
       postgres:
