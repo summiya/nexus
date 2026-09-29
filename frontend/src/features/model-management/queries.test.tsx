@@ -72,14 +72,9 @@ describe("Model Management queries", () => {
       "discovery",
       providerId,
     ]);
-    expect(
-      modelManagementKeys.discovery(providerId, providerRevision),
-    ).toEqual([
-      "model-management",
-      "discovery",
-      providerId,
-      providerRevision,
-    ]);
+    expect(modelManagementKeys.discovery(providerId, providerRevision)).toEqual(
+      ["model-management", "discovery", providerId, providerRevision],
+    );
   });
 
   it("runs discovery only after an explicit refetch", async () => {
