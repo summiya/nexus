@@ -1345,7 +1345,23 @@ retain that enforcement.
 Before unrestricted production use, restrict Key Vault networking/private
 endpoints as appropriate and enable Key Vault diagnostic audit logging with an
 operational retention and review policy. Rotation orchestration and runtime
-resolution/caching remain later runtime-integration work.
+credential caching remain later runtime-integration work.
+
+Runtime model resolution loads only the authenticated request organization’s
+detached provider configuration and searches for configured models only inside
+that aggregate. Unknown and wrong-tenant model IDs have the same safe failure,
+and no credential-store lookup occurs until model and provider eligibility plus
+the credential reference have been validated. Credential resolution always
+uses the complete organization/provider/reference scope.
+
+The resolved runtime target keeps `ProviderCredentialSecret` redacted and must
+not be placed in logs, errors, API responses, telemetry metadata, or provider
+request metadata. Successfully resolved requests use immutable snapshot
+semantics: a later administrative or credential change governs subsequent
+resolutions but does not require a database transaction or distributed lock
+around an already-resolved invocation. Provider invocation in Phase 8B must
+continue enforcing the resolve-time DNS, public-unicast, pinned-address,
+TLS-hostname, no-proxy, and no-redirect controls defined above.
 
 ---
 

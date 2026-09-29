@@ -427,8 +427,35 @@ The existing conversation `ModelPolicy` allowlist and `llm_allowed_models`
 configuration remain unchanged in this phase. Organization defaults do not yet
 route runtime requests.
 
-Runtime provider credential resolution and any bounded caching belong to Phase
-8 or later runtime-integration work, not this storage-boundary phase.
+Runtime chat-model resolution is an organization-scoped application boundary:
+
+```text
+organization configuration
+→ requested configured-model ID or organization chat default
+→ eligible streaming chat model
+→ eligible provider
+→ provider credential reference
+→ CredentialStore
+→ immutable provider-neutral runtime target
+```
+
+The lookup never searches globally by model UUID. An explicit unknown or
+wrong-tenant model is indistinguishable, and credential-store availability is
+not inspected until model ownership and eligibility have been established.
+The database read completes before Key Vault or local credential-store I/O.
+
+The returned runtime target contains only public model/provider identities,
+the provider invocation model/deployment/alias, provider settings, and the
+existing redacted credential value. It contains no LiteLLM arguments or SDK
+types. Once resolution succeeds, the in-flight request may use that immutable
+snapshot; later configuration or credential changes affect later resolutions.
+Nexus does not hold a database transaction across credential I/O, re-read and
+silently switch a credential reference, or introduce distributed locking.
+
+Phase 8A does not connect this resolver to Conversation streaming or change
+`LLMRequest`, `LLMGateway`, LiteLLM invocation, or `ModelPolicy`. Phase 8B owns
+provider-specific invocation mapping and runtime integration. Any later bounded
+credential caching also belongs to runtime-integration work.
 
 ---
 
