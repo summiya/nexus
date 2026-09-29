@@ -5,8 +5,10 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from nexus.authentication.api.dependencies import get_access_authentication_service
 from nexus.authentication.api.security import get_current_auth_context
 from nexus.authentication.tokens import AuthTokenContext
+from nexus.errors import ErrorCode, NexusError
 from nexus.errors.handlers import register_exception_handlers
 from nexus.model_providers.api.chat_models import router
 from nexus.model_providers.api.dependencies import get_selectable_chat_model_list
@@ -18,12 +20,20 @@ from nexus.model_providers.domain import ConfiguredModelId, ProviderType
 
 
 class FakeService:
-    def __init__(self, result: SelectableChatModels) -> None:
+    def __init__(
+        self,
+        result: SelectableChatModels,
+        *,
+        error: NexusError | None = None,
+    ) -> None:
         self.result = result
+        self.error = error
         self.calls: list[UUID] = []
 
     async def execute(self, *, organization_public_id: UUID) -> SelectableChatModels:
         self.calls.append(organization_public_id)
+        if self.error is not None:
+            raise self.error
         return self.result
 
 
@@ -96,3 +106,42 @@ def test_empty_configuration_returns_an_empty_selection() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "default_model_public_id": None}
+
+
+def test_unauthenticated_request_is_rejected_before_selector_service() -> None:
+    result = SelectableChatModels(items=(), default_model_id=None)
+    service = FakeService(result)
+    app = FastAPI()
+    register_exception_handlers(app)
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_selectable_chat_model_list] = lambda: service
+    app.dependency_overrides[get_access_authentication_service] = lambda: object()
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/chat-models")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == ErrorCode.UNAUTHORIZED.value
+    assert service.calls == []
+
+
+def test_service_unavailable_uses_standard_safe_error_envelope() -> None:
+    result = SelectableChatModels(items=(), default_model_id=None)
+    app, service, _ = _app(result)
+    service.error = NexusError(
+        ErrorCode.SERVICE_UNAVAILABLE,
+        "Chat model selection is temporarily unavailable.",
+        retryable=True,
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/chat-models")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "error": {
+            "code": "SERVICE_UNAVAILABLE",
+            "message": "Chat model selection is temporarily unavailable.",
+            "request_id": None,
+        }
+    }
