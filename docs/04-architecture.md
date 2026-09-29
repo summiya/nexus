@@ -423,6 +423,22 @@ operation is a no-op. A provider that later becomes unavailable or loses its
 credential does not silently rewrite the stored selection. Phase 8 runtime
 routing must evaluate current provider usability before invocation.
 
+Authenticated administrators manage this configuration under Settings → AI
+Providers and Settings → AI Models. Organization signup, administrator
+bootstrap, OTP verification, and login remain model-agnostic; creating an
+organization does not require provider, model, or default selection. The model
+settings UI uses automatic discovery for OpenAI, Anthropic, and Gemini and
+manual registration for Azure OpenAI deployment names and OpenAI-compatible
+aliases. It presents multiple configured instances of the same provider type
+independently.
+
+Frontend readiness checks are presentation safeguards only. Discovery, manual
+registration, enabling, and default selection are disabled when the visible
+provider state is not enabled, valid, and credentialed. Default candidates must
+also be enabled and match the slot type; chat candidates additionally require
+streaming. Backend authorization, tenant isolation, and locked aggregate
+validation remain authoritative.
+
 Conversation generation now selects only organization-configured models. The
 legacy `ModelPolicy`, environment allowlist, and client-supplied provider model
 string have been removed.

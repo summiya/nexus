@@ -3025,6 +3025,13 @@ retryable `SERVICE_UNAVAILABLE` without exposing internal exception text.
 Stored organization chat defaults drive Conversation runtime resolution when a
 request omits `model_public_id`.
 
+The authenticated settings UI at `/settings/ai-models` consumes these
+management endpoints. It preserves configured-provider instances by public ID,
+supports automatic discovery or manual registration according to provider
+type, and manages enablement and all three default slots. Its readiness checks
+improve administrator feedback but do not replace server-side authorization or
+eligibility validation.
+
 The authenticated Conversation model-selection endpoint is intentionally
 separate from these administration APIs:
 
@@ -3055,7 +3062,11 @@ The default is `null` when no usable chat default exists. Provider model names,
 credentials, credential references, endpoints, settings, and validation errors
 are never returned. The UI sends `model_public_id` only for an explicit
 non-default choice; otherwise it omits the field and leaves default resolution
-to the server.
+to the server. The selector groups models by configured provider instance. It
+does not poll; it uses normal query caching/refetch behavior and exposes an
+explicit retry after failure. If a refreshed response no longer contains the
+current explicit selection, the UI clears that selection, returns to usable
+default semantics when possible, and never silently chooses the first model.
 
 ---
 

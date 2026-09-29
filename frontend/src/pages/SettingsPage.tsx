@@ -10,6 +10,7 @@ export function SettingsPage() {
       <div className="settings-layout">
         <nav className="settings-nav" aria-label="Settings sections">
           <NavLink to="/settings/ai-providers">AI Providers</NavLink>
+          <NavLink to="/settings/ai-models">AI Models</NavLink>
         </nav>
         <div className="settings-content">
           <Outlet />

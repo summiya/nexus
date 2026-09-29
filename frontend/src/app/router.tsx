@@ -8,6 +8,7 @@ import {
 
 import { AppLayout } from "../components/AppLayout";
 import { AuthGate, LoginPage } from "../features/auth";
+import { AIModelsSettings } from "../features/model-management";
 import { AIProvidersSettings } from "../features/model-providers";
 import { ConversationPage } from "../pages/ConversationPage";
 import { FilesPage } from "../pages/FilesPage";
@@ -46,6 +47,7 @@ export function AppRouter() {
             <Route path="/settings" element={<SettingsPage />}>
               <Route index element={<SettingsIndexRedirect />} />
               <Route path="ai-providers" element={<AIProvidersSettings />} />
+              <Route path="ai-models" element={<AIModelsSettings />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

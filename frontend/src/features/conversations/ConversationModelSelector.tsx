@@ -23,6 +23,22 @@ export function ConversationModelSelector({
 }: ConversationModelSelectorProps) {
   const selectedValue = explicitModelPublicId ?? defaultModelPublicId ?? "";
   const unavailable = isLoading || isError || models.length === 0;
+  const providerGroups = new Map<
+    string,
+    { label: string; models: SelectableChatModel[] }
+  >();
+  for (const model of models) {
+    const key = `${model.providerType}:${model.providerDisplayName}`;
+    const group = providerGroups.get(key);
+    if (group) {
+      group.models.push(model);
+    } else {
+      providerGroups.set(key, {
+        label: model.providerDisplayName,
+        models: [model],
+      });
+    }
+  }
 
   return (
     <div className="conversation-model-selector">
@@ -41,11 +57,15 @@ export function ConversationModelSelector({
         {defaultModelPublicId === null ? (
           <option value="">Select a model</option>
         ) : null}
-        {models.map((model) => (
-          <option key={model.publicId} value={model.publicId}>
-            {model.displayName} · {model.providerDisplayName}
-            {model.publicId === defaultModelPublicId ? " — Default" : ""}
-          </option>
+        {[...providerGroups.entries()].map(([key, group]) => (
+          <optgroup key={key} label={group.label}>
+            {group.models.map((model) => (
+              <option key={model.publicId} value={model.publicId}>
+                {model.displayName}
+                {model.publicId === defaultModelPublicId ? " — Default" : ""}
+              </option>
+            ))}
+          </optgroup>
         ))}
       </select>
       {isLoading ? <p role="status">Loading models…</p> : null}
