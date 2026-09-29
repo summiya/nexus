@@ -39,6 +39,18 @@ def _openai_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     }
 
 
+def _openai_compatible_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
+    return {
+        "model": "openai/administrator-model-alias",
+        "api_key": "request-compatible-key",
+        "client": AsyncOpenAI(
+            api_key="request-compatible-key",
+            base_url="https://compatible.example/custom/v1",
+            http_client=client,
+        ),
+    }
+
+
 def _azure_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
         "model": "azure/request-deployment",
@@ -92,6 +104,25 @@ CASES = (
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         },
         build_kwargs=_openai_kwargs,
+    ),
+    ProviderCase(
+        name="openai-compatible",
+        base_url="https://compatible.example/custom/v1",
+        response={
+            "id": "chatcmpl-compatible",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "administrator-model-alias",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+        },
+        build_kwargs=_openai_compatible_kwargs,
     ),
     ProviderCase(
         name="azure",
@@ -217,3 +248,39 @@ def test_streaming_acompletion_uses_the_supplied_request_scoped_client(
 
     assert len(requests) == 1
     assert str(requests[0].url).startswith(case.base_url)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_type"),
+    [
+        (401, litellm.AuthenticationError),
+        (429, litellm.RateLimitError),
+    ],
+)
+def test_anthropic_non_success_status_preserves_litellm_classification_without_body_leakage(
+    status_code: int,
+    expected_type: type[Exception],
+) -> None:
+    sentinel = "provider-secret-error-body"
+
+    async def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, content=sentinel.encode())
+
+    async def exercise() -> Exception:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(respond),
+            trust_env=False,
+            follow_redirects=False,
+        ) as client:
+            with pytest.raises(expected_type) as captured:
+                await litellm.acompletion(
+                    messages=[{"role": "user", "content": "hello"}],
+                    **_anthropic_kwargs(client),
+                )
+            return captured.value
+
+    error = asyncio.run(exercise())
+
+    rendered = f"{error!r} {error}"
+    assert sentinel not in rendered
+    assert "api.anthropic.com" not in rendered
