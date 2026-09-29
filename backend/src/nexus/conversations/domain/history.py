@@ -18,7 +18,7 @@ class ConversationGenerationMetadata:
     """Generation fields relevant to a persisted assistant Message."""
 
     public_id: UUID
-    model: str
+    model_public_id: UUID | None
     status: GenerationStatus
     finish_reason: GenerationFinishReason | None
     input_tokens: int

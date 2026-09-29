@@ -120,7 +120,7 @@ class ConversationStreamLifecycle:
             yield GenerationStarted(
                 conversation_public_id=self.conversation.public_id,
                 generation_public_id=self.generation.public_id,
-                model=self.generation.model,
+                model_public_id=self.generation.configured_model_public_id,
             )
 
             async for event in self._events():

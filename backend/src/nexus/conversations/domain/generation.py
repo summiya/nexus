@@ -44,7 +44,7 @@ class Generation:
     public_id: UUID
     conversation_public_id: UUID
     user_message_public_id: UUID
-    model: str
+    configured_model_public_id: UUID
     status: GenerationStatus
     idempotency_key: UUID | None = None
     assistant_message_public_id: UUID | None = None
@@ -57,8 +57,8 @@ class Generation:
     error_kind: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.model.strip():
-            raise ValueError("generation model must not be empty")
+        if not isinstance(self.configured_model_public_id, UUID):
+            raise TypeError("generation configured model identifier is invalid")
         if self.input_tokens < 0:
             raise ValueError("input_tokens must not be negative")
         if self.output_tokens < 0:

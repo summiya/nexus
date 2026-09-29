@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from collections.abc import AsyncIterator
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -28,7 +28,6 @@ from nexus.conversations.ports.persistence import (
     ConversationRequestAlreadySubmittedError,
 )
 from nexus.errors import ErrorCode, NexusError
-from nexus.llm.application import ModelPolicy
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMEvent,
@@ -42,11 +41,35 @@ from nexus.llm.domain import (
     LLMUsage,
     LLMUsageEvent,
 )
+from nexus.model_providers.domain import ConfiguredModelId
 
 ORG_ID = uuid4()
 USER_ID = uuid4()
 CONVERSATION_ID = uuid4()
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+MODEL_ID = ConfiguredModelId(uuid4())
+
+
+@dataclass(frozen=True)
+class FakeResolvedModel:
+    model_id: ConfiguredModelId = MODEL_ID
+
+
+class FakeResolver:
+    def __init__(self, error: NexusError | None = None) -> None:
+        self.error = error
+        self.calls: list[tuple[UUID, ConfiguredModelId | None]] = []
+
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        model_id: ConfiguredModelId | None,
+    ) -> FakeResolvedModel:
+        self.calls.append((organization_public_id, model_id))
+        if self.error is not None:
+            raise self.error
+        return FakeResolvedModel()
 
 
 class FakePersistence:
@@ -135,13 +158,20 @@ class FakeGateway:
             LLMUsageEvent(usage=LLMUsage(1, 2, 3)),
         ]
         self.requests: list[LLMRequest] = []
+        self.targets: list[FakeResolvedModel] = []
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         del request
         raise NotImplementedError
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+    def stream(
+        self,
+        *,
+        request: LLMRequest,
+        target: FakeResolvedModel,
+    ) -> AsyncIterator[LLMEvent]:
         self.requests.append(request)
+        self.targets.append(target)
 
         async def events() -> AsyncIterator[LLMEvent]:
             for event in self.events:
@@ -169,8 +199,13 @@ class CancellationGateway(FakeGateway):
         super().__init__()
         self.iterator = CancellationIterator()
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
-        del request
+    def stream(
+        self,
+        *,
+        request: LLMRequest,
+        target: FakeResolvedModel,
+    ) -> AsyncIterator[LLMEvent]:
+        del request, target
         return self.iterator
 
 
@@ -207,8 +242,14 @@ class TrackingGateway(FakeGateway):
         super().__init__()
         self.iterator = iterator
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+    def stream(
+        self,
+        *,
+        request: LLMRequest,
+        target: FakeResolvedModel,
+    ) -> AsyncIterator[LLMEvent]:
         self.requests.append(request)
+        self.targets.append(target)
         return self.iterator
 
 
@@ -243,7 +284,7 @@ def make_request(
         user_public_id=USER_ID,
         conversation_public_id=CONVERSATION_ID,
         content="  hello  ",
-        model=" gpt-test ",
+        model_id=None,
         idempotency_key=idempotency_key,
     )
 
@@ -287,8 +328,8 @@ def test_preparation_conflicts_are_safe_and_do_not_invoke_provider(
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=ConflictingPersistence(),
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -307,8 +348,8 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -335,6 +376,35 @@ def test_stream_preflights_before_returning_and_finalizes_after_exhaustion() -> 
     assert persistence.completed[0][0].content == "Hello"
 
 
+def test_resolves_explicit_model_once_and_passes_same_snapshot_to_runtime() -> None:
+    persistence = FakePersistence()
+    resolver = FakeResolver()
+    gateway = FakeGateway()
+    selected_model_id = ConfiguredModelId(uuid4())
+    service = StreamConversationMessage(
+        persistence=persistence,
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=resolver,
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(
+            replace(make_request(), model_id=selected_model_id)
+        )
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert resolver.calls == [(ORG_ID, selected_model_id)]
+    assert len(gateway.targets) == 1
+    assert gateway.targets[0].model_id == MODEL_ID
+    assert persistence.prepared[0][1].configured_model_public_id == MODEL_ID.value
+    assert gateway.requests[0].model == "configured-chat-model"
+
+
 def test_generation_preparation_finishes_before_provider_streaming_starts() -> None:
     timeline: list[str] = []
 
@@ -359,14 +429,19 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
             return prepared
 
     class OrderedGateway(FakeGateway):
-        def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+        def stream(
+            self,
+            *,
+            request: LLMRequest,
+            target: FakeResolvedModel,
+        ) -> AsyncIterator[LLMEvent]:
             timeline.append("provider_stream_started")
-            return super().stream(request)
+            return super().stream(request=request, target=target)
 
     service = StreamConversationMessage(
         persistence=OrderedPersistence(),
-        llm_gateway=OrderedGateway(),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=OrderedGateway(),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -386,8 +461,8 @@ def test_early_close_cancels_generation_and_closes_provider_once() -> None:
     iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -414,8 +489,8 @@ def test_provider_eof_without_completion_fails_generation() -> None:
     iterator = TrackingIterator([LLMStartedEvent(), LLMTextDeltaEvent(delta="partial")])
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -457,8 +532,8 @@ def test_stream_does_not_emit_completion_when_database_transition_loses() -> Non
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -505,8 +580,8 @@ def test_completion_persistence_failure_emits_safe_failure_and_closes_provider()
     iterator = TrackingIterator(provider_events)
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -542,8 +617,8 @@ def test_unexpected_processing_error_is_logged_and_persisted_safely(
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -589,8 +664,8 @@ def test_cleanup_failure_does_not_prevent_cancellation_or_repeat_close() -> None
     )
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -613,8 +688,13 @@ def test_provider_failure_before_first_event_becomes_http_error_and_fails_genera
     None
 ):
     class FailingGateway(FakeGateway):
-        def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
-            del request
+        def stream(
+            self,
+            *,
+            request: LLMRequest,
+            target: FakeResolvedModel,
+        ) -> AsyncIterator[LLMEvent]:
+            del request, target
 
             async def events() -> AsyncIterator[LLMEvent]:
                 raise LLMProviderUnavailableError("provider detail")
@@ -625,8 +705,8 @@ def test_provider_failure_before_first_event_becomes_http_error_and_fails_genera
     persistence = FakePersistence()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=FailingGateway(),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=FailingGateway(),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -649,8 +729,8 @@ def test_preflight_cancellation_closes_provider_and_persists_cancelled_generatio
     gateway = CancellationGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -673,8 +753,8 @@ def test_request_task_cancellation_during_preflight_is_not_processing_failure() 
     iterator = BlockingIterator()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -702,8 +782,8 @@ def test_request_task_cancellation_during_active_stream_is_not_processing_failur
     iterator = BlockingIterator(first_event=LLMStartedEvent())
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=TrackingGateway(iterator),
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=TrackingGateway(iterator),
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -730,13 +810,14 @@ def test_request_task_cancellation_during_active_stream_is_not_processing_failur
     assert persistence.completed == []
 
 
-def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> None:
+def test_resolver_failure_does_not_persist_or_call_provider() -> None:
     persistence = FakePersistence()
     gateway = FakeGateway()
+    resolver = FakeResolver(NexusError(ErrorCode.NOT_FOUND, "not found"))
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=resolver,
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -746,7 +827,7 @@ def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> N
         user_public_id=USER_ID,
         conversation_public_id=CONVERSATION_ID,
         content="hello",
-        model="not-allowed",
+        model_id=ConfiguredModelId(uuid4()),
     )
 
     async def run() -> None:
@@ -755,7 +836,7 @@ def test_rejects_unconfigured_model_before_persisting_or_calling_provider() -> N
     with pytest.raises(NexusError) as exc_info:
         asyncio.run(run())
 
-    assert exc_info.value.code is ErrorCode.VALIDATION_ERROR
+    assert exc_info.value.code is ErrorCode.NOT_FOUND
     assert persistence.prepared == []
     assert gateway.requests == []
 
@@ -766,8 +847,8 @@ def test_rejects_invalid_content_before_loading_conversation(content: str) -> No
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -785,10 +866,11 @@ def test_rejects_invalid_content_before_loading_conversation(content: str) -> No
 def test_hides_user_owned_conversation_from_another_user() -> None:
     persistence = FakePersistence()
     gateway = FakeGateway()
+    resolver = FakeResolver()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=resolver,
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -801,6 +883,7 @@ def test_hides_user_owned_conversation_from_another_user() -> None:
     assert exc_info.value.code is ErrorCode.NOT_FOUND
     assert persistence.prepared == []
     assert gateway.requests == []
+    assert resolver.calls == []
 
 
 def test_rejects_workspace_conversation_until_workspace_authorization_exists() -> None:
@@ -812,8 +895,8 @@ def test_rejects_workspace_conversation_until_workspace_authorization_exists() -
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -859,8 +942,8 @@ def test_history_is_bounded_before_provider_invocation() -> None:
     gateway = FakeGateway()
     service = StreamConversationMessage(
         persistence=persistence,
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=FakeResolver(),
         history_limit=10,
         history_max_chars=9,
         message_max_length=100,

@@ -50,7 +50,7 @@ class ListConversationsResponseBody(BaseModel):
 
 class ConversationGenerationResponseBody(BaseModel):
     public_id: UUID
-    model: str
+    model_public_id: UUID | None
     status: GenerationStatus
     finish_reason: GenerationFinishReason | None
     input_tokens: int
@@ -77,9 +77,9 @@ class CreateMessageRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(min_length=1, max_length=100_000)
-    model: str = Field(min_length=1, max_length=255)
+    model_public_id: UUID | None = None
 
-    @field_validator("content", "model")
+    @field_validator("content")
     @classmethod
     def require_nonblank(cls, value: str) -> str:
         normalized = value.strip()

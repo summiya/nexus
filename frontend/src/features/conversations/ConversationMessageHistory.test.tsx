@@ -24,7 +24,7 @@ const conversationPublicId = "11111111-1111-4111-8111-111111111111";
 function generation(status: GenerationStatus): ConversationGenerationMetadata {
   return {
     publicId: "22222222-2222-4222-8222-222222222222",
-    model: "test-model",
+    modelPublicId: "22222222-2222-4222-8222-222222222222",
     status,
     finishReason: status === "completed" ? "stop" : null,
     inputTokens: 4,

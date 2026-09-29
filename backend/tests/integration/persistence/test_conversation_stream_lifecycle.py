@@ -41,7 +41,6 @@ from nexus.infrastructure.persistence.models.generation import (
 from nexus.infrastructure.persistence.models.message import Message as MessageModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
-from nexus.llm.application import ModelPolicy
 from nexus.llm.domain import (
     LLMCompletedEvent,
     LLMEvent,
@@ -50,8 +49,25 @@ from nexus.llm.domain import (
     LLMStartedEvent,
     LLMTextDeltaEvent,
 )
+from nexus.model_providers.domain import ConfiguredModelId
 
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
+MODEL_ID = ConfiguredModelId(uuid4())
+
+
+class TestResolvedModel:
+    model_id = MODEL_ID
+
+
+class TestResolver:
+    async def execute(
+        self,
+        *,
+        organization_public_id: UUID,
+        model_id: ConfiguredModelId | None,
+    ) -> TestResolvedModel:
+        del organization_public_id, model_id
+        return TestResolvedModel()
 
 
 class EventIterator:
@@ -115,7 +131,13 @@ class TestGateway:
         del request
         raise NotImplementedError
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]:
+    def stream(
+        self,
+        *,
+        request: LLMRequest,
+        target: TestResolvedModel,
+    ) -> AsyncIterator[LLMEvent]:
+        del target
         self.requests.append(request)
         return self.iterator
 
@@ -174,8 +196,8 @@ def _service(
 ) -> StreamConversationMessage:
     return StreamConversationMessage(
         persistence=SqlAlchemyConversationPersistence(session_factory),
-        llm_gateway=gateway,
-        model_policy=ModelPolicy.from_models(["gpt-test"]),
+        runtime_chat_gateway=gateway,
+        resolve_chat_model=TestResolver(),
         history_limit=10,
         history_max_chars=1_000,
         message_max_length=100,
@@ -195,7 +217,7 @@ def _request(
         user_public_id=user_public_id,
         conversation_public_id=conversation.public_id,
         content=content,
-        model="gpt-test",
+        model_id=None,
         idempotency_key=idempotency_key,
     )
 

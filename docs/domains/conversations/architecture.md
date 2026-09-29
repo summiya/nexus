@@ -18,11 +18,11 @@ backend/src/nexus/conversations/
 backend/src/nexus/infrastructure/persistence/conversation.py
     # SQLAlchemy ConversationPersistence implementation
 
-backend/src/nexus/llm/
-├── domain/       # Provider-independent LLM requests, responses, and events
-├── ports/        # LLMGateway
-└── infrastructure/adapters/litellm/
-    # LiteLLM provider adapter
+backend/src/nexus/model_providers/
+├── application/  # Organization-scoped runtime model resolution
+└── ports/        # RuntimeChatGateway
+
+backend/src/nexus/llm/  # Provider-independent requests/events and adapter
 
 backend/src/nexus/composition/root.py
     # Concrete object construction
@@ -38,9 +38,10 @@ StreamConversationMessage
         │       ↓
         │   SqlAlchemyConversationPersistence
         │
-        └── LLMGateway
+        ├── ResolveChatModel
+        └── RuntimeChatGateway
                 ↓
-            LiteLLMAdapter
+            LiteLLMRuntimeAdapter
 
 Internal streaming:
 
@@ -51,7 +52,7 @@ ConversationStreamLifecycle
 ConversationEventAssembler
 ```
 
-Dependencies point inward toward application and domain contracts. Conversation application code depends on `ConversationPersistence` and `LLMGateway`, never on FastAPI, SQLAlchemy, LiteLLM, or their concrete adapters. The composition root supplies those implementations.
+Dependencies point inward toward application and domain contracts. Conversation application code depends on `ConversationPersistence`, `ResolveChatModel`, and `RuntimeChatGateway`, never on FastAPI, SQLAlchemy, LiteLLM, or concrete provider clients. The composition root supplies those implementations.
 
 ## Responsibilities
 
@@ -61,7 +62,7 @@ The API boundary owns transport and schema validation through its Pydantic reque
 
 ### `StreamConversationMessage`
 
-This use case owns use-case validation, model-policy enforcement, Conversation authorization, and streaming orchestration. It creates the user Message and `RUNNING` Generation records, prepares bounded history, builds the provider-independent `LLMRequest`, and invokes `LLMGateway.stream()` directly. After receiving the normalized iterator, it transfers lifecycle ownership to `ConversationStreamLifecycle`.
+This use case owns validation, Conversation authorization, one organization-scoped model resolution, and streaming orchestration. Authorization occurs before model or credential resolution. It creates the user Message and `RUNNING` Generation records, prepares bounded history, builds the provider-independent `LLMRequest`, and invokes `RuntimeChatGateway.stream()` with the immutable resolved target. After receiving the normalized iterator, it transfers lifecycle ownership to `ConversationStreamLifecycle`.
 
 ### `ConversationPersistence`
 
@@ -71,13 +72,13 @@ This is the single application-facing persistence boundary for Conversation, Mes
 
 This adapter translates between domain records and SQLAlchemy models using native SQLAlchemy `AsyncSession` operations. Each operation owns a short-lived async session and commits or rolls back its transaction before returning. Writes run in a narrowly shielded transaction task so cancellation waits for a deterministic commit or rollback before propagating; reads remain normally cancellable. Conversation persistence does not use worker-thread database execution.
 
-### `LLMGateway`
+### `RuntimeChatGateway`
 
-This provider-independent port accepts `LLMRequest` and exposes either a normalized `LLMResponse` or `AsyncIterator[LLMEvent]`. Application code sees only Nexus LLM contracts.
+This provider-runtime port accepts the semantic `LLMRequest` and one resolved chat target and exposes normalized Nexus LLM responses and events.
 
-### `LiteLLMAdapter`
+### `LiteLLMRuntimeAdapter`
 
-This adapter maps Nexus requests to LiteLLM and converts raw provider responses, chunks, errors, usage, tool calls, and completion signals into Nexus LLM contracts. It exclusively owns and closes the raw provider iterator exactly once.
+This adapter maps the resolved provider target and Nexus request to LiteLLM, converts provider output into Nexus contracts, and exclusively owns and closes the provider iterator and secure request-scoped transport.
 
 ### `ConversationStreamLifecycle`
 
@@ -110,6 +111,8 @@ Initial persistence is committed before external streaming begins:
 
 ```text
 authorize Conversation
+    ↓
+resolve configured model/default and credential
     ↓
 transaction: persist user Message + RUNNING Generation and read history
     ↓ commit and close database session

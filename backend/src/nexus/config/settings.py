@@ -51,8 +51,6 @@ class Settings(BaseSettings):
     redis_url: str = Field(min_length=1)
     cors_allowed_origins: list[str]
     log_level: str = "INFO"
-    llm_gateway: str = Field(default="litellm", min_length=1)
-    llm_allowed_models: list[str] = Field(default_factory=lambda: ["gpt-4o-mini"])
     otp_hmac_secret: str = Field(min_length=32)
     signup_otp_ttl_seconds: int = Field(default=600, gt=0)
     signup_otp_max_attempts: int = Field(default=5, gt=0)

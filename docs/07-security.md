@@ -1384,6 +1384,12 @@ concurrent organization requests use separate clients and transports, and all
 owned resources are closed on success, provider failure, timeout, cancellation,
 mid-stream failure, and early stream close.
 
+Conversation authorization completes before configured-model or credential
+resolution. Wrong-tenant configured-model identifiers are indistinguishable
+from unknown identifiers and cannot trigger credential access or Generation
+persistence. One immutable resolved runtime target is used for the current
+request; later configuration changes govern later resolutions.
+
 ---
 
 # 44. Multi-Model Security

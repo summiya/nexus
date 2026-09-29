@@ -36,7 +36,7 @@ const startedEvent: ConversationStreamEvent = {
   type: "generation.started",
   conversationId: firstConversationId,
   generationId,
-  model: "gpt-4o-mini",
+  modelPublicId: "33333333-3333-4333-8333-333333333333",
 };
 
 const completedEvent: ConversationStreamEvent = {
@@ -50,7 +50,6 @@ const completedEvent: ConversationStreamEvent = {
 const defaultInput = {
   conversationPublicId: firstConversationId,
   content: "Explain streaming",
-  model: "gpt-4o-mini",
 };
 
 function createTestQueryClient(): QueryClient {

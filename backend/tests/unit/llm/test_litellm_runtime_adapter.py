@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
+import nexus.llm.infrastructure.adapters.litellm.runtime_adapter as runtime_adapter_module
 from nexus.infrastructure.model_providers.outbound_endpoint import HostResolver
 from nexus.infrastructure.model_providers.runtime_http import (
     RuntimeDeadline,
@@ -26,7 +27,6 @@ from nexus.llm.domain import (
     LLMTextDeltaEvent,
     LLMTimeoutError,
 )
-import nexus.llm.infrastructure.adapters.litellm.runtime_adapter as runtime_adapter_module
 from nexus.llm.infrastructure.adapters.litellm.errors import LiteLLMExceptionTypes
 from nexus.llm.infrastructure.adapters.litellm.runtime_adapter import (
     LiteLLMRuntimeAdapter,
@@ -245,9 +245,7 @@ def test_openai_compatible_preserves_custom_base_path() -> None:
     )
 
     assert factory.endpoints == ["https://compatible.example/custom/v1"]
-    assert client.calls[0][1]["api_base"] == (
-        "https://compatible.example/custom/v1"
-    )
+    assert client.calls[0][1]["api_base"] == ("https://compatible.example/custom/v1")
 
 
 def test_stream_reuses_existing_event_mapping_and_closes_resources() -> None:
@@ -265,7 +263,9 @@ def test_stream_reuses_existing_event_mapping_and_closes_resources() -> None:
     events = asyncio.run(consume())
 
     assert isinstance(events[0], LLMStartedEvent)
-    assert [event.delta for event in events if isinstance(event, LLMTextDeltaEvent)] == [
+    assert [
+        event.delta for event in events if isinstance(event, LLMTextDeltaEvent)
+    ] == [
         "hel",
         "lo",
     ]
@@ -379,9 +379,7 @@ def test_stream_cancellation_closes_upstream_and_transport() -> None:
     factory = FakeHTTPClientFactory()
 
     async def cancel() -> None:
-        stream = _adapter(client, factory).stream(
-            request=_request(), target=_target()
-        )
+        stream = _adapter(client, factory).stream(request=_request(), target=_target())
         assert isinstance(await anext(stream), LLMStartedEvent)
         task = asyncio.create_task(anext(stream))
         await stream_value.read_started.wait()
@@ -443,9 +441,7 @@ def test_concurrent_runtime_requests_keep_targets_and_credentials_isolated() -> 
     asyncio.run(invoke())
 
     arguments_by_model = {call[1]["model"]: call[1] for call in client.calls}
-    assert arguments_by_model["openai-model"]["api_key"] == (
-        "openai-sentinel-secret"
-    )
+    assert arguments_by_model["openai-model"]["api_key"] == ("openai-sentinel-secret")
     assert "api_base" not in arguments_by_model["openai-model"]
     assert arguments_by_model["compatible-alias"]["api_key"] == (
         "compatible-sentinel-secret"

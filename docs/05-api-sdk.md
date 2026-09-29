@@ -169,14 +169,13 @@ backend/src/nexus/llm/
 │   ├── errors.py
 │   ├── tools.py
 │   └── usage.py
-├── ports/
-│   └── gateway.py
 └── infrastructure/
-    ├── gateway_factory.py
     └── adapters/litellm/
 ```
 
-Application code depends on the domain contracts and `LLMGateway`. Concrete provider selection and LiteLLM mapping remain in infrastructure and composition.
+Application code depends on the semantic LLM contracts and the model-provider
+`RuntimeChatGateway`. Concrete provider selection and LiteLLM mapping remain in
+infrastructure and composition.
 
 ---
 
@@ -210,18 +209,26 @@ Tool messages require a tool-call ID. Provider SDK message objects must not cros
 
 ---
 
-# 6. Implemented `LLMGateway`
+# 6. Implemented `RuntimeChatGateway`
 
-`LLMGateway` is the current provider-independent model execution port:
+`RuntimeChatGateway` executes one semantic request against an already resolved,
+organization-scoped runtime target:
 
 ```python
-class LLMGateway(Protocol):
-    async def generate(self, request: LLMRequest) -> LLMResponse: ...
+class RuntimeChatGateway(Protocol):
+    async def generate(
+        self, *, request: LLMRequest, target: ResolvedChatModel
+    ) -> LLMResponse: ...
 
-    def stream(self, request: LLMRequest) -> AsyncIterator[LLMEvent]: ...
+    def stream(
+        self, *, request: LLMRequest, target: ResolvedChatModel
+    ) -> AsyncIterator[LLMEvent]: ...
 ```
 
-It owns no application authorization, tenant persistence, Conversation lifecycle, or business orchestration. The `LiteLLMAdapter` implements this port, translates provider failures into Nexus LLM errors, owns the raw provider iterator, and exposes only normalized Nexus responses and events.
+It owns no application authorization, tenant persistence, Conversation
+lifecycle, or business orchestration. `LiteLLMRuntimeAdapter` implements this
+port, translates provider failures into Nexus LLM errors, owns provider and
+transport resources, and exposes only normalized Nexus responses and events.
 
 ---
 
@@ -260,7 +267,7 @@ Finish reasons are normalized as `stop`, `length`, `tool_calls`, `content_filter
 
 # 9. Implemented Normalized LLM Events
 
-`LLMGateway.stream()` returns `AsyncIterator[LLMEvent]`, where `LLMEvent` is the union of:
+`RuntimeChatGateway.stream()` returns `AsyncIterator[LLMEvent]`, where `LLMEvent` is the union of:
 
 - `LLMStartedEvent`;
 - `LLMTextDeltaEvent`;
@@ -275,9 +282,11 @@ Applications consume these typed events without importing LiteLLM or another pro
 
 ---
 
-# 10. Implemented Model Policy and Future Routing
+# 10. Implemented Organization Model Routing
 
-The current `ModelPolicy` accepts only model identifiers present in the configured allowlist. Nexus does not currently implement a `ModelRouter`, provider registry, health-based routing, cost routing, tenant routing, or model-list API. Those remain future targets and must not be inferred from the current allowlist.
+Conversation requests select an organization configured-model UUID or omit it
+to use the organization chat default. Nexus does not implement health-based,
+cost-based, or fallback routing; those must not be inferred from this contract.
 
 ---
 
@@ -2350,9 +2359,9 @@ Conversation controller
   ↓
 Conversation application service
   ↓
-ConversationPersistence / LLMGateway
+ConversationPersistence / ResolveChatModel / RuntimeChatGateway
   ↓
-SQLAlchemy persistence / LiteLLM adapter
+SQLAlchemy persistence / LiteLLM runtime adapter
 ```
 
 The REST API must enforce the security requirements defined by `docs/07-security.md`.
@@ -2717,7 +2726,7 @@ Response:
       "created_at": "2026-09-09T10:31:02Z",
       "generation": {
         "public_id": "0757d078-7fe9-4444-adbb-c4928cb4f84d",
-        "model": "gpt-4o-mini",
+        "model_public_id": "6aa80769-a456-4fa4-b891-f31253163559",
         "status": "completed",
         "finish_reason": "stop",
         "input_tokens": 100,
@@ -2734,7 +2743,8 @@ Response:
 
 Every Message includes `generation`. It is `null` for user and system Messages
 and for historical assistant Messages without an associated Generation. An
-associated assistant Generation exposes only its public ID, model, lifecycle
+associated assistant Generation exposes only its public ID, nullable configured
+model public ID, lifecycle
 status and finish reason, token counts, lifecycle timestamps, and safe error
 kind. Internal Message relationships, idempotency data, database IDs, and raw
 provider-specific data are not exposed. When the Conversation has no persisted
@@ -2759,11 +2769,15 @@ Request:
 ```json
 {
   "content": "Summarize this conversation.",
-  "model": "gpt-4o-mini"
+  "model_public_id": "6aa80769-a456-4fa4-b891-f31253163559"
 }
 ```
 
-Both fields are required and must be non-blank. Extra fields are rejected. The model must be present in the configured `ModelPolicy` allowlist. The server controls message roles and trusted instructions.
+`content` is required. `model_public_id` is optional: when omitted or null,
+Nexus resolves the organization's chat default. When supplied, it is resolved
+only inside the authenticated organization. Extra fields, including the legacy
+provider-facing `model`, are rejected. The server controls message roles and
+trusted instructions.
 
 Response:
 
@@ -2820,7 +2834,7 @@ Implemented event payloads are:
 
 ```text
 event: generation.started
-data: {"conversation_id":"<uuid>","generation_id":"<uuid>","model":"gpt-4o-mini"}
+data: {"conversation_id":"<uuid>","generation_id":"<uuid>","model_public_id":"<uuid>"}
 
 event: message.delta
 data: {"conversation_id":"<uuid>","generation_id":"<uuid>","delta":"Here is "}
@@ -2994,8 +3008,8 @@ timestamp. Provider/configuration conflicts return a fixed safe `CONFLICT`, an
 unavailable model returns `NOT_FOUND`, and persistence failures return a
 retryable `SERVICE_UNAVAILABLE` without exposing internal exception text.
 
-Stored organization defaults do not yet replace the conversation runtime's
-existing `ModelPolicy` allowlist. Runtime default routing remains Phase 8 work.
+Stored organization chat defaults drive Conversation runtime resolution when a
+request omits `model_public_id`.
 
 ---
 

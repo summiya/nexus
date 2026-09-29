@@ -16,7 +16,7 @@ const idempotencyKey = "44444444-4444-4444-8444-444444444444";
 const defaultInput: StreamConversationMessageInput = {
   conversationPublicId: conversationId,
   content: "Explain SSE",
-  model: "openai/gpt-5",
+  modelPublicId: "55555555-5555-4555-8555-555555555555",
 };
 
 function eventFrame(event: string, data: unknown, lineEnding = "\n"): string {
@@ -31,7 +31,7 @@ function startedFrame(lineEnding = "\n"): string {
     {
       conversation_id: conversationId,
       generation_id: generationId,
-      model: "openai/gpt-5",
+      model_public_id: "55555555-5555-4555-8555-555555555555",
     },
     lineEnding,
   );
@@ -106,7 +106,7 @@ describe("Conversation message streaming", () => {
         method: "POST",
         body: JSON.stringify({
           content: "Explain SSE",
-          model: "openai/gpt-5",
+          model_public_id: "55555555-5555-4555-8555-555555555555",
         }),
         signal: abortController.signal,
       }),
@@ -116,6 +116,25 @@ describe("Conversation message streaming", () => {
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(headers.get("Idempotency-Key")).toBe(idempotencyKey);
     await stream.return(undefined);
+  });
+
+  it("sends content only when using the organization default model", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(streamResponse([startedFrame()]));
+
+    await collectEvents({
+      conversationPublicId: conversationId,
+      content: "Use the default",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/conversations/11111111-1111-4111-8111-111111111111/messages",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ content: "Use the default" }),
+      }),
+    );
   });
 
   it("omits the idempotency header when the caller does not supply one", async () => {
@@ -157,7 +176,7 @@ describe("Conversation message streaming", () => {
         type: "generation.started",
         conversationId,
         generationId,
-        model: "openai/gpt-5",
+        modelPublicId: "55555555-5555-4555-8555-555555555555",
       },
       {
         type: "message.delta",
@@ -281,7 +300,7 @@ describe("Conversation message streaming", () => {
       "event: generation.started",
       `data: {"conversation_id":"${conversationId}",`,
       `data: "generation_id":"${generationId}",`,
-      'data: "model":"openai/gpt-5"}',
+      'data: "model_public_id":"55555555-5555-4555-8555-555555555555"}',
       "id: ignored-id",
       "retry: 1000",
       "extension: ignored-value",
@@ -375,7 +394,7 @@ describe("Conversation message streaming", () => {
         eventFrame("generation.started", {
           conversation_id: "not-a-uuid",
           generation_id: generationId,
-          model: "openai/gpt-5",
+          model_public_id: "55555555-5555-4555-8555-555555555555",
           unexpected: "do-not-trust",
         }),
       ]),

@@ -44,7 +44,7 @@ const createdConversationSchema = z
 const conversationGenerationSchema = z
   .object({
     public_id: uuidSchema,
-    model: z.string(),
+    model_public_id: uuidSchema.nullable(),
     status: z.enum(generationStatuses),
     finish_reason: z.enum(generationFinishReasons).nullable(),
     input_tokens: z.number().int().nonnegative(),
@@ -114,7 +114,7 @@ function toGenerationMetadata(
 ): ConversationGenerationMetadata {
   return {
     publicId: response.public_id,
-    model: response.model,
+    modelPublicId: response.model_public_id,
     status: response.status,
     finishReason: response.finish_reason,
     inputTokens: response.input_tokens,

@@ -171,7 +171,10 @@ When a backend setting is added, update all of the following where applicable:
 4. CI environment configuration;
 5. tests for parsing and propagation.
 
-Model allowlists and Conversation limits are configuration and must be forwarded to the backend container just like database and authentication values.
+Conversation limits are configuration and must be forwarded to the backend
+container just like database and authentication values. Model selection comes
+from organization provider configuration and chat defaults; there is no
+environment model allowlist or frontend model environment variable.
 
 Provider validation uses one overall timeout plus two Redis-backed limits:
 `MODEL_PROVIDER_VALIDATION_TIMEOUT_SECONDS`, the per-provider request/window

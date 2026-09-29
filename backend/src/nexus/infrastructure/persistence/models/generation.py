@@ -61,8 +61,10 @@ class Generation(Base):
             name="ck_generations_finish_reason",
         ),
         CheckConstraint(
-            "btrim(model) <> ''",
-            name="ck_generations_model_nonblank",
+            "(model IS NOT NULL AND btrim(model) <> '' "
+            "AND configured_model_public_id IS NULL) OR "
+            "(model IS NULL AND configured_model_public_id IS NOT NULL)",
+            name="ck_generations_model_identity",
         ),
         CheckConstraint(
             "input_tokens >= 0",
@@ -126,7 +128,10 @@ class Generation(Base):
     conversation_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     user_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     assistant_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    model: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    configured_model_public_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     idempotency_key: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     finish_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { env } from "../config/env";
 import {
   ConversationComposer,
   ConversationMessageHistory,
@@ -73,7 +72,6 @@ function ConversationWorkspace({
       return submit({
         conversationPublicId,
         content,
-        model: env.conversationModel,
       });
     }
 
@@ -114,7 +112,6 @@ function ConversationWorkspace({
       return await submit({
         conversationPublicId: createdConversation.publicId,
         content,
-        model: env.conversationModel,
       });
     } finally {
       if (activeFirstMessageRef.current === operation) {

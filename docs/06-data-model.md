@@ -802,6 +802,12 @@ UUID `Idempotency-Key`. It does not provide SSE replay or resumption. Because
 the idempotency identity includes the Conversation, the same key may be reused
 for a different Conversation.
 
+Generation model identity is exclusive at the database boundary. Historical
+rows retain a nonblank provider-model string with no configured-model UUID. New
+rows store `configured_model_public_id` and leave the legacy string null. The
+configured-model identity deliberately has no foreign key so deleting later
+configuration cannot destroy or block historical Conversation records.
+
 ---
 
 # 19. Entity: File

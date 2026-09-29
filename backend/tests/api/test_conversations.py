@@ -37,6 +37,7 @@ from nexus.conversations.domain import (
 from nexus.errors import ErrorCode, NexusError
 from nexus.files.ports import ObjectStorage
 from nexus.main import create_app
+from nexus.model_providers.domain import ConfiguredModelId
 
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -131,7 +132,7 @@ def _generation_metadata(
 ) -> ConversationGenerationMetadata:
     return ConversationGenerationMetadata(
         public_id=uuid4(),
-        model="gpt-test",
+        model_public_id=uuid4(),
         status=status,
         finish_reason=(
             GenerationFinishReason.STOP
@@ -399,7 +400,7 @@ def test_get_conversation_messages_returns_typed_generation_metadata() -> None:
     generation_body = response.json()["items"][0]["generation"]
     assert set(generation_body) == {
         "public_id",
-        "model",
+        "model_public_id",
         "status",
         "finish_reason",
         "input_tokens",
@@ -411,7 +412,7 @@ def test_get_conversation_messages_returns_typed_generation_metadata() -> None:
     }
     assert generation_body == {
         "public_id": str(generation.public_id),
-        "model": "gpt-test",
+        "model_public_id": str(generation.model_public_id),
         "status": "completed",
         "finish_reason": "stop",
         "input_tokens": 100,
@@ -664,9 +665,7 @@ class FakePreparedStream:
 
     def __aiter__(self) -> AsyncIterator[ConversationEvent]:
         async def events() -> AsyncIterator[ConversationEvent]:
-            yield GenerationStarted(
-                self.conversation_id, self.generation_id, "gpt-test"
-            )
+            yield GenerationStarted(self.conversation_id, self.generation_id, uuid4())
             yield MessageDelta(self.conversation_id, self.generation_id, "Hello")
             yield GenerationCompleted(
                 self.conversation_id,
@@ -734,11 +733,12 @@ def test_message_endpoint_uses_native_sse_and_maps_application_events() -> None:
     service = FakeConversationStreamService()
     app.dependency_overrides[get_stream_conversation_message] = lambda: service
     idempotency_key = uuid4()
+    model_public_id = uuid4()
 
     with TestClient(app) as client:
         response = client.post(
             f"/api/v1/conversations/{uuid4()}/messages",
-            json={"content": "Hello", "model": "gpt-test"},
+            json={"content": "Hello", "model_public_id": str(model_public_id)},
             headers={"Idempotency-Key": str(idempotency_key)},
         )
 
@@ -749,6 +749,48 @@ def test_message_endpoint_uses_native_sse_and_maps_application_events() -> None:
     assert "event: generation.completed" in response.text
     assert "event: generation.error" not in response.text
     assert service.requests[0].idempotency_key == idempotency_key
+    assert service.requests[0].model_id == ConfiguredModelId(model_public_id)
+
+
+def test_message_endpoint_omits_model_id_for_organization_default() -> None:
+    app = _create_test_app(_settings())
+    app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
+        user_public_id=uuid4(),
+        organization_public_id=uuid4(),
+        session_public_id=uuid4(),
+    )
+    service = FakeConversationStreamService()
+    app.dependency_overrides[get_stream_conversation_message] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/conversations/{uuid4()}/messages",
+            json={"content": "Hello"},
+        )
+
+    assert response.status_code == 200
+    assert len(service.requests) == 1
+    assert service.requests[0].model_id is None
+
+
+def test_message_endpoint_rejects_legacy_model_field() -> None:
+    app = _create_test_app(_settings())
+    app.dependency_overrides[get_current_auth_context] = lambda: AuthTokenContext(
+        user_public_id=uuid4(),
+        organization_public_id=uuid4(),
+        session_public_id=uuid4(),
+    )
+    service = FakeConversationStreamService()
+    app.dependency_overrides[get_stream_conversation_message] = lambda: service
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/conversations/{uuid4()}/messages",
+            json={"content": "Hello", "model": "legacy-provider-model"},
+        )
+
+    assert response.status_code == 422
+    assert service.requests == []
 
 
 def test_message_endpoint_rejects_an_invalid_idempotency_key() -> None:
@@ -774,7 +816,7 @@ def test_message_endpoint_rejects_an_invalid_idempotency_key() -> None:
     with TestClient(app) as client:
         response = client.post(
             f"/api/v1/conversations/{uuid4()}/messages",
-            json={"content": "Hello", "model": "gpt-test"},
+            json={"content": "Hello"},
             headers={"Idempotency-Key": "not-a-uuid"},
         )
 
@@ -808,7 +850,7 @@ def test_message_endpoint_returns_http_error_when_preflight_fails() -> None:
     with TestClient(app) as client:
         response = client.post(
             f"/api/v1/conversations/{uuid4()}/messages",
-            json={"content": "Hello", "model": "gpt-test"},
+            json={"content": "Hello"},
         )
 
     assert response.status_code == 503
@@ -841,7 +883,7 @@ def test_message_endpoint_returns_safe_conflict_before_streaming() -> None:
     with TestClient(app) as client:
         response = client.post(
             f"/api/v1/conversations/{uuid4()}/messages",
-            json={"content": "Hello", "model": "gpt-test"},
+            json={"content": "Hello"},
         )
 
     assert response.status_code == 409

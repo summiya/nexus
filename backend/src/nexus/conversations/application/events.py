@@ -21,7 +21,7 @@ class ConversationEventType(StrEnum):
 class GenerationStarted:
     conversation_public_id: UUID
     generation_public_id: UUID
-    model: str
+    model_public_id: UUID
     type: ConversationEventType = ConversationEventType.GENERATION_STARTED
 
 

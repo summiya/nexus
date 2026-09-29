@@ -73,7 +73,7 @@ function generationMetadata(
 ) {
   return {
     public_id: generationId,
-    model: "openai/gpt-5",
+    model_public_id: "55555555-5555-4555-8555-555555555555",
     status: "completed" as const,
     finish_reason: "stop" as const,
     input_tokens: 12,
@@ -324,7 +324,7 @@ describe("Conversation API", () => {
           createdAt,
           generation: {
             publicId: generationId,
-            model: "openai/gpt-5",
+            modelPublicId: "55555555-5555-4555-8555-555555555555",
             status: "completed",
             finishReason: "stop",
             inputTokens: 12,

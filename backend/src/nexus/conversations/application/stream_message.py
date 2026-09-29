@@ -22,9 +22,12 @@ from nexus.conversations.ports.persistence import (
     ConversationRequestAlreadySubmittedError,
 )
 from nexus.errors import ErrorCode, NexusError
-from nexus.llm.application import ModelNotAllowedError, ModelPolicy
 from nexus.llm.domain import LLMError, LLMMessage, LLMRequest, LLMRole
-from nexus.llm.ports import LLMGateway
+from nexus.model_providers.application import ResolveChatModel
+from nexus.model_providers.domain import ConfiguredModelId
+from nexus.model_providers.ports import RuntimeChatGateway
+
+_RUNTIME_MODEL_COMPATIBILITY_VALUE = "configured-chat-model"
 
 
 @dataclass(frozen=True)
@@ -33,15 +36,15 @@ class StreamConversationMessageRequest:
     user_public_id: UUID
     conversation_public_id: UUID
     content: str
-    model: str
+    model_id: ConfiguredModelId | None = None
     idempotency_key: UUID | None = None
 
 
 @dataclass(frozen=True)
 class StreamConversationMessage:
     persistence: ConversationPersistence
-    llm_gateway: LLMGateway
-    model_policy: ModelPolicy
+    resolve_chat_model: ResolveChatModel
+    runtime_chat_gateway: RuntimeChatGateway
     history_limit: int
     history_max_chars: int
     message_max_length: int
@@ -53,14 +56,6 @@ class StreamConversationMessage:
         content = request.content.strip()
         if not content or len(content) > self.message_max_length:
             raise NexusError(ErrorCode.VALIDATION_ERROR, "Invalid message content.")
-        try:
-            model = self.model_policy.resolve(request.model)
-        except ModelNotAllowedError as exc:
-            raise NexusError(
-                ErrorCode.VALIDATION_ERROR,
-                "The requested model is not available.",
-            ) from exc
-
         conversation = await self.persistence.get_conversation(
             organization_public_id=request.organization_public_id,
             conversation_public_id=request.conversation_public_id,
@@ -78,6 +73,11 @@ class StreamConversationMessage:
                 "You are not allowed to perform this action.",
             )
 
+        resolved_model = await self.resolve_chat_model.execute(
+            organization_public_id=request.organization_public_id,
+            model_id=request.model_id,
+        )
+
         now = datetime.now(UTC)
         message = Message(
             public_id=uuid4(),
@@ -90,7 +90,7 @@ class StreamConversationMessage:
             public_id=uuid4(),
             conversation_public_id=conversation.public_id,
             user_message_public_id=message.public_id,
-            model=model,
+            configured_model_public_id=resolved_model.model_id.value,
             status=GenerationStatus.RUNNING,
             idempotency_key=request.idempotency_key,
             started_at=now,
@@ -130,7 +130,7 @@ class StreamConversationMessage:
                 max_chars=self.history_max_chars,
             )
             llm_request = LLMRequest(
-                model=model,
+                model=_RUNTIME_MODEL_COMPATIBILITY_VALUE,
                 messages=tuple(_to_llm_message(item) for item in bounded_history),
                 tools=(),
             )
@@ -139,7 +139,10 @@ class StreamConversationMessage:
             raise
 
         try:
-            upstream = self.llm_gateway.stream(llm_request)
+            upstream = self.runtime_chat_gateway.stream(
+                request=llm_request,
+                target=resolved_model,
+            )
         except asyncio.CancelledError:
             await lifecycle.cancel()
             raise

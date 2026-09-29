@@ -16,8 +16,10 @@ from nexus.conversations.domain import (
     GenerationStatus,
     Message,
 )
+from nexus.model_providers.domain import ConfiguredModelId
 
 TIMESTAMP = datetime(2026, 1, 1, tzinfo=UTC)
+MODEL_ID = ConfiguredModelId(uuid4())
 
 
 def test_running_generation_status_uses_the_persisted_lowercase_value() -> None:
@@ -129,7 +131,7 @@ def test_generation_supports_status_finish_reason_and_usage() -> None:
         conversation_public_id=uuid4(),
         user_message_public_id=uuid4(),
         assistant_message_public_id=uuid4(),
-        model="gpt-test",
+        configured_model_public_id=MODEL_ID.value,
         status=GenerationStatus.COMPLETED,
         idempotency_key=idempotency_key,
         finish_reason=GenerationFinishReason.STOP,
@@ -154,7 +156,7 @@ def test_generation_rejects_naive_lifecycle_timestamps(field: str) -> None:
         "public_id": uuid4(),
         "conversation_public_id": uuid4(),
         "user_message_public_id": uuid4(),
-        "model": "gpt-test",
+        "configured_model_public_id": MODEL_ID.value,
         "status": GenerationStatus.RUNNING,
         field: TIMESTAMP.replace(tzinfo=None),
     }
@@ -169,21 +171,20 @@ def test_generation_supports_required_statuses(status: GenerationStatus) -> None
         public_id=uuid4(),
         conversation_public_id=uuid4(),
         user_message_public_id=uuid4(),
-        model="gpt-test",
+        configured_model_public_id=MODEL_ID.value,
         status=status,
     )
 
     assert value.status is status
 
 
-@pytest.mark.parametrize("model", ["", " ", "\t\n"])
-def test_generation_rejects_empty_model(model: str) -> None:
-    with pytest.raises(ValueError, match="model"):
+def test_generation_rejects_invalid_configured_model_identifier() -> None:
+    with pytest.raises(TypeError, match="model"):
         Generation(
             public_id=uuid4(),
             conversation_public_id=uuid4(),
             user_message_public_id=uuid4(),
-            model=model,
+            configured_model_public_id=object(),  # type: ignore[arg-type]
             status=GenerationStatus.PENDING,
         )
 
@@ -194,7 +195,7 @@ def test_generation_rejects_negative_token_counts(field: str) -> None:
         "public_id": uuid4(),
         "conversation_public_id": uuid4(),
         "user_message_public_id": uuid4(),
-        "model": "gpt-test",
+        "configured_model_public_id": MODEL_ID.value,
         "status": GenerationStatus.PENDING,
         field: -1,
     }
@@ -209,7 +210,7 @@ def test_generation_rejects_blank_error_kind() -> None:
             public_id=uuid4(),
             conversation_public_id=uuid4(),
             user_message_public_id=uuid4(),
-            model="gpt-test",
+            configured_model_public_id=MODEL_ID.value,
             status=GenerationStatus.FAILED,
             error_kind=" ",
         )
@@ -220,7 +221,7 @@ def test_generation_is_frozen() -> None:
         public_id=uuid4(),
         conversation_public_id=uuid4(),
         user_message_public_id=uuid4(),
-        model="gpt-test",
+        configured_model_public_id=MODEL_ID.value,
         status=GenerationStatus.PENDING,
     )
 
@@ -232,7 +233,7 @@ def test_message_history_item_uses_focused_generation_metadata() -> None:
     history_message = message(role=ConversationMessageRole.ASSISTANT)
     metadata = ConversationGenerationMetadata(
         public_id=uuid4(),
-        model="gpt-test",
+        model_public_id=MODEL_ID.value,
         status=GenerationStatus.COMPLETED,
         finish_reason=GenerationFinishReason.STOP,
         input_tokens=3,
