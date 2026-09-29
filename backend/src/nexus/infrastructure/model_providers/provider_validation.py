@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from urllib.parse import urlencode, urlunsplit
+from urllib.parse import urlunsplit
 
 import aiohttp
 
@@ -14,7 +14,11 @@ from nexus.infrastructure.model_providers.outbound_endpoint import (
     UnsafeProviderEndpointError,
     parse_https_endpoint,
 )
-from nexus.infrastructure.model_providers.provider_http import pinned_provider_get
+from nexus.infrastructure.model_providers.provider_http import (
+    is_retryable_provider_status,
+    pinned_provider_get,
+    with_query,
+)
 from nexus.model_providers.domain import (
     AnthropicSettings,
     AzureOpenAISettings,
@@ -105,7 +109,7 @@ def _validation_request(
         settings, AzureOpenAISettings
     ):
         return _ValidationRequest(
-            url=_with_query(
+            url=with_query(
                 _append_path(settings.endpoint, "openai/models"),
                 {"api-version": settings.api_version},
             ),
@@ -132,17 +136,12 @@ def _append_path(base_url: str, suffix: str) -> str:
     return urlunsplit(parsed._replace(path=path))
 
 
-def _with_query(url: str, query: dict[str, str]) -> str:
-    parsed = parse_https_endpoint(url)
-    return urlunsplit(parsed._replace(query=urlencode(query)))
-
-
 def _status_outcome(status: int) -> ProviderValidationStatus:
     if 200 <= status < 300:
         return ProviderValidationStatus.VALID
     if status == 401:
         return ProviderValidationStatus.INVALID_CREDENTIALS
-    if status in {408, 425, 429} or 500 <= status < 600:
+    if is_retryable_provider_status(status):
         return ProviderValidationStatus.UNREACHABLE
     if 400 <= status < 500:
         # In particular, Azure OpenAI 403 may be a network/firewall restriction.

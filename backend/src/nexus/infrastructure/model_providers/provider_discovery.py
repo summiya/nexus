@@ -6,7 +6,6 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping, Sized
 from dataclasses import dataclass, field
-from urllib.parse import urlencode, urlunsplit
 
 import aiohttp
 
@@ -15,9 +14,12 @@ from nexus.infrastructure.model_providers.outbound_endpoint import (
     HostResolver,
     SystemHostResolver,
     UnsafeProviderEndpointError,
-    parse_https_endpoint,
 )
-from nexus.infrastructure.model_providers.provider_http import pinned_provider_get
+from nexus.infrastructure.model_providers.provider_http import (
+    is_retryable_provider_status,
+    pinned_provider_get,
+    with_query,
+)
 from nexus.model_providers.domain import (
     AnthropicSettings,
     AzureOpenAISettings,
@@ -165,7 +167,7 @@ class HttpProviderModelCatalog:
             raise ProviderModelDiscoveryAuthenticationError(
                 "Provider rejected the configured credential or authorization."
             )
-        if status in {408, 425, 429} or 500 <= status < 600:
+        if is_retryable_provider_status(status):
             raise ProviderModelDiscoveryUnavailableError(
                 "Provider model discovery is unavailable."
             )
@@ -208,7 +210,7 @@ class HttpProviderModelCatalog:
             if after_id is not None:
                 query["after_id"] = after_id
             payload = await self._get_json(
-                _with_query(_ANTHROPIC_MODELS_URL, query),
+                with_query(_ANTHROPIC_MODELS_URL, query),
                 {
                     "x-api-key": credential,
                     "anthropic-version": "2023-06-01",
@@ -250,7 +252,7 @@ class HttpProviderModelCatalog:
             if page_token is not None:
                 query["pageToken"] = page_token
             payload = await self._get_json(
-                _with_query(_GEMINI_MODELS_URL, query),
+                with_query(_GEMINI_MODELS_URL, query),
                 {"x-goog-api-key": credential},
             )
             rows = _required_list(payload, "models")
@@ -451,7 +453,7 @@ def _check_model_count(values: Sized) -> None:
         raise ValueError("Provider model count limit exceeded")
 
 
-def _with_query(url: str, query: Mapping[str, str]) -> str:
+def with_query(url: str, query: Mapping[str, str]) -> str:
     parsed = parse_https_endpoint(url)
     return urlunsplit(parsed._replace(query=urlencode(query)))
 

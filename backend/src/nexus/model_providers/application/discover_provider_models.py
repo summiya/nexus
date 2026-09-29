@@ -8,7 +8,12 @@ from uuid import UUID
 from nexus.authorization import PermissionChecker
 from nexus.errors import ErrorCode, NexusError
 from nexus.logging import get_logger
-from nexus.model_providers.application._shared import authorize, get_provider
+from nexus.model_providers.application._shared import (
+    MANAGE_PERMISSION,
+    authorize,
+    enforce_rate_limits,
+    get_provider,
+)
 from nexus.model_providers.domain import (
     ModelCandidate,
     OrganizationProviderId,
@@ -27,8 +32,6 @@ from nexus.model_providers.ports import (
 from nexus.ports.rate_limit import RateLimiter, RateLimitError
 
 logger = get_logger(__name__)
-
-_MANAGE_PERMISSION = "model_providers.manage"
 
 
 @dataclass(frozen=True)
@@ -59,7 +62,7 @@ class DiscoverProviderModels:
             self.permission_checker,
             organization_public_id=organization_public_id,
             user_public_id=user_public_id,
-            permission=_MANAGE_PERMISSION,
+            permission=MANAGE_PERMISSION,
         )
         provider_id = OrganizationProviderId(provider_public_id)
         provider = await get_provider(
@@ -76,10 +79,20 @@ class DiscoverProviderModels:
                 ErrorCode.CONFLICT,
                 "The provider is not eligible for model discovery.",
             )
-        await self._enforce_rate_limits(
-            organization_public_id=organization_public_id,
-            provider_id=provider_id,
-        )
+        try:
+            await enforce_rate_limits(
+                self.rate_limiter,
+                key_prefix="model-provider-discovery",
+                organization_public_id=organization_public_id,
+                provider_id=provider_id,
+                provider_max_requests=self.policy.provider_max_requests,
+                provider_window_seconds=self.policy.provider_window_seconds,
+                organization_max_requests=self.policy.organization_max_requests,
+                organization_window_seconds=self.policy.organization_window_seconds,
+            )
+        except RateLimitError as exc:
+            logger.warning("model_provider_discovery_rate_limiter_unavailable")
+            raise self._unavailable() from exc
         store = self.credential_store
         if store is None:
             raise self._unavailable()
@@ -113,43 +126,6 @@ class DiscoverProviderModels:
                 "The provider rejected the model discovery request.",
             ) from exc
         except ProviderModelDiscoveryUnavailableError as exc:
-            raise self._unavailable() from exc
-
-    async def _enforce_rate_limits(
-        self,
-        *,
-        organization_public_id: UUID,
-        provider_id: OrganizationProviderId,
-    ) -> None:
-        limits = (
-            (
-                f"model-provider-discovery:organization:{organization_public_id}",
-                self.policy.organization_max_requests,
-                self.policy.organization_window_seconds,
-            ),
-            (
-                (
-                    f"model-provider-discovery:provider:{organization_public_id}:"
-                    f"{provider_id.value}"
-                ),
-                self.policy.provider_max_requests,
-                self.policy.provider_window_seconds,
-            ),
-        )
-        try:
-            for key, limit, window_seconds in limits:
-                if not await self.rate_limiter.allow(
-                    key=key,
-                    limit=limit,
-                    window_seconds=window_seconds,
-                ):
-                    raise NexusError(
-                        ErrorCode.RATE_LIMITED,
-                        "Too many requests. Please try again later.",
-                        retryable=True,
-                    )
-        except RateLimitError as exc:
-            logger.warning("model_provider_discovery_rate_limiter_unavailable")
             raise self._unavailable() from exc
 
     @staticmethod

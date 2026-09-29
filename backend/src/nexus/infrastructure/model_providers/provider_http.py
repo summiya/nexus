@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from urllib.parse import urlencode, urlunsplit
 
 import aiohttp
 
@@ -13,6 +14,19 @@ from nexus.infrastructure.model_providers.outbound_endpoint import (
     parse_https_endpoint,
     resolve_public_addresses,
 )
+
+
+def with_query(url: str, query: Mapping[str, str]) -> str:
+    """Return a validated HTTPS provider URL with the supplied query."""
+
+    parsed = parse_https_endpoint(url)
+    return urlunsplit(parsed._replace(query=urlencode(query)))
+
+
+def is_retryable_provider_status(status: int) -> bool:
+    """Return whether a provider HTTP status represents a transient failure."""
+
+    return status in {408, 425, 429} or 500 <= status < 600
 
 
 @asynccontextmanager
@@ -48,4 +62,4 @@ async def pinned_provider_get(
         yield response
 
 
-__all__ = ["pinned_provider_get"]
+__all__ = ["is_retryable_provider_status", "pinned_provider_get", "with_query"]
