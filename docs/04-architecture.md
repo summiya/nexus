@@ -461,10 +461,31 @@ environment proxies and redirects, and applies one monotonic deadline through
 stream reads. Request-scoped clients own and deterministically close their
 transport; LiteLLM is not allowed to create an unpinned retry client.
 
-Phase 8B.2 remains responsible for the runtime gateway and provider-specific
-mapping from `ResolvedChatModel` into LiteLLM invocation arguments. Conversation
-integration remains Phase 8C. Any later bounded credential caching also belongs
-to runtime-integration work.
+Phase 8B.2 adds the provider-runtime execution boundary without changing the
+semantic request contract:
+
+```text
+ResolvedChatModel + LLMRequest
+→ RuntimeChatGateway
+→ LiteLLMRuntimeAdapter
+→ Phase 8B.1 request-scoped secure transport
+→ configured provider
+```
+
+`LLMRequest` continues to carry messages, tools, and generation controls. The
+resolved target is authoritative for provider type, invocation model or
+deployment name, endpoint settings, and credential. Explicit mappings select
+OpenAI, Azure OpenAI, Anthropic, Gemini, or OpenAI-compatible behavior without
+LiteLLM prefix inference or mutable global provider configuration. Only the
+infrastructure adapter reveals the redacted credential, at final client
+construction, and every generate or stream invocation owns and closes its
+provider client and pinned transport. Stream cancellation and early consumer
+close also settle those resources before propagating.
+
+The composition root exposes both gateways during the migration. Existing
+Conversations still use the legacy `LLMGateway`; Phase 8C will migrate that
+application path to `RuntimeChatGateway`. Any later bounded credential caching
+also belongs to runtime-integration work.
 
 ---
 

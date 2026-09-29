@@ -29,7 +29,8 @@ class ProviderCase:
 
 def _openai_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
-        "model": "openai/gpt-4o-mini",
+        "model": "gpt-4o-mini",
+        "custom_llm_provider": "openai",
         "api_key": "request-openai-key",
         "client": AsyncOpenAI(
             api_key="request-openai-key",
@@ -41,7 +42,8 @@ def _openai_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
 
 def _openai_compatible_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
-        "model": "openai/administrator-model-alias",
+        "model": "administrator-model-alias",
+        "custom_llm_provider": "openai",
         "api_key": "request-compatible-key",
         "client": AsyncOpenAI(
             api_key="request-compatible-key",
@@ -53,7 +55,8 @@ def _openai_compatible_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
 
 def _azure_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
-        "model": "azure/request-deployment",
+        "model": "request-deployment",
+        "custom_llm_provider": "azure",
         "api_key": "request-azure-key",
         "api_base": "https://request-azure.example",
         "api_version": "2025-01-01-preview",
@@ -68,7 +71,8 @@ def _azure_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
 
 def _anthropic_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
-        "model": "anthropic/claude-sonnet-4-20250514",
+        "model": "claude-sonnet-4-20250514",
+        "custom_llm_provider": "anthropic",
         "api_key": "request-anthropic-key",
         "api_base": "https://api.anthropic.com",
         "client": PinnedLiteLLMAsyncHTTPHandler(client),
@@ -78,7 +82,8 @@ def _anthropic_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
 
 def _gemini_kwargs(client: httpx.AsyncClient) -> dict[str, object]:
     return {
-        "model": "gemini/gemini-2.0-flash",
+        "model": "gemini-2.0-flash",
+        "custom_llm_provider": "gemini",
         "api_key": "request-gemini-key",
         "api_base": "https://generativelanguage.googleapis.com",
         "client": PinnedLiteLLMAsyncHTTPHandler(client),
