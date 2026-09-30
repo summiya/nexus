@@ -143,6 +143,73 @@ describe("ConversationMessageHistory", () => {
     ]);
   });
 
+  it("positions loaded history at the latest persisted message", () => {
+    const rendered = renderHistory({ data: [] });
+    const history = screen.getByLabelText("Conversation messages");
+    Object.defineProperty(history, "scrollHeight", {
+      configurable: true,
+      value: 640,
+    });
+
+    queryMocks.useConversationMessagesQuery.mockReturnValue(
+      queryResult({
+        data: [
+          message("user-message", "user", "Earlier question"),
+          message(
+            "assistant-message",
+            "assistant",
+            "Latest answer",
+            generation("completed"),
+          ),
+        ],
+      }),
+    );
+    rendered.rerender(
+      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+    );
+
+    expect(history.scrollTop).toBe(640);
+  });
+
+  it("does not force-scroll the same conversation again after initial positioning", () => {
+    const rendered = renderHistory({ data: [] });
+    const history = screen.getByLabelText("Conversation messages");
+    Object.defineProperty(history, "scrollHeight", {
+      configurable: true,
+      value: 640,
+    });
+
+    queryMocks.useConversationMessagesQuery.mockReturnValue(
+      queryResult({
+        data: [message("user-message", "user", "First question")],
+      }),
+    );
+    rendered.rerender(
+      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+    );
+    expect(history.scrollTop).toBe(640);
+
+    history.scrollTop = 120;
+    queryMocks.useConversationMessagesQuery.mockReturnValue(
+      queryResult({
+        data: [
+          message("user-message", "user", "First question"),
+          message(
+            "assistant-message",
+            "assistant",
+            "Later answer",
+            generation("completed"),
+          ),
+        ],
+      }),
+    );
+    rendered.rerender(
+      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+    );
+
+    expect(history.scrollTop).toBe(120);
+  });
+
   it("renders null and completed generation metadata without status chrome", () => {
     renderHistory({
       data: [
