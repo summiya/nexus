@@ -167,10 +167,40 @@ describe("useConversationSubmission", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["conversations", "messages", firstConversationId],
     });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ["conversations", "list"],
+    });
     expect(refetchQueries).not.toHaveBeenCalled();
     expect(result.current).toMatchObject({
       phase: "idle",
       feedback: null,
+    });
+  });
+
+  it("refreshes the conversation list only when requested", async () => {
+    streamMocks.streamConversationMessage.mockReturnValue(
+      eventStream([startedEvent, completedEvent]),
+    );
+    const queryClient = createTestQueryClient();
+    const invalidateQueries = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockResolvedValue();
+    const { result } = renderSubmissionHook(queryClient);
+
+    await act(async () => {
+      expect(
+        await result.current.submit({
+          ...defaultInput,
+          refreshConversationList: true,
+        }),
+      ).toBe("accepted");
+    });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["conversations", "messages", firstConversationId],
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["conversations", "list"],
     });
   });
 

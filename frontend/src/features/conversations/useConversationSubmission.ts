@@ -30,6 +30,7 @@ interface SubmitConversationMessageInput {
   conversationPublicId: string;
   content: string;
   modelPublicId?: string | null;
+  refreshConversationList?: boolean;
 }
 
 interface ActiveSubmission {
@@ -128,6 +129,7 @@ export function useConversationSubmission() {
       conversationPublicId,
       content,
       modelPublicId,
+      refreshConversationList = false,
     }: SubmitConversationMessageInput): Promise<SubmissionResult> => {
       if (activeSubmissionRef.current !== null) {
         return "ignored";
@@ -217,6 +219,11 @@ export function useConversationSubmission() {
           await queryClient.invalidateQueries({
             queryKey: conversationKeys.messages(operation.conversationPublicId),
           });
+          if (refreshConversationList) {
+            await queryClient.invalidateQueries({
+              queryKey: conversationKeys.list(),
+            });
+          }
         }
 
         if (operationIsCurrent(operation)) {

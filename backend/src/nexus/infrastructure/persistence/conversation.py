@@ -96,8 +96,17 @@ class SqlAlchemyConversationPersistence(ConversationPersistence):
         message: Message,
         generation: Generation,
         history_limit: int,
+        initial_title: str | None = None,
     ) -> tuple[Message, ...]:
         async def prepare(session: AsyncSession) -> tuple[Message, ...]:
+            if initial_title is not None:
+                await queries.set_initial_conversation_title(
+                    session,
+                    organization_public_id=organization_public_id,
+                    conversation_public_id=conversation.public_id,
+                    title=initial_title,
+                    updated_at=message.created_at,
+                )
             await queries.insert_message(
                 session,
                 organization_public_id=organization_public_id,

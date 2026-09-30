@@ -15,6 +15,7 @@ from nexus.conversations.domain import (
     Generation,
     GenerationStatus,
     Message,
+    conversation_title_from_message,
 )
 from nexus.conversations.ports.persistence import (
     ConversationGenerationInProgressError,
@@ -102,6 +103,12 @@ class StreamConversationMessage:
             generation=generation,
         )
 
+        initial_title = (
+            conversation_title_from_message(content)
+            if conversation.title is None
+            else None
+        )
+
         try:
             history = await self.persistence.prepare_generation(
                 organization_public_id=request.organization_public_id,
@@ -109,6 +116,7 @@ class StreamConversationMessage:
                 message=message,
                 generation=generation,
                 history_limit=self.history_limit,
+                initial_title=initial_title,
             )
         except ConversationGenerationInProgressError as exc:
             raise NexusError(
@@ -189,3 +197,4 @@ def _to_llm_message(message: Message) -> LLMMessage:
         ConversationMessageRole.ASSISTANT: LLMRole.ASSISTANT,
     }[message.role]
     return LLMMessage(role=role, content=message.content)
+

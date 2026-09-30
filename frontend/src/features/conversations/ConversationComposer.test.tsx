@@ -40,7 +40,9 @@ describe("ConversationComposer", () => {
     const sendButton = screen.getByRole("button", { name: "Send" });
 
     expect(textarea).toHaveClass("conversation-message-input");
-    expect(textarea.parentElement).toHaveClass("conversation-composer-controls");
+    expect(textarea.parentElement).toHaveClass(
+      "conversation-composer-controls",
+    );
     expect(sendButton).toHaveClass("conversation-send-button");
   });
 

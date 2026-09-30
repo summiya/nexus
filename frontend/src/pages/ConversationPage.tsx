@@ -145,6 +145,7 @@ function ConversationWorkspace({
       return await submit({
         conversationPublicId: createdConversation.publicId,
         content,
+        refreshConversationList: true,
         ...(selectedExplicitModelPublicId === null
           ? {}
           : { modelPublicId: selectedExplicitModelPublicId }),

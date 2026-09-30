@@ -72,6 +72,7 @@ class ConversationPersistence(Protocol):
         message: Message,
         generation: Generation,
         history_limit: int,
+        initial_title: str | None = None,
     ) -> tuple[Message, ...]: ...
 
     async def complete_generation(

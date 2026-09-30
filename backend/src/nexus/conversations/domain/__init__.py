@@ -11,6 +11,7 @@ from nexus.conversations.domain.history import (
     ConversationMessageHistoryItem,
 )
 from nexus.conversations.domain.message import ConversationMessageRole, Message
+from nexus.conversations.domain.title import conversation_title_from_message
 
 __all__ = [
     "Conversation",
@@ -21,4 +22,5 @@ __all__ = [
     "GenerationFinishReason",
     "GenerationStatus",
     "Message",
+    "conversation_title_from_message",
 ]
