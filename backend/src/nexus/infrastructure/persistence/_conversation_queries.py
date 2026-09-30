@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.conversations.domain import (
@@ -146,6 +147,36 @@ def _to_conversation(
         title=model.title,
         created_at=model.created_at,
         updated_at=model.updated_at,
+    )
+
+
+async def set_initial_conversation_title(
+    session: AsyncSession,
+    *,
+    organization_public_id: UUID,
+    conversation_public_id: UUID,
+    title: str,
+    updated_at: datetime,
+) -> None:
+    """Set a Conversation title once, within the caller's transaction."""
+
+    reference = await _conversation_reference(
+        session,
+        organization_public_id=organization_public_id,
+        conversation_public_id=conversation_public_id,
+    )
+    if reference is None:
+        raise ConversationReferenceError("Conversation was not found")
+
+    organization_id, conversation_id = reference
+    await session.execute(
+        update(ConversationModel)
+        .where(
+            ConversationModel.id == conversation_id,
+            ConversationModel.organization_id == organization_id,
+            ConversationModel.title.is_(None),
+        )
+        .values(title=title, updated_at=updated_at)
     )
 
 
