@@ -231,5 +231,4 @@ describe("App", () => {
       screen.queryByRole("heading", { name: "Start a new conversation" }),
     ).not.toBeInTheDocument();
   });
-
 });
