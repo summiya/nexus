@@ -58,32 +58,27 @@ describe("App", () => {
     authMocks.initializeSession.mockResolvedValue("authenticated");
     setAuthStatus("authenticated");
     window.history.replaceState({}, "", "/");
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ status: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(conversationListResponse());
   });
 
-  it("renders the application through the provider and router composition", async () => {
+  it("redirects the authenticated root to conversations", async () => {
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Application foundation" }),
+      await screen.findByRole("heading", { name: "Start a new conversation" }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Ready")).toBeInTheDocument();
-    expect(await screen.findByText("Healthy")).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/conversations"));
   });
 
-  it("redirects unknown routes to the home page", async () => {
+  it("redirects unknown authenticated routes to conversations", async () => {
     window.history.replaceState({}, "", "/does-not-exist");
 
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "Application foundation" }),
+      await screen.findByRole("heading", { name: "Start a new conversation" }),
     ).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/conversations"));
   });
 
   it("redirects the settings index to the canonical AI Providers route", async () => {
@@ -233,7 +228,7 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the API error state when backend health fails", async () => {
+  it("shows the Conversation API error state when the landing request fails", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(
         JSON.stringify({ error: { message: "Backend unavailable" } }),
@@ -246,7 +241,6 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Unhealthy")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Backend unavailable");
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 });
