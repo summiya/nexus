@@ -181,7 +181,9 @@ def _connection_string_value(connection_string: str, key: str) -> str:
             continue
         name, separator, value = item.partition("=")
         if not separator:
-            raise StorageConfigurationError("Azure storage connection string is invalid")
+            raise StorageConfigurationError(
+                "Azure storage connection string is invalid"
+            )
         values[name] = value
     resolved = values.get(key, "").strip()
     if not resolved:
