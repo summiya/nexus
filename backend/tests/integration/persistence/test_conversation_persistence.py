@@ -485,8 +485,16 @@ def test_list_conversations_derives_title_for_existing_untitled_history(
         organization_public_id,
         user_public_id,
     )
+    loaded = asyncio.run(
+        persistence.get_conversation(
+            organization_public_id=organization_public_id,
+            conversation_public_id=conversation.public_id,
+        )
+    )
 
     assert listed[0].title == "Existing conversation question"
+    assert loaded is not None
+    assert loaded.title == "Existing conversation question"
 
 
 def test_prepare_generation_sets_initial_title_only_when_missing(
