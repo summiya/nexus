@@ -244,8 +244,13 @@ async def build_storage_composition(
                 credential=credential,
             )
         container_client = service_client.get_container_client(container_name)
+        local_emulator_enabled = (
+            settings.azure_storage_local_emulator_enabled
+            and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+        )
         if (
             connection_string is not None
+            and local_emulator_enabled
             and settings.azure_storage_public_blob_base_url is not None
         ):
             try:
@@ -276,7 +281,11 @@ async def build_storage_composition(
         elif connection_string is not None:
             public_blob_base_url = (
                 str(settings.azure_storage_public_blob_base_url).rstrip("/")
-                if settings.azure_storage_public_blob_base_url is not None
+                if (
+                    settings.azure_storage_local_emulator_enabled
+                    and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+                    and settings.azure_storage_public_blob_base_url is not None
+                )
                 else None
             )
             if public_blob_base_url is None:
@@ -307,7 +316,11 @@ async def build_storage_composition(
         elif connection_string is not None:
             public_blob_base_url = (
                 str(settings.azure_storage_public_blob_base_url).rstrip("/")
-                if settings.azure_storage_public_blob_base_url is not None
+                if (
+                    settings.azure_storage_local_emulator_enabled
+                    and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+                    and settings.azure_storage_public_blob_base_url is not None
+                )
                 else None
             )
             if public_blob_base_url is None:
