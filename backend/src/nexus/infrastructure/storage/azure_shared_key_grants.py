@@ -9,7 +9,12 @@ from urllib.parse import quote
 from azure.core.exceptions import AzureError
 from azure.storage.blob import BlobSasPermissions, generate_blob_sas
 
-from nexus.files.ports import DownloadGrant, DownloadGrantError, UploadGrant, UploadGrantError
+from nexus.files.ports import (
+    DownloadGrant,
+    DownloadGrantError,
+    UploadGrant,
+    UploadGrantError,
+)
 
 _UPLOAD_GRANT_FAILURE_MESSAGE = "The upload grant could not be issued."
 _DOWNLOAD_GRANT_FAILURE_MESSAGE = "The download grant could not be issued."
