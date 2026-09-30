@@ -14,9 +14,7 @@ from nexus.config.settings import (
     validate_file_upload_context_key,
 )
 
-_INVALID_ACCOUNT_URL_MESSAGE = (
-    "Azure storage account URL must be a credential-free HTTPS service root"
-)
+_LOCAL_ENVIRONMENTS = frozenset({"development", "test"})
 
 
 class FileWorkerSettings(BaseSettings):
@@ -32,10 +30,9 @@ class FileWorkerSettings(BaseSettings):
     file_upload_context_key: SecretStr
     file_worker_database_pool_size: int = Field(default=2, ge=1, le=20)
     file_worker_database_max_overflow: int = Field(default=0, ge=0, le=20)
-    azure_service_bus_fully_qualified_namespace: str = Field(
-        min_length=1,
-        max_length=255,
-    )
+
+    azure_service_bus_fully_qualified_namespace: str | None = None
+    azure_service_bus_connection_string: SecretStr | None = None
     azure_service_bus_queue_name: str = Field(min_length=1, max_length=260)
     azure_service_bus_malware_scan_queue_name: str = Field(
         default="file-malware-scan-results",
@@ -43,10 +40,15 @@ class FileWorkerSettings(BaseSettings):
         max_length=260,
     )
     azure_service_bus_managed_identity_client_id: UUID | None = None
+
     azure_event_grid_expected_source: str = Field(min_length=1, max_length=1024)
     azure_malware_scan_expected_topic: str = Field(min_length=1, max_length=2048)
+
     azure_storage_container: str = Field(min_length=1, max_length=63)
-    azure_storage_account_url: HttpUrl
+    azure_storage_account_url: HttpUrl | None = None
+    azure_storage_connection_string: SecretStr | None = None
+    azure_storage_account_name: str | None = None
+
     file_upload_completion_source: str = Field(
         default="azure-primary",
         min_length=1,
@@ -78,12 +80,24 @@ class FileWorkerSettings(BaseSettings):
             raise ValueError("File worker configuration is invalid")
         return value
 
+    @field_validator(
+        "azure_service_bus_fully_qualified_namespace",
+        "azure_storage_account_name",
+        mode="before",
+    )
+    @classmethod
+    def blank_optional_text(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("azure_service_bus_fully_qualified_namespace")
     @classmethod
-    def validate_service_bus_namespace(cls, value: str) -> str:
+    def validate_service_bus_namespace(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if (
-            not value.strip()
-            or value != value.strip()
+            value != value.strip()
             or "://" in value
             or "/" in value
             or "?" in value
@@ -107,7 +121,9 @@ class FileWorkerSettings(BaseSettings):
 
     @field_validator("azure_storage_account_url")
     @classmethod
-    def validate_storage_account_url(cls, value: HttpUrl) -> HttpUrl:
+    def validate_storage_account_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
         if (
             value.scheme != "https"
             or value.username is not None
@@ -116,8 +132,30 @@ class FileWorkerSettings(BaseSettings):
             or value.query is not None
             or value.fragment is not None
         ):
-            raise ValueError(_INVALID_ACCOUNT_URL_MESSAGE)
+            raise ValueError(
+                "Azure storage account URL must be a credential-free HTTPS service root"
+            )
         return value
+
+    def validate_runtime_modes(self) -> None:
+        service_bus_connection = self.azure_service_bus_connection_string
+        service_bus_namespace = self.azure_service_bus_fully_qualified_namespace
+        if (service_bus_connection is None) == (service_bus_namespace is None):
+            raise ValueError(
+                "Configure exactly one Service Bus authentication mode"
+            )
+        storage_connection = self.azure_storage_connection_string
+        storage_account_url = self.azure_storage_account_url
+        if (storage_connection is None) == (storage_account_url is None):
+            raise ValueError(
+                "Configure exactly one Azure storage authentication mode"
+            )
+        if self.app_env not in _LOCAL_ENVIRONMENTS and (
+            service_bus_connection is not None or storage_connection is not None
+        ):
+            raise ValueError(
+                "Azure connection strings are restricted to development and test"
+            )
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
@@ -132,7 +170,9 @@ def load_file_worker_settings(
 ) -> FileWorkerSettings:
     """Load the dedicated worker settings without web-only configuration."""
 
-    return FileWorkerSettings(_env_file=env_file)  # type: ignore[call-arg]
+    settings = FileWorkerSettings(_env_file=env_file)  # type: ignore[call-arg]
+    settings.validate_runtime_modes()
+    return settings
 
 
 __all__ = ["FileWorkerSettings", "load_file_worker_settings"]
