@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.conversations.domain import (
@@ -17,6 +17,7 @@ from nexus.conversations.domain import (
     GenerationFinishReason,
     GenerationStatus,
     Message,
+    conversation_title_from_message,
 )
 from nexus.conversations.ports.persistence import (
     ConversationEntityNotFoundError,
@@ -106,9 +107,26 @@ async def list_conversations(
     organization_public_id: UUID,
     created_by_user_public_id: UUID,
 ) -> list[Conversation]:
+    first_user_message_preview = (
+        select(func.substr(MessageModel.content, 1, 512))
+        .where(
+            MessageModel.organization_id == ConversationModel.organization_id,
+            MessageModel.conversation_id == ConversationModel.id,
+            MessageModel.role == ConversationMessageRole.USER.value,
+        )
+        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+        .limit(1)
+        .correlate(ConversationModel)
+        .scalar_subquery()
+    )
     rows = (
         await session.execute(
-            select(ConversationModel, Organization.public_id, User.public_id)
+            select(
+                ConversationModel,
+                Organization.public_id,
+                User.public_id,
+                first_user_message_preview,
+            )
             .join(Organization, ConversationModel.organization_id == Organization.id)
             .join(
                 User,
@@ -127,8 +145,14 @@ async def list_conversations(
             model,
             organization_public_id=stored_organization_public_id,
             created_by_user_public_id=creator_public_id,
+            fallback_title_content=first_user_message_content,
         )
-        for model, stored_organization_public_id, creator_public_id in rows
+        for (
+            model,
+            stored_organization_public_id,
+            creator_public_id,
+            first_user_message_content,
+        ) in rows
     ]
 
 
@@ -137,14 +161,19 @@ def _to_conversation(
     *,
     organization_public_id: UUID,
     created_by_user_public_id: UUID,
+    fallback_title_content: str | None = None,
 ) -> Conversation:
+    title = model.title
+    if title is None and fallback_title_content is not None:
+        title = conversation_title_from_message(fallback_title_content)
+
     return Conversation(
         public_id=model.public_id,
         organization_public_id=organization_public_id,
         created_by_user_public_id=created_by_user_public_id,
         workspace_public_id=model.workspace_public_id,
         project_public_id=model.project_public_id,
-        title=model.title,
+        title=title,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -169,6 +198,21 @@ async def set_initial_conversation_title(
         raise ConversationReferenceError("Conversation was not found")
 
     organization_id, conversation_id = reference
+    existing_user_message = await session.scalar(
+        select(func.substr(MessageModel.content, 1, 512))
+        .where(
+            MessageModel.organization_id == organization_id,
+            MessageModel.conversation_id == conversation_id,
+            MessageModel.role == ConversationMessageRole.USER.value,
+        )
+        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
+        .limit(1)
+    )
+    resolved_title = (
+        conversation_title_from_message(existing_user_message)
+        if existing_user_message is not None
+        else title
+    )
     await session.execute(
         update(ConversationModel)
         .where(
@@ -176,7 +220,7 @@ async def set_initial_conversation_title(
             ConversationModel.organization_id == organization_id,
             ConversationModel.title.is_(None),
         )
-        .values(title=title, updated_at=updated_at)
+        .values(title=resolved_title, updated_at=updated_at)
     )
 
 
