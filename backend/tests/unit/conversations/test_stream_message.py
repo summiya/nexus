@@ -82,6 +82,7 @@ class FakePersistence:
             updated_at=NOW,
         )
         self.prepared: list[tuple[Message, Generation]] = []
+        self.initial_titles: list[str | None] = []
         self.completed: list[tuple[Message, Generation]] = []
         self.failed: list[Generation] = []
         self.cancelled: list[Generation] = []
@@ -114,6 +115,7 @@ class FakePersistence:
         assert organization_public_id == ORG_ID
         assert conversation.public_id == CONVERSATION_ID
         assert history_limit == 10
+        self.initial_titles.append(initial_title)
         self.prepared.append((message, generation))
         return (message,)
 
@@ -315,6 +317,7 @@ def test_preparation_conflicts_are_safe_and_do_not_invoke_provider(
             message: Message,
             generation: Generation,
             history_limit: int,
+            initial_title: str | None = None,
         ) -> tuple[Message, ...]:
             del (
                 organization_public_id,
@@ -322,6 +325,7 @@ def test_preparation_conflicts_are_safe_and_do_not_invoke_provider(
                 message,
                 generation,
                 history_limit,
+                initial_title,
             )
             raise persistence_error
 
@@ -405,6 +409,75 @@ def test_resolves_explicit_model_once_and_passes_same_snapshot_to_runtime() -> N
     assert gateway.requests[0].model == "configured-chat-model"
 
 
+def test_derives_initial_title_from_first_user_message() -> None:
+    persistence = FakePersistence()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        runtime_chat_gateway=FakeGateway(),
+        resolve_chat_model=FakeResolver(),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=500,
+    )
+    request = replace(
+        make_request(),
+        content="  Explain   message queues\nand Kafka for a beginner  ",
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(request)
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert persistence.initial_titles == ["Explain message queues and Kafka for a beginner"]
+
+
+def test_truncates_generated_conversation_title() -> None:
+    persistence = FakePersistence()
+    service = StreamConversationMessage(
+        persistence=persistence,
+        runtime_chat_gateway=FakeGateway(),
+        resolve_chat_model=FakeResolver(),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=500,
+    )
+    request = replace(make_request(), content="x" * 120)
+
+    async def run() -> None:
+        prepared = await service.prepare(request)
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert persistence.initial_titles == [("x" * 79) + "…"]
+
+
+def test_preserves_an_existing_conversation_title() -> None:
+    persistence = FakePersistence()
+    persistence.conversation = replace(
+        persistence.conversation,
+        title="Existing title",
+    )
+    service = StreamConversationMessage(
+        persistence=persistence,
+        runtime_chat_gateway=FakeGateway(),
+        resolve_chat_model=FakeResolver(),
+        history_limit=10,
+        history_max_chars=1_000,
+        message_max_length=100,
+    )
+
+    async def run() -> None:
+        prepared = await service.prepare(make_request())
+        await prepared.aclose()
+
+    asyncio.run(run())
+
+    assert persistence.initial_titles == [None]
+
+
 def test_generation_preparation_finishes_before_provider_streaming_starts() -> None:
     timeline: list[str] = []
 
@@ -417,6 +490,7 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
             message: Message,
             generation: Generation,
             history_limit: int,
+            initial_title: str | None = None,
         ) -> tuple[Message, ...]:
             prepared = await super().prepare_generation(
                 organization_public_id=organization_public_id,
@@ -424,6 +498,7 @@ def test_generation_preparation_finishes_before_provider_streaming_starts() -> N
                 message=message,
                 generation=generation,
                 history_limit=history_limit,
+                initial_title=initial_title,
             )
             timeline.append("persistence_prepared")
             return prepared
@@ -920,8 +995,9 @@ def test_history_is_bounded_before_provider_invocation() -> None:
             message: Message,
             generation: Generation,
             history_limit: int,
+            initial_title: str | None = None,
         ) -> tuple[Message, ...]:
-            del organization_public_id, generation, history_limit
+            del organization_public_id, generation, history_limit, initial_title
             old = Message(
                 public_id=uuid4(),
                 conversation_public_id=conversation.public_id,
