@@ -123,37 +123,31 @@ input:focus-visible {
 
 .app-shell-conversations {
   display: flex;
-  width: 100%;
-  min-height: 100dvh;
-  margin: 0;
-  padding: 0;
+  width: min(1440px, 96vw);
+  height: 100dvh;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 1rem 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .app-shell-conversations .top-bar {
   flex: 0 0 auto;
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
 }
 
 .content-panel-conversations {
   display: flex;
   min-height: 0;
   flex: 1;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: rgba(8, 14, 23, 0.86);
 }
 
 .content-panel-conversations > .conversation-shell {
   width: 100%;
-  height: auto;
+  height: 100%;
   min-height: 0;
   flex: 1;
-  border: 0;
-  border-radius: 0;
+  overflow: hidden;
 }
 .hero-card {
   display: grid;
@@ -1047,7 +1041,7 @@ p {
     padding: 1rem;
   }
   .content-panel-conversations {
-    padding: 0;
+    min-height: 0;
   }
   .conversation-shell {
     grid-template-columns: minmax(0, 1fr);
