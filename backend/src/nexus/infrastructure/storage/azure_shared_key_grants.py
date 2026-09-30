@@ -130,7 +130,7 @@ def _blob_url(base: str, container: str, storage_key: str, sas_token: str) -> st
 
 
 def _sas_protocol(base_url: str) -> str:
-    return "https" if base_url.startswith("https://") else "http,https"
+    return "https" if base_url.startswith("https://") else "https,http"
 
 
 def _require_text(value: str) -> str:
