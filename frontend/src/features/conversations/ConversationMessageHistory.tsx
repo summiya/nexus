@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from "react";
+
 import { NexusApiError } from "../../services/api/error";
 import { useConversationMessagesQuery } from "./queries";
 import type { LiveConversationTurn } from "./useConversationSubmission";
@@ -81,6 +83,32 @@ export function ConversationMessageHistory({
   const activeLiveTurn =
     liveTurn?.conversationPublicId === conversationPublicId ? liveTurn : null;
   const persistedMessages = messages.data ?? [];
+  const historyRef = useRef<HTMLElement>(null);
+  const positionedConversationRef = useRef<string | null>(null);
+
+  useLayoutEffect(() => {
+    if (
+      messages.isPending ||
+      messages.isError ||
+      persistedMessages.length === 0 ||
+      positionedConversationRef.current === conversationPublicId
+    ) {
+      return;
+    }
+
+    const history = historyRef.current;
+    if (history === null) {
+      return;
+    }
+
+    history.scrollTop = history.scrollHeight;
+    positionedConversationRef.current = conversationPublicId;
+  }, [
+    conversationPublicId,
+    messages.isError,
+    messages.isPending,
+    persistedMessages.length,
+  ]);
   const baselineIsKnown =
     activeLiveTurn !== null &&
     activeLiveTurn.persistedMessagePublicIds !== null;
@@ -166,6 +194,7 @@ export function ConversationMessageHistory({
 
   return (
     <section
+      ref={historyRef}
       className="conversation-message-history"
       aria-label="Conversation messages"
     >

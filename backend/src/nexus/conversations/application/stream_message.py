@@ -197,4 +197,3 @@ def _to_llm_message(message: Message) -> LLMMessage:
         ConversationMessageRole.ASSISTANT: LLMRole.ASSISTANT,
     }[message.role]
     return LLMMessage(role=role, content=message.content)
-

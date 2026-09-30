@@ -160,11 +160,11 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the new Conversation shell inside the authenticated layout", async () => {
+  it("renders the new Conversation shell inside the full-viewport authenticated layout", async () => {
     window.history.replaceState({}, "", "/conversations");
     vi.mocked(globalThis.fetch).mockResolvedValue(conversationListResponse());
 
-    render(<App />);
+    const { container } = render(<App />);
 
     expect(
       await screen.findByRole("heading", { name: "Start a new conversation" }),
@@ -172,6 +172,12 @@ describe("App", () => {
     expect(
       await screen.findByText("No conversations yet."),
     ).toBeInTheDocument();
+    expect(container.querySelector(".app-shell")).toHaveClass(
+      "app-shell-conversations",
+    );
+    expect(container.querySelector(".content-panel")).toHaveClass(
+      "content-panel-conversations",
+    );
     expect(
       within(
         screen.getByRole("navigation", { name: "Main navigation" }),

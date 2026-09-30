@@ -28,8 +28,14 @@ function ConversationWorkspace({
     mutateAsync: createConversation,
     reset: resetCreation,
   } = useCreateConversationMutation();
-  const { feedback, liveTurn, phase, resetForConversationChange, submit } =
-    useConversationSubmission();
+  const {
+    feedback,
+    liveTurn,
+    phase,
+    resetForConversationChange,
+    stop,
+    submit,
+  } = useConversationSubmission();
   const chatModelsQuery = useChatModelsQuery();
   const [creationFeedback, setCreationFeedback] = useState<{
     kind: "conversation_creation_failed";
@@ -189,8 +195,10 @@ function ConversationWorkspace({
     <ConversationComposer
       key={composerRevision}
       feedback={creationFeedback ?? feedback}
+      modelSelector={modelSelector}
       phase={effectivePhase}
       submissionDisabled={modelSubmissionDisabled}
+      onStop={stop}
       onSubmit={submitMessage}
     />
   );
@@ -203,10 +211,7 @@ function ConversationWorkspace({
           <h2>Start a new conversation</h2>
           <p>Choose a conversation from the sidebar or begin a new chat.</p>
         </div>
-        <div className="conversation-input-panel">
-          {modelSelector}
-          {composer}
-        </div>
+        <div className="conversation-input-panel">{composer}</div>
       </>
     );
   }
@@ -217,10 +222,7 @@ function ConversationWorkspace({
         conversationPublicId={conversationPublicId}
         liveTurn={liveTurn}
       />
-      <div className="conversation-input-panel">
-        {modelSelector}
-        {composer}
-      </div>
+      <div className="conversation-input-panel">{composer}</div>
     </>
   );
 }

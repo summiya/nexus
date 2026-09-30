@@ -431,7 +431,9 @@ def test_derives_initial_title_from_first_user_message() -> None:
 
     asyncio.run(run())
 
-    assert persistence.initial_titles == ["Explain message queues and Kafka for a beginner"]
+    assert persistence.initial_titles == [
+        "Explain message queues and Kafka for a beginner"
+    ]
 
 
 def test_truncates_generated_conversation_title() -> None:

@@ -20,16 +20,18 @@ function renderComposer({
   result?: SubmissionResult;
   submissionDisabled?: boolean;
 } = {}) {
+  const onStop = vi.fn();
   const onSubmit = vi.fn().mockResolvedValue(result);
   const rendered = render(
     <ConversationComposer
       feedback={feedback}
       phase={phase}
       submissionDisabled={submissionDisabled}
+      onStop={onStop}
       onSubmit={onSubmit}
     />,
   );
-  return { ...rendered, onSubmit };
+  return { ...rendered, onStop, onSubmit };
 }
 
 describe("ConversationComposer", () => {
@@ -109,18 +111,31 @@ describe("ConversationComposer", () => {
     expect(textarea).toHaveValue(" composing ");
   });
 
-  it.each([
-    "creating",
-    "submitting",
-    "generating",
-  ] satisfies ConversationComposerPhase[])(
-    "disables duplicate submission while %s",
-    (phase) => {
-      const { onSubmit } = renderComposer({ phase });
+  it("disables submission while creating a Conversation", () => {
+    const { onSubmit } = renderComposer({ phase: "creating" });
 
-      expect(screen.getByRole("textbox", { name: "Message" })).toBeDisabled();
-      expect(screen.getByRole("button")).toBeDisabled();
-      expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Creating conversation…",
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it.each(["submitting", "generating"] satisfies ConversationComposerPhase[])(
+    "shows an enabled Stop action and generating placeholder while %s",
+    async (phase) => {
+      const user = userEvent.setup();
+      const { onStop, onSubmit } = renderComposer({ phase });
+      const textarea = screen.getByRole("textbox", { name: "Message" });
+
+      expect(textarea).toBeDisabled();
+      expect(textarea).toHaveAttribute("placeholder", "Generating message…");
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Stop" }));
+
+      expect(onStop).toHaveBeenCalledOnce();
       expect(onSubmit).not.toHaveBeenCalled();
     },
   );
@@ -135,6 +150,17 @@ describe("ConversationComposer", () => {
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     await user.keyboard("{Enter}");
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the composer clear after a user-stopped generation", async () => {
+    const user = userEvent.setup();
+    renderComposer({ result: "stopped" });
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+
+    await user.type(textarea, "Stop this response");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(textarea).toHaveValue("");
   });
 
   it.each(["uncertain", "not_submitted"] satisfies SubmissionResult[])(
