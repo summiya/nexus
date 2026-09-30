@@ -76,7 +76,7 @@ class FakeServiceBusClient:
         self.close_calls = 0
 
     @classmethod
-    def from_connection_string(cls, value: str) -> "FakeServiceBusClient":
+    def from_connection_string(cls, value: str) -> FakeServiceBusClient:
         cls.connection_strings.append(value)
         return cls()
 
@@ -96,7 +96,7 @@ class FakeBlobServiceClient:
         self.container_names: list[str] = []
 
     @classmethod
-    def from_connection_string(cls, value: str) -> "FakeBlobServiceClient":
+    def from_connection_string(cls, value: str) -> FakeBlobServiceClient:
         cls.connection_strings.append(value)
         return cls()
 
@@ -118,7 +118,7 @@ class FakeDatabase:
 
 
 class FakeAutoLockRenewer:
-    instances: ClassVar[list["FakeAutoLockRenewer"]] = []
+    instances: ClassVar[list[FakeAutoLockRenewer]] = []
 
     def __init__(self, *, max_lock_renewal_duration: int) -> None:
         self.max_lock_renewal_duration = max_lock_renewal_duration

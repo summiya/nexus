@@ -9,7 +9,6 @@ from collections.abc import Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient
 from azure.storage.blob.aio import BlobServiceClient
