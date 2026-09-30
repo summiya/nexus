@@ -101,9 +101,6 @@ class FakeManagedIdentityCredential:
         self.close_calls = 0
         self.__class__.instances.append(self)
 
-    async def set_service_properties(self, **kwargs: object) -> None:
-        self.service_properties_calls.append(kwargs)
-
     async def close(self) -> None:
         self.close_calls += 1
 
@@ -154,6 +151,9 @@ class FakeBlobServiceClient:
         if self.__class__.container_error is not None:
             raise self.__class__.container_error
         return self.container_client
+
+    async def set_service_properties(self, **kwargs: object) -> None:
+        self.service_properties_calls.append(kwargs)
 
     async def close(self) -> None:
         self.close_calls += 1
