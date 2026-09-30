@@ -592,6 +592,42 @@ describe("useConversationSubmission", () => {
     expect(result.current).toMatchObject({ phase: "idle", feedback: null });
   });
 
+  it("stops the active stream through its AbortController", async () => {
+    let suppliedSignal: AbortSignal | undefined;
+    streamMocks.streamConversationMessage.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) => {
+        suppliedSignal = signal;
+        return (async function* waitForStop() {
+          yield startedEvent;
+          await new Promise<void>((_resolve, reject) => {
+            signal?.addEventListener("abort", () =>
+              reject(new Error("intentional user stop")),
+            );
+          });
+        })();
+      },
+    );
+    const queryClient = createTestQueryClient();
+    vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    const { result } = renderSubmissionHook(queryClient);
+
+    let submission!: Promise<SubmissionResult>;
+    act(() => {
+      submission = result.current.submit(defaultInput);
+    });
+    await waitFor(() => expect(result.current.phase).toBe("generating"));
+
+    act(() => result.current.stop());
+
+    expect(suppliedSignal?.aborted).toBe(true);
+    await expect(submission).resolves.toBe("stopped");
+    expect(result.current).toMatchObject({
+      phase: "idle",
+      feedback: null,
+      liveTurn: null,
+    });
+  });
+
   it("aborts and silently resets the active operation for a Conversation change", async () => {
     let suppliedSignal: AbortSignal | undefined;
     streamMocks.streamConversationMessage.mockImplementation(
