@@ -167,6 +167,26 @@ services:
     networks:
       - nexus-network
 
+
+  file-event-simulator:
+    profiles: ["azure-emulators"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["python", "-m", "nexus.dev.local_file_events"]
+    environment:
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
+      AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      AZURE_SERVICE_BUS_CONNECTION_STRING: "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+    depends_on:
+      azurite:
+        condition: service_started
+      servicebus-emulator:
+        condition: service_started
+    networks:
+      - nexus-network
+
   servicebus-emulator:
     profiles: ["azure-emulators"]
     image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
