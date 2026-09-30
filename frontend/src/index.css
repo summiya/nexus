@@ -1046,6 +1046,9 @@ p {
   .content-panel {
     padding: 1rem;
   }
+  .content-panel-conversations {
+    padding: 0;
+  }
   .conversation-shell {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
