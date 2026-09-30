@@ -36,7 +36,10 @@ export function AppRouter() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AuthGate />}>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<Navigate to="/conversations" replace />} />
+            <Route
+              path="/"
+              element={<Navigate to="/conversations" replace />}
+            />
             <Route path="/conversations" element={<ConversationPage />} />
             <Route
               path="/conversations/:conversationId"
