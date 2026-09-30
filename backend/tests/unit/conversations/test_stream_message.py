@@ -111,6 +111,7 @@ class FakePersistence:
         message: Message,
         generation: Generation,
         history_limit: int,
+        initial_title: str | None = None,
     ) -> tuple[Message, ...]:
         assert organization_public_id == ORG_ID
         assert conversation.public_id == CONVERSATION_ID
