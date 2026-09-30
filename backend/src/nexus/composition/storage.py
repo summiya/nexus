@@ -7,7 +7,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from azure.core.exceptions import ResourceExistsError
 from azure.identity.aio import ManagedIdentityCredential
+from azure.storage.blob import CorsRule
 from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.settings import Settings
@@ -242,6 +244,22 @@ async def build_storage_composition(
                 credential=credential,
             )
         container_client = service_client.get_container_client(container_name)
+        if connection_string is not None:
+            try:
+                await container_client.create_container()
+            except ResourceExistsError:
+                pass
+            await service_client.set_service_properties(
+                cors=[
+                    CorsRule(
+                        allowed_origins=settings.cors_allowed_origins,
+                        allowed_methods=["GET", "HEAD", "OPTIONS", "PUT"],
+                        allowed_headers=["*"],
+                        exposed_headers=["*"],
+                        max_age_in_seconds=3600,
+                    )
+                ]
+            )
         resolved_storage = AzureBlobObjectStorage(container_client)
         delegation_key_provider = (
             AzureUserDelegationKeyProvider(service_client)
