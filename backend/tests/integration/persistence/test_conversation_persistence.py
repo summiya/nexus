@@ -461,6 +461,34 @@ def test_list_conversations_returns_empty_tuple(
     assert listed == ()
 
 
+def test_list_conversations_derives_title_for_existing_untitled_history(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
+    conversation = replace(
+        _conversation(organization_public_id, user_public_id),
+        title=None,
+    )
+    _create_conversation(persistence, conversation)
+    _persist_turn(
+        persistence,
+        organization_public_id,
+        conversation,
+        user_content="  Existing   conversation\nquestion  ",
+        assistant_content="Existing answer",
+    )
+
+    listed = _list_conversations(
+        persistence,
+        organization_public_id,
+        user_public_id,
+    )
+
+    assert listed[0].title == "Existing conversation question"
+
+
 def test_prepare_generation_sets_initial_title_only_when_missing(
     migrated_engine: Engine,
     conversation_async_session_factory: async_sessionmaker[AsyncSession],
