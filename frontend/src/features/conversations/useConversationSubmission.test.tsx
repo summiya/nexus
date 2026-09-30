@@ -167,6 +167,9 @@ describe("useConversationSubmission", () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["conversations", "messages", firstConversationId],
     });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["conversations", "list"],
+    });
     expect(refetchQueries).not.toHaveBeenCalled();
     expect(result.current).toMatchObject({
       phase: "idle",
