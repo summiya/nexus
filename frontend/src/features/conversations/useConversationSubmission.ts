@@ -217,6 +217,9 @@ export function useConversationSubmission() {
           await queryClient.invalidateQueries({
             queryKey: conversationKeys.messages(operation.conversationPublicId),
           });
+          await queryClient.invalidateQueries({
+            queryKey: conversationKeys.list(),
+          });
         }
 
         if (operationIsCurrent(operation)) {
