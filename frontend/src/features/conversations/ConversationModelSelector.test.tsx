@@ -58,6 +58,9 @@ describe("ConversationModelSelector", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue(
       defaultModelId,
     );
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveClass(
+      "conversation-model-select",
+    );
     expect(
       screen.getByRole("option", { name: "GPT-5 — Default" }),
     ).toBeInTheDocument();

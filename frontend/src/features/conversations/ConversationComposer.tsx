@@ -70,6 +70,7 @@ export function ConversationComposer({
       <label htmlFor="conversation-message">Message</label>
       <div className="conversation-composer-controls">
         <textarea
+          className="conversation-message-input"
           id="conversation-message"
           autoComplete="off"
           disabled={active}

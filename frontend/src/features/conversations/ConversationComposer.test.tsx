@@ -33,6 +33,17 @@ function renderComposer({
 }
 
 describe("ConversationComposer", () => {
+  it("exposes dedicated layout hooks for the message input and send action", () => {
+    renderComposer();
+
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    const sendButton = screen.getByRole("button", { name: "Send" });
+
+    expect(textarea).toHaveClass("conversation-message-input");
+    expect(textarea.parentElement).toHaveClass("conversation-composer-controls");
+    expect(sendButton).toHaveClass("conversation-send-button");
+  });
+
   it("stores the draft locally and submits trimmed content", async () => {
     const user = userEvent.setup();
     const { onSubmit } = renderComposer();
