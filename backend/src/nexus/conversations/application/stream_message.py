@@ -28,6 +28,7 @@ from nexus.model_providers.domain import ConfiguredModelId
 from nexus.model_providers.ports import RuntimeChatGateway
 
 _RUNTIME_MODEL_COMPATIBILITY_VALUE = "configured-chat-model"
+_AUTO_TITLE_MAX_LENGTH = 80
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,10 @@ class StreamConversationMessage:
             generation=generation,
         )
 
+        initial_title = (
+            _initial_conversation_title(content) if conversation.title is None else None
+        )
+
         try:
             history = await self.persistence.prepare_generation(
                 organization_public_id=request.organization_public_id,
@@ -109,6 +114,7 @@ class StreamConversationMessage:
                 message=message,
                 generation=generation,
                 history_limit=self.history_limit,
+                initial_title=initial_title,
             )
         except ConversationGenerationInProgressError as exc:
             raise NexusError(
@@ -189,3 +195,13 @@ def _to_llm_message(message: Message) -> LLMMessage:
         ConversationMessageRole.ASSISTANT: LLMRole.ASSISTANT,
     }[message.role]
     return LLMMessage(role=role, content=message.content)
+
+
+def _initial_conversation_title(content: str) -> str:
+    """Build a compact deterministic title from the first accepted user message."""
+
+    normalized = " ".join(content.split())
+    if len(normalized) <= _AUTO_TITLE_MAX_LENGTH:
+        return normalized
+
+    return f"{normalized[: _AUTO_TITLE_MAX_LENGTH - 1].rstrip()}…"
