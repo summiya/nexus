@@ -98,6 +98,16 @@ class LocalFileWorkerSettings(BaseSettings):
             raise ValueError("Local File worker configuration is invalid")
         return value
 
+    @field_validator(
+        "azure_storage_connection_string",
+        "azure_service_bus_connection_string",
+    )
+    @classmethod
+    def require_nonblank_connection_string(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("Local File worker connection string must not be blank")
+        return value
+
     @field_validator("file_upload_context_key")
     @classmethod
     def validate_upload_context_key(
