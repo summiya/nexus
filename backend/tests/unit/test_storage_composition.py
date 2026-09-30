@@ -22,6 +22,8 @@ from nexus.files.ports import (
 )
 from nexus.infrastructure.storage import (
     AzureBlobObjectStorage,
+    AzureSharedKeyDownloadGrantIssuer,
+    AzureSharedKeyUploadGrantIssuer,
     AzureUserDelegationDownloadGrantIssuer,
 )
 from nexus.infrastructure.storage.azure_upload_grant import (
@@ -103,6 +105,14 @@ class FakeManagedIdentityCredential:
         self.close_calls += 1
 
 
+class FakeContainerClient:
+    def __init__(self) -> None:
+        self.create_calls = 0
+
+    async def create_container(self) -> None:
+        self.create_calls += 1
+
+
 class FakeBlobServiceClient:
     instances: ClassVar[list[FakeBlobServiceClient]] = []
     connection_strings: ClassVar[list[str]] = []
@@ -122,7 +132,8 @@ class FakeBlobServiceClient:
         self.credential = credential
         self.connection_string = connection_string
         self.container_names: list[str] = []
-        self.container_client = object()
+        self.container_client = FakeContainerClient()
+        self.service_properties_calls: list[dict[str, object]] = []
         self.close_calls = 0
         self.close_error: BaseException | None = None
         self.__class__.instances.append(self)
@@ -135,11 +146,14 @@ class FakeBlobServiceClient:
             connection_string=connection_string,
         )
 
-    def get_container_client(self, container_name: str) -> object:
+    def get_container_client(self, container_name: str) -> FakeContainerClient:
         self.container_names.append(container_name)
         if self.__class__.container_error is not None:
             raise self.__class__.container_error
         return self.container_client
+
+    async def set_service_properties(self, **kwargs: object) -> None:
+        self.service_properties_calls.append(kwargs)
 
     async def close(self) -> None:
         self.close_calls += 1
@@ -178,6 +192,8 @@ def build_settings(**overrides: object) -> Settings:
         "storage_provider": "azure_blob",
         "azure_storage_container": "nexus-files",
         "azure_storage_connection_string": None,
+        "azure_storage_public_blob_base_url": None,
+        "azure_storage_local_emulator_enabled": False,
         "azure_storage_account_url": None,
         "azure_storage_account_name": "nexus",
         "azure_storage_managed_identity_client_id": None,
@@ -235,6 +251,42 @@ def test_development_connection_string_builds_azurite_storage() -> None:
 
         await composition.close()
         assert service_client.close_calls == 1
+
+    asyncio.run(scenario())
+
+
+def test_explicit_local_emulator_mode_bootstraps_and_issues_shared_key_grants() -> None:
+    async def scenario() -> None:
+        composition = await build_storage_composition(
+            build_settings(
+                app_env="development",
+                azure_storage_connection_string=(
+                    "DefaultEndpointsProtocol=http;"
+                    "AccountName=devstoreaccount1;"
+                    "AccountKey=local-key;"
+                    "BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+                ),
+                azure_storage_public_blob_base_url=(
+                    "http://localhost:10000/devstoreaccount1"
+                ),
+                azure_storage_local_emulator_enabled=True,
+            )
+        )
+        service_client = FakeBlobServiceClient.instances[0]
+
+        assert service_client.container_client.create_calls == 1
+        assert len(service_client.service_properties_calls) == 1
+        assert isinstance(
+            composition.upload_grant_issuer,
+            AzureSharedKeyUploadGrantIssuer,
+        )
+        assert isinstance(
+            composition.download_grant_issuer,
+            AzureSharedKeyDownloadGrantIssuer,
+        )
+        assert FakeManagedIdentityCredential.instances == []
+
+        await composition.close()
 
     asyncio.run(scenario())
 

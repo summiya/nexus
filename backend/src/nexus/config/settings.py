@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     storage_provider: str = Field(default="azure_blob", min_length=1)
     azure_storage_container: str | None = None
     azure_storage_connection_string: SecretStr | None = None
+    azure_storage_public_blob_base_url: HttpUrl | None = None
+    azure_storage_local_emulator_enabled: bool = False
     azure_storage_account_url: HttpUrl | None = None
     azure_storage_account_name: str | None = None
     azure_storage_managed_identity_client_id: UUID | None = None

@@ -7,7 +7,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from azure.core.exceptions import ResourceExistsError
 from azure.identity.aio import ManagedIdentityCredential
+from azure.storage.blob import CorsRule
 from azure.storage.blob.aio import BlobServiceClient
 
 from nexus.config.settings import Settings
@@ -22,6 +24,8 @@ from nexus.files.ports import (
 )
 from nexus.infrastructure.storage import (
     AzureBlobObjectStorage,
+    AzureSharedKeyDownloadGrantIssuer,
+    AzureSharedKeyUploadGrantIssuer,
     AzureUserDelegationDownloadGrantIssuer,
     AzureUserDelegationKeyProvider,
     AzureUserDelegationUploadGrantIssuer,
@@ -170,6 +174,25 @@ def _azure_configuration(
     return container_name, None, account_url
 
 
+def _connection_string_value(connection_string: str, key: str) -> str:
+    values: dict[str, str] = {}
+    for item in connection_string.split(";"):
+        if not item:
+            continue
+        name, separator, value = item.partition("=")
+        if not separator:
+            raise StorageConfigurationError(
+                "Azure storage connection string is invalid"
+            )
+        values[name] = value
+    resolved = values.get(key, "").strip()
+    if not resolved:
+        raise StorageConfigurationError(
+            f"Azure storage connection string is missing {key}"
+        )
+    return resolved
+
+
 async def build_storage_composition(
     settings: Settings,
     *,
@@ -223,6 +246,30 @@ async def build_storage_composition(
                 credential=credential,
             )
         container_client = service_client.get_container_client(container_name)
+        local_emulator_enabled = (
+            settings.azure_storage_local_emulator_enabled
+            and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+        )
+        if (
+            connection_string is not None
+            and local_emulator_enabled
+            and settings.azure_storage_public_blob_base_url is not None
+        ):
+            try:
+                await container_client.create_container()
+            except ResourceExistsError:
+                pass
+            await service_client.set_service_properties(
+                cors=[
+                    CorsRule(
+                        allowed_origins=settings.cors_allowed_origins,
+                        allowed_methods=["GET", "HEAD", "OPTIONS", "PUT"],
+                        allowed_headers=["*"],
+                        exposed_headers=["*"],
+                        max_age_in_seconds=3600,
+                    )
+                ]
+            )
         resolved_storage = AzureBlobObjectStorage(container_client)
         delegation_key_provider = (
             AzureUserDelegationKeyProvider(service_client)
@@ -234,7 +281,28 @@ async def build_storage_composition(
         if upload_grant_issuer is not None:
             resolved_upload_grant_issuer = upload_grant_issuer
         elif connection_string is not None:
-            resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
+            public_blob_base_url = (
+                str(settings.azure_storage_public_blob_base_url).rstrip("/")
+                if (
+                    settings.azure_storage_local_emulator_enabled
+                    and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+                    and settings.azure_storage_public_blob_base_url is not None
+                )
+                else None
+            )
+            if public_blob_base_url is None:
+                resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
+            else:
+                resolved_upload_grant_issuer = AzureSharedKeyUploadGrantIssuer(
+                    account_name=_connection_string_value(
+                        connection_string, "AccountName"
+                    ),
+                    account_key=_connection_string_value(
+                        connection_string, "AccountKey"
+                    ),
+                    container_name=container_name,
+                    public_blob_base_url=public_blob_base_url,
+                )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None
@@ -248,7 +316,28 @@ async def build_storage_composition(
         if download_grant_issuer is not None:
             resolved_download_grant_issuer = download_grant_issuer
         elif connection_string is not None:
-            resolved_download_grant_issuer = _UnavailableDownloadGrantIssuer()
+            public_blob_base_url = (
+                str(settings.azure_storage_public_blob_base_url).rstrip("/")
+                if (
+                    settings.azure_storage_local_emulator_enabled
+                    and settings.app_env in _LOCAL_CONNECTION_STRING_ENVIRONMENTS
+                    and settings.azure_storage_public_blob_base_url is not None
+                )
+                else None
+            )
+            if public_blob_base_url is None:
+                resolved_download_grant_issuer = _UnavailableDownloadGrantIssuer()
+            else:
+                resolved_download_grant_issuer = AzureSharedKeyDownloadGrantIssuer(
+                    account_name=_connection_string_value(
+                        connection_string, "AccountName"
+                    ),
+                    account_key=_connection_string_value(
+                        connection_string, "AccountKey"
+                    ),
+                    container_name=container_name,
+                    public_blob_base_url=public_blob_base_url,
+                )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None

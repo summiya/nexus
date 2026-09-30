@@ -53,17 +53,22 @@ class FakeSecretClient:
 
 
 def build_settings(**overrides: object) -> Settings:
-    return Settings(
-        _env_file=None,
-        database_url="postgresql://test:test@localhost:5432/test",
-        redis_url="redis://localhost:6379/15",
-        cors_allowed_origins=["https://nexus.example"],
-        otp_hmac_secret="test-secret-value-with-enough-length",
-        auth_token_secret="test-auth-token-secret-with-enough-length",
-        refresh_token_secret="test-refresh-token-secret-with-enough-length",
-        file_upload_context_key=FILE_UPLOAD_CONTEXT_KEY,
+    values: dict[str, object] = {
+        "database_url": "postgresql://test:test@localhost:5432/test",
+        "redis_url": "redis://localhost:6379/15",
+        "cors_allowed_origins": ["https://nexus.example"],
+        "otp_hmac_secret": "test-secret-value-with-enough-length",
+        "auth_token_secret": "test-auth-token-secret-with-enough-length",
+        "refresh_token_secret": "test-refresh-token-secret-with-enough-length",
+        "file_upload_context_key": FILE_UPLOAD_CONTEXT_KEY,
+        "credential_store_provider": None,
+        "local_credential_store_path": None,
+        "local_credential_store_key": None,
+        "azure_key_vault_url": None,
+        "azure_key_vault_managed_identity_client_id": None,
         **overrides,
-    )
+    }
+    return Settings(_env_file=None, **values)
 
 
 @pytest.fixture(autouse=True)

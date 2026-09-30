@@ -49,7 +49,9 @@ services:
       FILE_UPLOAD_CONTEXT_KEY: ${FILE_UPLOAD_CONTEXT_KEY}
       STORAGE_PROVIDER: azure_blob
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
-      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_DOCKER_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+      AZURE_STORAGE_PUBLIC_BLOB_BASE_URL: ${AZURE_STORAGE_PUBLIC_BLOB_BASE_URL:-http://localhost:10000/devstoreaccount1}
+      AZURE_STORAGE_LOCAL_EMULATOR_ENABLED: ${AZURE_STORAGE_LOCAL_EMULATOR_ENABLED:-true}
       CREDENTIAL_STORE_PROVIDER: ${CREDENTIAL_STORE_PROVIDER:-}
       LOCAL_CREDENTIAL_STORE_PATH: ${LOCAL_CREDENTIAL_STORE_PATH:-}
       LOCAL_CREDENTIAL_STORE_KEY: ${LOCAL_CREDENTIAL_STORE_KEY:-}
@@ -130,6 +132,90 @@ services:
       - azurite-data:/data
     networks:
       - nexus-network
+
+  file-worker:
+    profiles: ["azure-emulators"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python -m nexus.dev.local_file_worker
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL}
+      FILE_UPLOAD_MAX_SIZE_BYTES: ${FILE_UPLOAD_MAX_SIZE_BYTES:-536870912}
+      FILE_UPLOAD_CONTEXT_KEY: ${FILE_UPLOAD_CONTEXT_KEY}
+      FILE_WORKER_DATABASE_POOL_SIZE: ${FILE_WORKER_DATABASE_POOL_SIZE:-2}
+      FILE_WORKER_DATABASE_MAX_OVERFLOW: ${FILE_WORKER_DATABASE_MAX_OVERFLOW:-0}
+      FILE_WORKER_MAX_LOCK_RENEWAL_SECONDS: ${FILE_WORKER_MAX_LOCK_RENEWAL_SECONDS:-300}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
+      AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_DOCKER_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING}
+      AZURE_SERVICE_BUS_QUEUE_NAME: file-upload-completions
+      AZURE_SERVICE_BUS_MALWARE_SCAN_QUEUE_NAME: file-malware-scan-results
+      AZURE_EVENT_GRID_EXPECTED_SOURCE: /local/azurite
+      AZURE_MALWARE_SCAN_EXPECTED_TOPIC: /local/defender
+      FILE_UPLOAD_COMPLETION_SOURCE: local-azurite
+      FILE_MALWARE_SCAN_SOURCE: local-malware-simulator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+      servicebus-emulator:
+        condition: service_started
+    networks:
+      - nexus-network
+
+
+  file-event-simulator:
+    profiles: ["azure-emulators"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    entrypoint: ["python", "-m", "nexus.dev.local_file_events"]
+    environment:
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
+      AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_DOCKER_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING}
+    depends_on:
+      azurite:
+        condition: service_started
+      servicebus-emulator:
+        condition: service_started
+    networks:
+      - nexus-network
+
+  servicebus-emulator:
+    profiles: ["azure-emulators"]
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    pull_policy: always
+    ports:
+      - "5672:5672"
+      - "5300:5300"
+    volumes:
+      - ./infra/servicebus/config.json:/ServiceBus_Emulator/ConfigFiles/Config.json:ro
+    environment:
+      SQL_SERVER: servicebus-sql
+      MSSQL_SA_PASSWORD: ${SERVICE_BUS_EMULATOR_SQL_PASSWORD}
+      ACCEPT_EULA: ${SERVICE_BUS_EMULATOR_ACCEPT_EULA:-N}
+      EMULATOR_HTTP_PORT: 5300
+    depends_on:
+      - servicebus-sql
+    networks:
+      - nexus-network
+
+  servicebus-sql:
+    profiles: ["azure-emulators"]
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: ${SERVICE_BUS_EMULATOR_ACCEPT_EULA:-N}
+      MSSQL_SA_PASSWORD: ${SERVICE_BUS_EMULATOR_SQL_PASSWORD}
+    networks:
+      - nexus-network
+
 
 networks:
   nexus-network:
