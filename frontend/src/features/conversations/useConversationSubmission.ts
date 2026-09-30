@@ -15,7 +15,12 @@ export type SubmissionFeedback =
   | { kind: "submission_rejected" };
 
 export type SubmissionResult =
-  "accepted" | "uncertain" | "cancelled" | "ignored" | "not_submitted";
+  | "accepted"
+  | "uncertain"
+  | "cancelled"
+  | "ignored"
+  | "not_submitted"
+  | "stopped";
 
 export interface LiveConversationTurn {
   projectionId: number;
@@ -37,6 +42,7 @@ interface ActiveSubmission {
   controller: AbortController;
   conversationPublicId: string;
   operationId: number;
+  stopRequested: boolean;
 }
 
 interface SubmissionState {
@@ -115,6 +121,15 @@ export function useConversationSubmission() {
     [],
   );
 
+  const stop = useCallback(() => {
+    const activeSubmission = activeSubmissionRef.current;
+    if (activeSubmission === null) {
+      return;
+    }
+    activeSubmission.stopRequested = true;
+    activeSubmission.controller.abort();
+  }, []);
+
   const resetForConversationChange = useCallback(() => {
     const activeSubmission = activeSubmissionRef.current;
     activeSubmissionRef.current = null;
@@ -139,6 +154,7 @@ export function useConversationSubmission() {
         controller: new AbortController(),
         conversationPublicId,
         operationId: nextOperationIdRef.current + 1,
+        stopRequested: false,
       };
       nextOperationIdRef.current = operation.operationId;
       activeSubmissionRef.current = operation;
@@ -200,7 +216,7 @@ export function useConversationSubmission() {
         }
       } catch (error) {
         if (operation.controller.signal.aborted) {
-          result = "cancelled";
+          result = operation.stopRequested ? "stopped" : "cancelled";
         } else if (!attempted) {
           result = "not_submitted";
         } else if (accepted) {
@@ -253,6 +269,7 @@ export function useConversationSubmission() {
     liveTurn: state.liveTurn,
     phase: state.phase,
     resetForConversationChange,
+    stop,
     submit,
   };
 }
