@@ -487,6 +487,7 @@ describe("ConversationPage", () => {
     expect(conversationMocks.submit).toHaveBeenCalledWith({
       conversationPublicId: firstConversationId,
       content: "First message",
+      refreshConversationList: true,
     });
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("");
     expect(conversationMocks.resetForConversationChange).not.toHaveBeenCalled();
@@ -528,6 +529,7 @@ describe("ConversationPage", () => {
         conversationPublicId: firstConversationId,
         content: "First message with Claude",
         modelPublicId: alternateModelId,
+        refreshConversationList: true,
       }),
     );
   });
