@@ -1,10 +1,12 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { env } from "../config/env";
 import { clearSession } from "../features/auth";
 
 export function AppLayout() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const conversationMode = location.pathname.startsWith("/conversations");
 
   function logout(): void {
     clearSession();
@@ -12,7 +14,11 @@ export function AppLayout() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className={
+        conversationMode ? "app-shell app-shell-conversations" : "app-shell"
+      }
+    >
       <header className="top-bar">
         <div className="brand-mark" aria-label="Nexus logo">
           N
@@ -35,7 +41,13 @@ export function AppLayout() {
         </nav>
       </header>
 
-      <main className="content-panel">
+      <main
+        className={
+          conversationMode
+            ? "content-panel content-panel-conversations"
+            : "content-panel"
+        }
+      >
         <Outlet />
       </main>
     </div>
