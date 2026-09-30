@@ -28,8 +28,14 @@ function ConversationWorkspace({
     mutateAsync: createConversation,
     reset: resetCreation,
   } = useCreateConversationMutation();
-  const { feedback, liveTurn, phase, resetForConversationChange, submit } =
-    useConversationSubmission();
+  const {
+    feedback,
+    liveTurn,
+    phase,
+    resetForConversationChange,
+    stop,
+    submit,
+  } = useConversationSubmission();
   const chatModelsQuery = useChatModelsQuery();
   const [creationFeedback, setCreationFeedback] = useState<{
     kind: "conversation_creation_failed";
@@ -191,6 +197,7 @@ function ConversationWorkspace({
       feedback={creationFeedback ?? feedback}
       phase={effectivePhase}
       submissionDisabled={modelSubmissionDisabled}
+      onStop={stop}
       onSubmit={submitMessage}
     />
   );
