@@ -195,6 +195,7 @@ function ConversationWorkspace({
     <ConversationComposer
       key={composerRevision}
       feedback={creationFeedback ?? feedback}
+      modelSelector={modelSelector}
       phase={effectivePhase}
       submissionDisabled={modelSubmissionDisabled}
       onStop={stop}
@@ -210,10 +211,7 @@ function ConversationWorkspace({
           <h2>Start a new conversation</h2>
           <p>Choose a conversation from the sidebar or begin a new chat.</p>
         </div>
-        <div className="conversation-input-panel">
-          {modelSelector}
-          {composer}
-        </div>
+        <div className="conversation-input-panel">{composer}</div>
       </>
     );
   }
@@ -224,10 +222,7 @@ function ConversationWorkspace({
         conversationPublicId={conversationPublicId}
         liveTurn={liveTurn}
       />
-      <div className="conversation-input-panel">
-        {modelSelector}
-        {composer}
-      </div>
+      <div className="conversation-input-panel">{composer}</div>
     </>
   );
 }
