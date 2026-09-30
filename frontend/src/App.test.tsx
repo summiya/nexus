@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const authMocks = vi.hoisted(() => ({
@@ -216,6 +217,31 @@ describe("App", () => {
         url.endsWith(`/conversations/${conversationId}/messages`),
       ),
     ).toHaveLength(1);
+  });
+
+  it("logs out from the main navigation", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/conversations");
+    window.sessionStorage.setItem(
+      "nexus.authentication.refresh-token",
+      "refresh-token",
+    );
+
+    render(<App />);
+
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("button", { name: "Logout" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Sign in" }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/login");
+    expect(
+      window.sessionStorage.getItem("nexus.authentication.refresh-token"),
+    ).toBeNull();
   });
 
   it("keeps Conversation routes behind the existing authentication gate", async () => {
