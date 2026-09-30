@@ -49,9 +49,12 @@ services:
       FILE_UPLOAD_CONTEXT_KEY: ${FILE_UPLOAD_CONTEXT_KEY}
       STORAGE_PROVIDER: azure_blob
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
-      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
-      AZURE_STORAGE_PUBLIC_BLOB_BASE_URL: http://localhost:10000/devstoreaccount1
-      AZURE_STORAGE_LOCAL_EMULATOR_ENABLED: "true"
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURE_STORAGE_PUBLIC_BLOB_BASE_URL: ${AZURE_STORAGE_PUBLIC_BLOB_BASE_URL}
+      AZURE_STORAGE_LOCAL_EMULATOR_ENABLED: ${AZURE_STORAGE_LOCAL_EMULATOR_ENABLED:-true}
+      AZURE_STORAGE_ACCOUNT_URL: ${AZURE_STORAGE_ACCOUNT_URL:-}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID: ${AZURE_STORAGE_MANAGED_IDENTITY_CLIENT_ID:-}
       CREDENTIAL_STORE_PROVIDER: ${CREDENTIAL_STORE_PROVIDER:-}
       LOCAL_CREDENTIAL_STORE_PATH: ${LOCAL_CREDENTIAL_STORE_PATH:-}
       LOCAL_CREDENTIAL_STORE_KEY: ${LOCAL_CREDENTIAL_STORE_KEY:-}
@@ -138,7 +141,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: python -m nexus.workers.file_upload_completion
+    command: python -m nexus.dev.local_file_worker
     environment:
       APP_ENV: development
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -150,8 +153,8 @@ services:
       FILE_WORKER_MAX_LOCK_RENEWAL_SECONDS: ${FILE_WORKER_MAX_LOCK_RENEWAL_SECONDS:-300}
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
       AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
-      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
-      AZURE_SERVICE_BUS_CONNECTION_STRING: "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING}
       AZURE_SERVICE_BUS_QUEUE_NAME: file-upload-completions
       AZURE_SERVICE_BUS_MALWARE_SCAN_QUEUE_NAME: file-malware-scan-results
       AZURE_EVENT_GRID_EXPECTED_SOURCE: /local/azurite
@@ -178,8 +181,8 @@ services:
     environment:
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-nexus-files}
       AZURE_STORAGE_ACCOUNT_NAME: devstoreaccount1
-      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
-      AZURE_SERVICE_BUS_CONNECTION_STRING: "Endpoint=sb://servicebus-emulator;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING}
     depends_on:
       azurite:
         condition: service_started
