@@ -255,8 +255,6 @@ def test_development_connection_string_builds_azurite_storage() -> None:
     asyncio.run(scenario())
 
 
-
-
 def test_explicit_local_emulator_mode_bootstraps_and_issues_shared_key_grants() -> None:
     async def scenario() -> None:
         composition = await build_storage_composition(
@@ -291,6 +289,7 @@ def test_explicit_local_emulator_mode_bootstraps_and_issues_shared_key_grants() 
         await composition.close()
 
     asyncio.run(scenario())
+
 
 @pytest.mark.parametrize("app_env", ["production", "staging", "local", "DEVELOPMENT"])
 def test_connection_string_is_rejected_outside_explicit_local_test_environments(

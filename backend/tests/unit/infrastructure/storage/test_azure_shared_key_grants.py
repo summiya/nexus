@@ -62,8 +62,7 @@ def test_local_upload_grant_is_exact_blob_create_only_and_http_capable(
         assert grant.headers == {"x-ms-blob-type": "BlockBlob"}
         assert grant.expires_at is EXPIRY
         assert grant.url.startswith(
-            "http://localhost:10000/devstoreaccount1/nexus-files/"
-            "orgs/test/files/a%20b?"
+            "http://localhost:10000/devstoreaccount1/nexus-files/orgs/test/files/a%20b?"
         )
 
         call = calls[0]

@@ -47,7 +47,9 @@ def test_local_worker_accepts_development_emulator_configuration() -> None:
     assert settings.file_malware_scan_source == "local-malware-simulator"
 
 
-@pytest.mark.parametrize("environment", ["production", "staging", "local", "DEVELOPMENT"])
+@pytest.mark.parametrize(
+    "environment", ["production", "staging", "local", "DEVELOPMENT"]
+)
 def test_local_worker_rejects_non_local_environments(environment: str) -> None:
     with pytest.raises(ValidationError, match="restricted to development and test"):
         _settings(app_env=environment)
