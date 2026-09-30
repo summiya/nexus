@@ -12,6 +12,10 @@ from nexus.infrastructure.storage.azure_malware_scan import (
     AzureMalwareScanResultMapper,
     AzureMalwareScanResultMappingError,
 )
+from nexus.infrastructure.storage.azure_shared_key_grants import (
+    AzureSharedKeyDownloadGrantIssuer,
+    AzureSharedKeyUploadGrantIssuer,
+)
 from nexus.infrastructure.storage.azure_upload_grant import (
     AzureUserDelegationUploadGrantIssuer,
 )
@@ -25,6 +29,8 @@ __all__ = [
     "AzureBlobObjectStorage",
     "AzureMalwareScanResultMapper",
     "AzureMalwareScanResultMappingError",
+    "AzureSharedKeyDownloadGrantIssuer",
+    "AzureSharedKeyUploadGrantIssuer",
     "AzureUserDelegationDownloadGrantIssuer",
     "AzureUserDelegationKeyProvider",
     "AzureUserDelegationUploadGrantIssuer",
