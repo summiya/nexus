@@ -62,6 +62,11 @@ def build_settings(**overrides: object) -> Settings:
         auth_token_secret="test-auth-token-secret-with-enough-length",
         refresh_token_secret="test-refresh-token-secret-with-enough-length",
         file_upload_context_key=FILE_UPLOAD_CONTEXT_KEY,
+        credential_store_provider=None,
+        local_credential_store_path=None,
+        local_credential_store_key=None,
+        azure_key_vault_url=None,
+        azure_key_vault_managed_identity_client_id=None,
         **overrides,
     )
 
