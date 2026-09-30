@@ -22,6 +22,8 @@ from nexus.files.ports import (
 )
 from nexus.infrastructure.storage import (
     AzureBlobObjectStorage,
+    AzureSharedKeyDownloadGrantIssuer,
+    AzureSharedKeyUploadGrantIssuer,
     AzureUserDelegationDownloadGrantIssuer,
     AzureUserDelegationKeyProvider,
     AzureUserDelegationUploadGrantIssuer,
@@ -170,6 +172,23 @@ def _azure_configuration(
     return container_name, None, account_url
 
 
+def _connection_string_value(connection_string: str, key: str) -> str:
+    values: dict[str, str] = {}
+    for item in connection_string.split(";"):
+        if not item:
+            continue
+        name, separator, value = item.partition("=")
+        if not separator:
+            raise StorageConfigurationError("Azure storage connection string is invalid")
+        values[name] = value
+    resolved = values.get(key, "").strip()
+    if not resolved:
+        raise StorageConfigurationError(
+            f"Azure storage connection string is missing {key}"
+        )
+    return resolved
+
+
 async def build_storage_composition(
     settings: Settings,
     *,
@@ -234,7 +253,23 @@ async def build_storage_composition(
         if upload_grant_issuer is not None:
             resolved_upload_grant_issuer = upload_grant_issuer
         elif connection_string is not None:
-            resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
+            account_name = _connection_string_value(connection_string, "AccountName")
+            account_key = _connection_string_value(connection_string, "AccountKey")
+            public_blob_base_url = (
+                str(settings.azure_storage_public_blob_base_url).rstrip("/")
+                if settings.azure_storage_public_blob_base_url is not None
+                else None
+            )
+            if public_blob_base_url is None:
+                raise StorageConfigurationError(
+                    "Azure storage public blob base URL is required for local direct uploads"
+                )
+            resolved_upload_grant_issuer = AzureSharedKeyUploadGrantIssuer(
+                account_name=account_name,
+                account_key=account_key,
+                container_name=container_name,
+                public_blob_base_url=public_blob_base_url,
+            )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None
@@ -248,7 +283,23 @@ async def build_storage_composition(
         if download_grant_issuer is not None:
             resolved_download_grant_issuer = download_grant_issuer
         elif connection_string is not None:
-            resolved_download_grant_issuer = _UnavailableDownloadGrantIssuer()
+            account_name = _connection_string_value(connection_string, "AccountName")
+            account_key = _connection_string_value(connection_string, "AccountKey")
+            public_blob_base_url = (
+                str(settings.azure_storage_public_blob_base_url).rstrip("/")
+                if settings.azure_storage_public_blob_base_url is not None
+                else None
+            )
+            if public_blob_base_url is None:
+                raise StorageConfigurationError(
+                    "Azure storage public blob base URL is required for local direct downloads"
+                )
+            resolved_download_grant_issuer = AzureSharedKeyDownloadGrantIssuer(
+                account_name=account_name,
+                account_key=account_key,
+                container_name=container_name,
+                public_blob_base_url=public_blob_base_url,
+            )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None
