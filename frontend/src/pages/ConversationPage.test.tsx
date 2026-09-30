@@ -53,6 +53,7 @@ const conversationMocks = vi.hoisted(() => ({
   },
   liveTurn: null as LiveConversationTurn | null,
   phase: "idle" as "idle" | "submitting" | "generating",
+  stop: vi.fn(),
   submit: vi.fn().mockResolvedValue("accepted"),
 }));
 
@@ -116,6 +117,7 @@ vi.mock("../features/conversations", async () => {
         phase: conversationMocks.phase,
         resetForConversationChange:
           conversationMocks.resetForConversationChange,
+        stop: conversationMocks.stop,
         submit: conversationMocks.submit,
       };
     },
@@ -227,6 +229,7 @@ describe("ConversationPage", () => {
     };
     conversationMocks.liveTurn = null;
     conversationMocks.phase = "idle";
+    conversationMocks.stop.mockReset();
     conversationMocks.submit.mockReset().mockResolvedValue("accepted");
   });
 
@@ -261,6 +264,20 @@ describe("ConversationPage", () => {
     expect(
       screen.getByRole("textbox", { name: "Message" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows Stop and generating copy while a response is active", async () => {
+    const user = userEvent.setup();
+    conversationMocks.phase = "generating";
+    renderPage(`/conversations/${firstConversationId}`);
+
+    const textarea = screen.getByRole("textbox", { name: "Message" });
+    expect(textarea).toBeDisabled();
+    expect(textarea).toHaveAttribute("placeholder", "Generating message…");
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(conversationMocks.stop).toHaveBeenCalledOnce();
   });
 
   it("submits the selected route ID using server-default model semantics", async () => {
