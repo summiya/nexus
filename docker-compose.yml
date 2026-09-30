@@ -163,7 +163,7 @@ services:
       azurite:
         condition: service_started
       servicebus-emulator:
-        condition: service_healthy
+        condition: service_started
     networks:
       - nexus-network
 
@@ -183,11 +183,6 @@ services:
       EMULATOR_HTTP_PORT: 5300
     depends_on:
       - servicebus-sql
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:5300/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
     networks:
       - nexus-network
 
