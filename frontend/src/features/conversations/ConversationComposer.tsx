@@ -118,6 +118,11 @@ export function ConversationComposer({
           </button>
         )}
       </div>
+      {phase === "creating" ? (
+        <p className="conversation-submission-status" role="status">
+          Creating conversation…
+        </p>
+      ) : null}
       {feedback ? (
         <p className="conversation-submission-feedback" role="alert">
           {feedbackMessages[feedback.kind]}
