@@ -44,6 +44,7 @@ export function ConversationModelSelector({
     <div className="conversation-model-selector">
       <label htmlFor="conversation-model">Model</label>
       <select
+        className="conversation-model-select"
         id="conversation-model"
         value={selectedValue}
         disabled={disabled || unavailable}
