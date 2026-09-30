@@ -14,6 +14,7 @@ export type ConversationComposerFeedback =
 interface ConversationComposerProps {
   feedback: ConversationComposerFeedback | null;
   phase: ConversationComposerPhase;
+  onStop?: () => void;
   onSubmit: (content: string) => Promise<SubmissionResult>;
   submissionDisabled?: boolean;
 }
@@ -33,12 +34,15 @@ const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
 export function ConversationComposer({
   feedback,
   phase,
+  onStop,
   onSubmit,
   submissionDisabled = false,
 }: ConversationComposerProps) {
   const [draft, setDraft] = useState("");
   const active = phase !== "idle";
+  const stoppable = phase === "submitting" || phase === "generating";
   const normalizedDraft = draft.trim();
+  const placeholder = stoppable ? "Generating message…" : "Message Nexus";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,9 +50,16 @@ export function ConversationComposer({
       return;
     }
 
-    const result = await onSubmit(normalizedDraft);
-    if (result === "accepted") {
-      setDraft("");
+    const submittedDraft = normalizedDraft;
+    setDraft("");
+
+    const result = await onSubmit(submittedDraft);
+    if (
+      result === "uncertain" ||
+      result === "not_submitted" ||
+      result === "ignored"
+    ) {
+      setDraft(submittedDraft);
     }
   }
 
@@ -66,7 +77,11 @@ export function ConversationComposer({
   }
 
   return (
-    <form className="conversation-composer" onSubmit={handleSubmit}>
+    <form
+      aria-busy={active}
+      className="conversation-composer"
+      onSubmit={handleSubmit}
+    >
       <label htmlFor="conversation-message">Message</label>
       <div className="conversation-composer-controls">
         <textarea
@@ -74,37 +89,35 @@ export function ConversationComposer({
           id="conversation-message"
           autoComplete="off"
           disabled={active}
-          placeholder="Message Nexus"
+          placeholder={placeholder}
           rows={2}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
         />
-        <button
-          className="primary-button conversation-send-button"
-          disabled={
-            active || submissionDisabled || normalizedDraft.length === 0
-          }
-          type="submit"
-        >
-          {phase === "creating"
-            ? "Creating…"
-            : phase === "submitting"
-              ? "Sending…"
-              : phase === "generating"
-                ? "Generating…"
-                : "Send"}
-        </button>
+        {stoppable ? (
+          <button
+            className="primary-button conversation-send-button"
+            disabled={onStop === undefined}
+            type="button"
+            onClick={onStop}
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            className="primary-button conversation-send-button"
+            disabled={
+              phase === "creating" ||
+              submissionDisabled ||
+              normalizedDraft.length === 0
+            }
+            type="submit"
+          >
+            {phase === "creating" ? "Creating…" : "Send"}
+          </button>
+        )}
       </div>
-      {active ? (
-        <p className="conversation-submission-status" role="status">
-          {phase === "creating"
-            ? "Creating conversation…"
-            : phase === "submitting"
-              ? "Sending message…"
-              : "Generating…"}
-        </p>
-      ) : null}
       {feedback ? (
         <p className="conversation-submission-feedback" role="alert">
           {feedbackMessages[feedback.kind]}
