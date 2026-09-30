@@ -52,15 +52,17 @@ async def _resolve_blob(container_client: object, storage_key: str | None):
 
 async def _send(queue_name: str, payload: dict[str, object]) -> None:
     connection_string = _required_env("AZURE_SERVICE_BUS_CONNECTION_STRING")
-    async with ServiceBusClient.from_connection_string(connection_string) as client:
-        async with client.get_queue_sender(queue_name=queue_name) as sender:
-            await sender.send_messages(
-                ServiceBusMessage(
-                    json.dumps(payload, separators=(",", ":")),
-                    message_id=str(payload["id"]),
-                    content_type="application/json",
-                )
+    async with (
+        ServiceBusClient.from_connection_string(connection_string) as client,
+        client.get_queue_sender(queue_name=queue_name) as sender,
+    ):
+        await sender.send_messages(
+            ServiceBusMessage(
+                json.dumps(payload, separators=(",", ":")),
+                message_id=str(payload["id"]),
+                content_type="application/json",
             )
+        )
 
 
 async def _emit_upload_completed(storage_key: str | None) -> str:
