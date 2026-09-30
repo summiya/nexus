@@ -32,7 +32,7 @@ class FileWorkerComposition:
     service_bus_client: ServiceBusClient
     blob_service_client: BlobServiceClient
     database: Database
-    credential: ManagedIdentityCredential | None
+    credential: ManagedIdentityCredential
     auto_lock_renewer: AutoLockRenewer
 
     async def close(self) -> None:
@@ -50,8 +50,7 @@ class FileWorkerComposition:
                     try:
                         await self.database.dispose()
                     finally:
-                        if self.credential is not None:
-                            await self.credential.close()
+                        await self.credential.close()
 
 
 async def build_file_worker_composition(
@@ -59,54 +58,28 @@ async def build_file_worker_composition(
 ) -> FileWorkerComposition:
     """Build only resources required to verify and register File uploads."""
 
-    settings.validate_runtime_modes()
-
     credential: ManagedIdentityCredential | None = None
     client: ServiceBusClient | None = None
     blob_service_client: BlobServiceClient | None = None
     database: Database | None = None
     auto_lock_renewer: AutoLockRenewer | None = None
     try:
-        service_bus_connection = settings.azure_service_bus_connection_string
-        storage_connection = settings.azure_storage_connection_string
-
-        if service_bus_connection is not None or storage_connection is not None:
-            if service_bus_connection is None or storage_connection is None:
-                raise ValueError(
-                    "Local File worker requires both Service Bus and storage connection strings"
-                )
-            client = ServiceBusClient.from_connection_string(
-                service_bus_connection.get_secret_value()
-            )
-            blob_service_client = BlobServiceClient.from_connection_string(
-                storage_connection.get_secret_value()
-            )
-            storage_account_name = (
-                settings.azure_storage_account_name or "devstoreaccount1"
-            )
-        else:
-            client_id = settings.azure_service_bus_managed_identity_client_id
-            credential = (
-                ManagedIdentityCredential(client_id=str(client_id))
-                if client_id is not None
-                else ManagedIdentityCredential()
-            )
-            assert settings.azure_service_bus_fully_qualified_namespace is not None
-            assert settings.azure_storage_account_url is not None
-            client = ServiceBusClient(
-                fully_qualified_namespace=(
-                    settings.azure_service_bus_fully_qualified_namespace
-                ),
-                credential=credential,
-            )
-            blob_service_client = BlobServiceClient(
-                account_url=str(settings.azure_storage_account_url),
-                credential=credential,
-            )
-            storage_account_name = _storage_account_name(
-                str(settings.azure_storage_account_url)
-            )
-
+        client_id = settings.azure_service_bus_managed_identity_client_id
+        credential = (
+            ManagedIdentityCredential(client_id=str(client_id))
+            if client_id is not None
+            else ManagedIdentityCredential()
+        )
+        client = ServiceBusClient(
+            fully_qualified_namespace=(
+                settings.azure_service_bus_fully_qualified_namespace
+            ),
+            credential=credential,
+        )
+        blob_service_client = BlobServiceClient(
+            account_url=str(settings.azure_storage_account_url),
+            credential=credential,
+        )
         object_storage = AzureBlobObjectStorage(
             blob_service_client.get_container_client(settings.azure_storage_container)
         )
@@ -130,7 +103,7 @@ async def build_file_worker_composition(
             persistence=persistence,
         )
         auto_lock_renewer = AutoLockRenewer(
-            max_lock_renewal_duration=settings.file_worker_max_lock_renewal_seconds
+            max_lock_renewal_duration=(settings.file_worker_max_lock_renewal_seconds)
         )
         worker = AzureServiceBusUploadCompletionWorker(
             client=client,
@@ -148,7 +121,9 @@ async def build_file_worker_composition(
             queue_name=settings.azure_service_bus_malware_scan_queue_name,
             mapper=AzureMalwareScanResultMapper(
                 expected_topic=settings.azure_malware_scan_expected_topic,
-                expected_storage_account=storage_account_name,
+                expected_storage_account=_storage_account_name(
+                    str(settings.azure_storage_account_url)
+                ),
                 expected_container=settings.azure_storage_container,
                 nexus_source=settings.file_malware_scan_source,
             ),
