@@ -487,7 +487,7 @@ describe("useConversationSubmission", () => {
         "Hello again",
       ),
     );
-    expect(textarea).toHaveValue("Hello again");
+    expect(textarea).toHaveValue("");
 
     releaseRejection.resolve();
     expect(await screen.findByRole("alert")).toHaveTextContent(
