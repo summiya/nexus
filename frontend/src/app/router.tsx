@@ -12,7 +12,6 @@ import { AIModelsSettings } from "../features/model-management";
 import { AIProvidersSettings } from "../features/model-providers";
 import { ConversationPage } from "../pages/ConversationPage";
 import { FilesPage } from "../pages/FilesPage";
-import { HomePage } from "../pages/HomePage";
 import { SettingsPage } from "../pages/SettingsPage";
 
 function SettingsIndexRedirect() {
@@ -37,7 +36,7 @@ export function AppRouter() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AuthGate />}>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={<Navigate to="/conversations" replace />} />
             <Route path="/conversations" element={<ConversationPage />} />
             <Route
               path="/conversations/:conversationId"
@@ -50,7 +49,7 @@ export function AppRouter() {
               <Route path="ai-models" element={<AIModelsSettings />} />
             </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/conversations" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
