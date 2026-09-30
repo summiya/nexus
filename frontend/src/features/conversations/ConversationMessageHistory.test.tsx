@@ -165,7 +165,9 @@ describe("ConversationMessageHistory", () => {
       }),
     );
     rendered.rerender(
-      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+      />,
     );
 
     expect(history.scrollTop).toBe(640);
@@ -185,7 +187,9 @@ describe("ConversationMessageHistory", () => {
       }),
     );
     rendered.rerender(
-      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+      />,
     );
     expect(history.scrollTop).toBe(640);
 
@@ -204,7 +208,9 @@ describe("ConversationMessageHistory", () => {
       }),
     );
     rendered.rerender(
-      <ConversationMessageHistory conversationPublicId={conversationPublicId} />,
+      <ConversationMessageHistory
+        conversationPublicId={conversationPublicId}
+      />,
     );
 
     expect(history.scrollTop).toBe(120);

@@ -122,10 +122,7 @@ describe("ConversationComposer", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "submitting",
-    "generating",
-  ] satisfies ConversationComposerPhase[])(
+  it.each(["submitting", "generating"] satisfies ConversationComposerPhase[])(
     "shows an enabled Stop action and generating placeholder while %s",
     async (phase) => {
       const user = userEvent.setup();
