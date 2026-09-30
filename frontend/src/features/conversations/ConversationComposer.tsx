@@ -1,4 +1,9 @@
-import { type FormEvent, type KeyboardEvent, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useState,
+} from "react";
 
 import type {
   SubmissionFeedback,
@@ -13,6 +18,7 @@ export type ConversationComposerFeedback =
 
 interface ConversationComposerProps {
   feedback: ConversationComposerFeedback | null;
+  modelSelector?: ReactNode;
   phase: ConversationComposerPhase;
   onStop?: () => void;
   onSubmit: (content: string) => Promise<SubmissionResult>;
@@ -33,6 +39,7 @@ const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
 
 export function ConversationComposer({
   feedback,
+  modelSelector,
   phase,
   onStop,
   onSubmit,
@@ -95,28 +102,31 @@ export function ConversationComposer({
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
         />
-        {stoppable ? (
-          <button
-            className="primary-button conversation-send-button"
-            disabled={onStop === undefined}
-            type="button"
-            onClick={onStop}
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            className="primary-button conversation-send-button"
-            disabled={
-              phase === "creating" ||
-              submissionDisabled ||
-              normalizedDraft.length === 0
-            }
-            type="submit"
-          >
-            {phase === "creating" ? "Creating…" : "Send"}
-          </button>
-        )}
+        <div className="conversation-composer-actions">
+          {modelSelector}
+          {stoppable ? (
+            <button
+              className="primary-button conversation-send-button"
+              disabled={onStop === undefined}
+              type="button"
+              onClick={onStop}
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="primary-button conversation-send-button"
+              disabled={
+                phase === "creating" ||
+                submissionDisabled ||
+                normalizedDraft.length === 0
+              }
+              type="submit"
+            >
+              {phase === "creating" ? "Creating…" : "Send"}
+            </button>
+          )}
+        </div>
       </div>
       {phase === "creating" ? (
         <p className="conversation-submission-status" role="status">
