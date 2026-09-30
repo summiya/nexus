@@ -194,6 +194,7 @@ def _prepare_generation(
     generation: Generation,
     *,
     history_limit: int = 10,
+    initial_title: str | None = None,
 ) -> tuple[Message, ...]:
     return asyncio.run(
         persistence.prepare_generation(
@@ -202,6 +203,7 @@ def _prepare_generation(
             message=message,
             generation=generation,
             history_limit=history_limit,
+            initial_title=initial_title,
         )
     )
 
@@ -457,6 +459,63 @@ def test_list_conversations_returns_empty_tuple(
     )
 
     assert listed == ()
+
+
+def test_prepare_generation_sets_initial_title_only_when_missing(
+    migrated_engine: Engine,
+    conversation_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_public_id, user_public_id = _seed_identity(migrated_engine)
+    persistence = _persistence(conversation_async_session_factory)
+    untitled = replace(
+        _conversation(organization_public_id, user_public_id),
+        title=None,
+    )
+    _create_conversation(persistence, untitled)
+    first_message = _message(untitled.public_id, "First question")
+    first_generation = _generation(untitled.public_id, first_message.public_id)
+
+    _prepare_generation(
+        persistence,
+        organization_public_id,
+        untitled,
+        first_message,
+        first_generation,
+        initial_title="First question",
+    )
+
+    stored = asyncio.run(
+        persistence.get_conversation(
+            organization_public_id=organization_public_id,
+            conversation_public_id=untitled.public_id,
+        )
+    )
+    assert stored is not None
+    assert stored.title == "First question"
+    assert stored.updated_at == first_message.created_at
+
+    titled = _conversation(organization_public_id, user_public_id)
+    _create_conversation(persistence, titled)
+    titled_message = _message(titled.public_id, "Different question")
+    titled_generation = _generation(titled.public_id, titled_message.public_id)
+
+    _prepare_generation(
+        persistence,
+        organization_public_id,
+        titled,
+        titled_message,
+        titled_generation,
+        initial_title="Should not replace",
+    )
+
+    preserved = asyncio.run(
+        persistence.get_conversation(
+            organization_public_id=organization_public_id,
+            conversation_public_id=titled.public_id,
+        )
+    )
+    assert preserved is not None
+    assert preserved.title == "Conversation"
 
 
 def test_list_messages_returns_completed_assistant_generation_metadata(
