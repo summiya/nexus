@@ -8,6 +8,8 @@ import { establishSession } from "./session";
 import { useAuthStore } from "./store";
 import type { SessionTokens } from "./types";
 
+const DEFAULT_AUTHENTICATED_DESTINATION = "/conversations";
+
 function intendedDestination(state: unknown): string {
   if (
     !state ||
@@ -15,7 +17,7 @@ function intendedDestination(state: unknown): string {
     Array.isArray(state) ||
     !Object.prototype.hasOwnProperty.call(state, "from")
   ) {
-    return "/";
+    return DEFAULT_AUTHENTICATED_DESTINATION;
   }
 
   const from = (state as { from?: unknown }).from;
@@ -25,7 +27,7 @@ function intendedDestination(state: unknown): string {
     from.startsWith("//") ||
     from.includes("\\")
   ) {
-    return "/";
+    return DEFAULT_AUTHENTICATED_DESTINATION;
   }
 
   try {
@@ -35,10 +37,10 @@ function intendedDestination(state: unknown): string {
       destination.origin !== window.location.origin ||
       pathname.toLowerCase() === "/login"
     ) {
-      return "/";
+      return DEFAULT_AUTHENTICATED_DESTINATION;
     }
   } catch {
-    return "/";
+    return DEFAULT_AUTHENTICATED_DESTINATION;
   }
 
   return from;

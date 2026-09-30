@@ -79,7 +79,9 @@ describe("LoginPage", () => {
     setAuthStatus("authenticated");
     renderLoginState();
 
-    expect((await screen.findByTestId("destination")).textContent).toBe("/");
+    expect((await screen.findByTestId("destination")).textContent).toBe(
+      "/conversations",
+    );
     expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
   });
 
@@ -112,11 +114,13 @@ describe("LoginPage", () => {
     ["login with hash", { from: "/login#section" }],
     ["uppercase login", { from: "/LOGIN" }],
     ["mixed-case login", { from: "/Login/" }],
-  ])("falls back to home for a %s", async (_name, state) => {
+  ])("falls back to conversations for a %s", async (_name, state) => {
     setAuthStatus("authenticated");
     renderLoginState(state);
 
-    expect((await screen.findByTestId("destination")).textContent).toBe("/");
+    expect((await screen.findByTestId("destination")).textContent).toBe(
+      "/conversations",
+    );
   });
 
   it("advances from email request to OTP verification", async () => {
