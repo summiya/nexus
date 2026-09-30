@@ -148,7 +148,7 @@ async def _legacy_title_contents(
     if not untitled:
         return {}
 
-    organization_id = untitled[0].organization_id
+    organization_ids = {model.organization_id for model in untitled}
     conversation_ids = [model.id for model in untitled]
     ranked_messages = (
         select(
@@ -162,7 +162,7 @@ async def _legacy_title_contents(
             .label("position"),
         )
         .where(
-            MessageModel.organization_id == organization_id,
+            MessageModel.organization_id.in_(organization_ids),
             MessageModel.conversation_id.in_(conversation_ids),
             MessageModel.role == ConversationMessageRole.USER.value,
         )
