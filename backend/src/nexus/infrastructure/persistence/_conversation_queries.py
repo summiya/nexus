@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.conversations.domain import (
@@ -119,13 +119,17 @@ async def list_conversations(
         .correlate(ConversationModel)
         .scalar_subquery()
     )
+    fallback_title_preview = case(
+        (ConversationModel.title.is_(None), first_user_message_preview),
+        else_=None,
+    )
     rows = (
         await session.execute(
             select(
                 ConversationModel,
                 Organization.public_id,
                 User.public_id,
-                first_user_message_preview,
+                fallback_title_preview,
             )
             .join(Organization, ConversationModel.organization_id == Organization.id)
             .join(
