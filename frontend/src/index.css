@@ -803,8 +803,19 @@ p {
   font-size: 0.85rem;
   font-weight: 600;
 }
-.conversation-model-selector select {
+.conversation-model-select {
   min-width: min(20rem, 100%);
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 0.65rem;
+  background: rgba(8, 14, 23, 0.88);
+  color: #f8fafc;
+  color-scheme: dark;
+}
+
+.conversation-model-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 .conversation-model-selector [role="status"],
 .conversation-model-state {
@@ -834,13 +845,33 @@ p {
   align-items: flex-end;
   gap: 0.75rem;
 }
-.conversation-composer textarea {
+.conversation-message-input {
+  min-width: 0;
+  width: 100%;
   min-height: 3rem;
-  flex: 1;
+  flex: 1 1 auto;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 0.7rem;
+  background: rgba(8, 14, 23, 0.88);
+  color: #f8fafc;
+  font: inherit;
   resize: vertical;
 }
+
+.conversation-message-input::placeholder {
+  color: #64748b;
+}
+
+.conversation-message-input:focus-visible {
+  outline: 3px solid rgba(125, 211, 252, 0.5);
+  outline-offset: 2px;
+}
+
 .conversation-send-button {
+  width: auto;
   min-width: 7rem;
+  flex: 0 0 auto;
 }
 .conversation-submission-status,
 .conversation-submission-feedback {
@@ -996,7 +1027,7 @@ p {
     align-items: stretch;
     flex-direction: column;
   }
-  .conversation-model-selector select {
+  .conversation-model-select {
     width: 100%;
   }
   .conversation-send-button {
