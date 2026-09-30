@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.conversations.domain import (
@@ -94,10 +94,12 @@ async def get_conversation(
         return None
 
     model, stored_organization_public_id, creator_public_id = row
+    legacy_titles = await _legacy_title_contents(session, [model])
     return _to_conversation(
         model,
         organization_public_id=stored_organization_public_id,
         created_by_user_public_id=creator_public_id,
+        fallback_title_content=legacy_titles.get(model.id),
     )
 
 
@@ -107,30 +109,9 @@ async def list_conversations(
     organization_public_id: UUID,
     created_by_user_public_id: UUID,
 ) -> list[Conversation]:
-    first_user_message_preview = (
-        select(func.substr(MessageModel.content, 1, 512))
-        .where(
-            MessageModel.organization_id == ConversationModel.organization_id,
-            MessageModel.conversation_id == ConversationModel.id,
-            MessageModel.role == ConversationMessageRole.USER.value,
-        )
-        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
-        .limit(1)
-        .correlate(ConversationModel)
-        .scalar_subquery()
-    )
-    fallback_title_preview = case(
-        (ConversationModel.title.is_(None), first_user_message_preview),
-        else_=None,
-    )
     rows = (
         await session.execute(
-            select(
-                ConversationModel,
-                Organization.public_id,
-                User.public_id,
-                fallback_title_preview,
-            )
+            select(ConversationModel, Organization.public_id, User.public_id)
             .join(Organization, ConversationModel.organization_id == Organization.id)
             .join(
                 User,
@@ -144,20 +125,62 @@ async def list_conversations(
             .order_by(ConversationModel.created_at.desc(), ConversationModel.id.desc())
         )
     ).all()
+    models = [model for model, _, _ in rows]
+    legacy_titles = await _legacy_title_contents(session, models)
     return [
         _to_conversation(
             model,
             organization_public_id=stored_organization_public_id,
             created_by_user_public_id=creator_public_id,
-            fallback_title_content=first_user_message_content,
+            fallback_title_content=legacy_titles.get(model.id),
         )
-        for (
-            model,
-            stored_organization_public_id,
-            creator_public_id,
-            first_user_message_content,
-        ) in rows
+        for model, stored_organization_public_id, creator_public_id in rows
     ]
+
+
+async def _legacy_title_contents(
+    session: AsyncSession,
+    models: list[ConversationModel],
+) -> dict[int, str]:
+    """Fetch first-message title sources only for legacy untitled rows."""
+
+    untitled = [model for model in models if model.title is None]
+    if not untitled:
+        return {}
+
+    organization_id = untitled[0].organization_id
+    conversation_ids = [model.id for model in untitled]
+    ranked_messages = (
+        select(
+            MessageModel.conversation_id.label("conversation_id"),
+            func.substr(MessageModel.content, 1, 512).label("content"),
+            func.row_number()
+            .over(
+                partition_by=MessageModel.conversation_id,
+                order_by=(MessageModel.created_at.asc(), MessageModel.id.asc()),
+            )
+            .label("position"),
+        )
+        .where(
+            MessageModel.organization_id == organization_id,
+            MessageModel.conversation_id.in_(conversation_ids),
+            MessageModel.role == ConversationMessageRole.USER.value,
+        )
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(
+                ranked_messages.c.conversation_id,
+                ranked_messages.c.content,
+            ).where(ranked_messages.c.position == 1)
+        )
+    ).all()
+    return {
+        conversation_id: content
+        for conversation_id, content in rows
+        if isinstance(content, str) and content.strip()
+    }
 
 
 def _to_conversation(
@@ -202,21 +225,6 @@ async def set_initial_conversation_title(
         raise ConversationReferenceError("Conversation was not found")
 
     organization_id, conversation_id = reference
-    existing_user_message = await session.scalar(
-        select(func.substr(MessageModel.content, 1, 512))
-        .where(
-            MessageModel.organization_id == organization_id,
-            MessageModel.conversation_id == conversation_id,
-            MessageModel.role == ConversationMessageRole.USER.value,
-        )
-        .order_by(MessageModel.created_at.asc(), MessageModel.id.asc())
-        .limit(1)
-    )
-    resolved_title = (
-        conversation_title_from_message(existing_user_message)
-        if existing_user_message is not None
-        else title
-    )
     await session.execute(
         update(ConversationModel)
         .where(
@@ -224,7 +232,7 @@ async def set_initial_conversation_title(
             ConversationModel.organization_id == organization_id,
             ConversationModel.title.is_(None),
         )
-        .values(title=resolved_title, updated_at=updated_at)
+        .values(title=title, updated_at=updated_at)
     )
 
 
