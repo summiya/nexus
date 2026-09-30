@@ -244,7 +244,10 @@ async def build_storage_composition(
                 credential=credential,
             )
         container_client = service_client.get_container_client(container_name)
-        if connection_string is not None:
+        if (
+            connection_string is not None
+            and settings.azure_storage_public_blob_base_url is not None
+        ):
             try:
                 await container_client.create_container()
             except ResourceExistsError:
@@ -271,23 +274,24 @@ async def build_storage_composition(
         if upload_grant_issuer is not None:
             resolved_upload_grant_issuer = upload_grant_issuer
         elif connection_string is not None:
-            account_name = _connection_string_value(connection_string, "AccountName")
-            account_key = _connection_string_value(connection_string, "AccountKey")
             public_blob_base_url = (
                 str(settings.azure_storage_public_blob_base_url).rstrip("/")
                 if settings.azure_storage_public_blob_base_url is not None
                 else None
             )
             if public_blob_base_url is None:
-                raise StorageConfigurationError(
-                    "Azure storage public blob base URL is required for local direct uploads"
+                resolved_upload_grant_issuer = _UnavailableUploadGrantIssuer()
+            else:
+                resolved_upload_grant_issuer = AzureSharedKeyUploadGrantIssuer(
+                    account_name=_connection_string_value(
+                        connection_string, "AccountName"
+                    ),
+                    account_key=_connection_string_value(
+                        connection_string, "AccountKey"
+                    ),
+                    container_name=container_name,
+                    public_blob_base_url=public_blob_base_url,
                 )
-            resolved_upload_grant_issuer = AzureSharedKeyUploadGrantIssuer(
-                account_name=account_name,
-                account_key=account_key,
-                container_name=container_name,
-                public_blob_base_url=public_blob_base_url,
-            )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None
@@ -301,23 +305,24 @@ async def build_storage_composition(
         if download_grant_issuer is not None:
             resolved_download_grant_issuer = download_grant_issuer
         elif connection_string is not None:
-            account_name = _connection_string_value(connection_string, "AccountName")
-            account_key = _connection_string_value(connection_string, "AccountKey")
             public_blob_base_url = (
                 str(settings.azure_storage_public_blob_base_url).rstrip("/")
                 if settings.azure_storage_public_blob_base_url is not None
                 else None
             )
             if public_blob_base_url is None:
-                raise StorageConfigurationError(
-                    "Azure storage public blob base URL is required for local direct downloads"
+                resolved_download_grant_issuer = _UnavailableDownloadGrantIssuer()
+            else:
+                resolved_download_grant_issuer = AzureSharedKeyDownloadGrantIssuer(
+                    account_name=_connection_string_value(
+                        connection_string, "AccountName"
+                    ),
+                    account_key=_connection_string_value(
+                        connection_string, "AccountKey"
+                    ),
+                    container_name=container_name,
+                    public_blob_base_url=public_blob_base_url,
                 )
-            resolved_download_grant_issuer = AzureSharedKeyDownloadGrantIssuer(
-                account_name=account_name,
-                account_key=account_key,
-                container_name=container_name,
-                public_blob_base_url=public_blob_base_url,
-            )
         else:
             assert account_name is not None
             assert delegation_key_provider is not None
