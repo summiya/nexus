@@ -178,6 +178,8 @@ def build_settings(**overrides: object) -> Settings:
         "storage_provider": "azure_blob",
         "azure_storage_container": "nexus-files",
         "azure_storage_connection_string": None,
+        "azure_storage_public_blob_base_url": None,
+        "azure_storage_local_emulator_enabled": False,
         "azure_storage_account_url": None,
         "azure_storage_account_name": "nexus",
         "azure_storage_managed_identity_client_id": None,
