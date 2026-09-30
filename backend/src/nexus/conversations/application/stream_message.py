@@ -104,7 +104,9 @@ class StreamConversationMessage:
         )
 
         initial_title = (
-            conversation_title_from_message(content) if conversation.title is None else None
+            conversation_title_from_message(content)
+            if conversation.title is None
+            else None
         )
 
         try:
