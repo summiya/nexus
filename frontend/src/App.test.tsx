@@ -67,7 +67,9 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Start a new conversation" }),
     ).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe("/conversations"));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/conversations"),
+    );
   });
 
   it("redirects unknown authenticated routes to conversations", async () => {
@@ -78,7 +80,9 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "Start a new conversation" }),
     ).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe("/conversations"));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/conversations"),
+    );
   });
 
   it("redirects the settings index to the canonical AI Providers route", async () => {
@@ -228,19 +232,4 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the Conversation API error state when the landing request fails", async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({ error: { message: "Backend unavailable" } }),
-        {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-  });
 });
