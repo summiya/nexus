@@ -7,13 +7,17 @@ DOMAIN_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "documents" / "domain"
 )
 FORBIDDEN_IMPORTS = (
+    "alembic",
     "azure",
+    "boto3",
+    "cryptography",
     "fastapi",
+    "nexus.infrastructure",
     "pgvector",
+    "pydantic",
     "redis",
     "sqlalchemy",
-    "azure.servicebus",
-    "nexus.infrastructure",
+    "starlette",
 )
 
 

@@ -151,6 +151,13 @@ def test_extractor_version_is_optional_then_can_be_recorded_only_once() -> None:
         processing.record_extractor_version("extractor-v2")
 
 
+def test_same_extractor_version_cannot_be_recorded_twice() -> None:
+    processing = _processing().record_extractor_version("pdf-v1")
+
+    with pytest.raises(DocumentTransitionError, match="already been recorded"):
+        processing.record_extractor_version("pdf-v1")
+
+
 @pytest.mark.parametrize("value", [None, 1, True, "", " ", "v" * 129])
 def test_versions_are_nonblank_bounded_strings(value: object) -> None:
     with pytest.raises(DocumentDomainError):
@@ -194,6 +201,21 @@ def test_snapshot_status_and_metadata_must_be_consistent(
 ) -> None:
     with pytest.raises(DocumentDomainError, match="lifecycle metadata"):
         replace(_document(), **changes)
+
+
+def test_snapshot_rejects_string_status_instead_of_enum() -> None:
+    with pytest.raises(DocumentDomainError, match="status is invalid"):
+        replace(_document(), status=cast(DocumentStatus, "processing"))
+
+
+def test_snapshot_rejects_invalid_failure_object_type() -> None:
+    with pytest.raises(DocumentDomainError, match="failure metadata is invalid"):
+        replace(
+            _processing(),
+            status=DocumentStatus.FAILED,
+            failed_at=FINISHED_AT,
+            failure=cast(DocumentFailure, "PROCESSING_FAILED"),
+        )
 
 
 def test_timestamps_must_be_aware_and_chronological() -> None:
