@@ -1,27 +1,15 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
 DOMAIN_ROOT = (
     Path(__file__).resolve().parents[3] / "src" / "nexus" / "documents" / "domain"
 )
-FORBIDDEN_IMPORTS = (
-    "alembic",
-    "azure",
-    "boto3",
-    "cryptography",
-    "fastapi",
-    "nexus.infrastructure",
-    "pgvector",
-    "pydantic",
-    "redis",
-    "sqlalchemy",
-    "starlette",
-)
 
 
-def test_document_domain_has_no_infrastructure_or_transport_dependencies() -> None:
+def test_document_domain_depends_only_on_standard_library_and_itself() -> None:
     for path in sorted(DOMAIN_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         imports = {
@@ -36,8 +24,9 @@ def test_document_domain_has_no_infrastructure_or_transport_dependencies() -> No
             if isinstance(node, ast.ImportFrom) and node.module
         )
 
-        assert not any(
-            module == forbidden or module.startswith(f"{forbidden}.")
-            for module in imports
-            for forbidden in FORBIDDEN_IMPORTS
-        ), path
+        for module in imports:
+            if module == "nexus.documents.domain" or module.startswith(
+                "nexus.documents.domain."
+            ):
+                continue
+            assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)

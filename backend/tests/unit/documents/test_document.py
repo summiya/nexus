@@ -169,6 +169,18 @@ def test_versions_are_nonblank_bounded_strings(value: object) -> None:
         _processing().record_extractor_version(cast(str, value))
 
 
+@pytest.mark.parametrize("value", [" v1", "v1 "])
+def test_processing_version_rejects_surrounding_whitespace(value: str) -> None:
+    with pytest.raises(DocumentDomainError, match="Processing version is invalid"):
+        _document().start_processing(at=STARTED_AT, processing_version=value)
+
+
+@pytest.mark.parametrize("value", [" pdf-v1", "pdf-v1 "])
+def test_extractor_version_rejects_surrounding_whitespace(value: str) -> None:
+    with pytest.raises(DocumentDomainError, match="Extractor version is invalid"):
+        _processing().record_extractor_version(value)
+
+
 @pytest.mark.parametrize(
     ("code", "message"),
     [

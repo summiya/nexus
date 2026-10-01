@@ -36,13 +36,20 @@ def _require_uuid(value: object, field_name: str) -> None:
         raise DocumentDomainError(f"{field_name} is invalid.")
 
 
-def _require_text(value: object, field_name: str, maximum: int) -> None:
+def _require_text(value: object, field_name: str, maximum: int) -> str:
     if not isinstance(value, str):
         raise DocumentDomainError(f"{field_name} must be a string.")
     if not value.strip():
         raise DocumentDomainError(f"{field_name} is required.")
     if len(value) > maximum:
         raise DocumentDomainError(f"{field_name} is too long.")
+    return value
+
+
+def _require_version(value: object, field_name: str) -> None:
+    version = _require_text(value, field_name, _MAX_VERSION_LENGTH)
+    if version != version.strip():
+        raise DocumentDomainError(f"{field_name} is invalid.")
 
 
 def _require_timestamp(value: object, field_name: str) -> None:
@@ -102,7 +109,7 @@ class Document:
         ):
             value = getattr(self, field_name)
             if value is not None:
-                _require_text(value, label, _MAX_VERSION_LENGTH)
+                _require_version(value, label)
         for field_name in (
             "processing_started_at",
             "processing_completed_at",
@@ -145,7 +152,8 @@ class Document:
             raise DocumentTransitionError(
                 "Document extractor version has already been recorded."
             )
-        _require_text(extractor_version, "Extractor version", _MAX_VERSION_LENGTH)
+        if extractor_version is None:
+            raise DocumentDomainError("Extractor version must be a string.")
         return replace(self, extractor_version=extractor_version)
 
     def complete(self, *, at: datetime) -> Document:
@@ -184,25 +192,43 @@ class Document:
             raise DocumentTransitionError(message)
 
     def _validate_status_snapshot(self) -> None:
-        actual = tuple(
-            value is not None
-            for value in (
-                self.processing_version,
-                self.processing_started_at,
-                self.processing_completed_at,
-                self.failed_at,
-                self.failure,
+        if self.status is DocumentStatus.QUEUED:
+            valid = (
+                self.processing_version is None
+                and self.extractor_version is None
+                and self.processing_started_at is None
+                and self.processing_completed_at is None
+                and self.failed_at is None
+                and self.failure is None
             )
-        )
-        expected = {
-            DocumentStatus.QUEUED: (False, False, False, False, False),
-            DocumentStatus.PROCESSING: (True, True, False, False, False),
-            DocumentStatus.COMPLETED: (True, True, True, False, False),
-            DocumentStatus.FAILED: (True, True, False, True, True),
-        }
-        if actual != expected[self.status] or (
-            self.status is DocumentStatus.QUEUED and self.extractor_version is not None
-        ):
+        elif self.status is DocumentStatus.PROCESSING:
+            valid = (
+                self.processing_version is not None
+                and self.processing_started_at is not None
+                and self.processing_completed_at is None
+                and self.failed_at is None
+                and self.failure is None
+            )
+        elif self.status is DocumentStatus.COMPLETED:
+            valid = (
+                self.processing_version is not None
+                and self.processing_started_at is not None
+                and self.processing_completed_at is not None
+                and self.failed_at is None
+                and self.failure is None
+            )
+        elif self.status is DocumentStatus.FAILED:
+            valid = (
+                self.processing_version is not None
+                and self.processing_started_at is not None
+                and self.processing_completed_at is None
+                and self.failed_at is not None
+                and self.failure is not None
+            )
+        else:  # pragma: no cover - status type validation fails first
+            valid = False
+
+        if not valid:
             raise DocumentDomainError(
                 "Document lifecycle metadata is inconsistent with its status."
             )
