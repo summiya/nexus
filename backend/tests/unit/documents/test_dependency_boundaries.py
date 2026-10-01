@@ -41,6 +41,8 @@ def test_document_ports_depend_only_on_document_contracts_and_standard_library()
 ):
     for path in sorted(PORTS_ROOT.rglob("*.py")):
         for module in _imports(path):
-            if module == "nexus.documents" or module.startswith("nexus.documents."):
+            if module in {"nexus.documents.domain", "nexus.documents.ports"} or (
+                module.startswith(("nexus.documents.domain.", "nexus.documents.ports."))
+            ):
                 continue
             assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)

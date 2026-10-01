@@ -339,6 +339,134 @@ def test_active_document_uniqueness_and_terminal_history(
     assert {row.status for row in rows} == {"completed", "failed", "queued"}
 
 
+@pytest.mark.parametrize(
+    ("expected_factory", "successor_factory"),
+    [
+        pytest.param(
+            lambda document: document,
+            lambda document: _processing(document),
+            id="queued-to-processing",
+        ),
+        pytest.param(
+            lambda document: _processing(document),
+            lambda document: _processing(document).record_extractor_version("pdf-v1"),
+            id="processing-records-first-extractor",
+        ),
+        pytest.param(
+            lambda document: _processing(document),
+            lambda document: _processing(document).complete(at=FINISHED_AT),
+            id="processing-to-completed",
+        ),
+        pytest.param(
+            lambda document: _processing(document),
+            lambda document: _processing(document).fail(
+                at=FINISHED_AT,
+                code="PROCESSING_FAILED",
+                safe_message="Processing failed.",
+            ),
+            id="processing-to-failed",
+        ),
+    ],
+)
+def test_update_accepts_only_dp01_lifecycle_successors(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    expected_factory: Callable[[Document], Document],
+    successor_factory: Callable[[Document], Document],
+) -> None:
+    organization_public_id, file_public_id = _seed_file(migrated_engine)
+    initial = _document(organization_public_id, file_public_id)
+    expected = expected_factory(initial)
+    successor = successor_factory(initial)
+    persistence = _persistence(persistence_async_session_factory)
+    asyncio.run(persistence.create_document(expected))
+
+    asyncio.run(persistence.update_document(expected=expected, document=successor))
+
+    stored = asyncio.run(
+        persistence.get_document(
+            organization_public_id=organization_public_id,
+            document_public_id=initial.public_id,
+        )
+    )
+    assert stored == successor
+
+
+@pytest.mark.parametrize(
+    ("expected_factory", "illegal_successor_factory"),
+    [
+        pytest.param(
+            lambda document: document,
+            lambda document: _processing(document).complete(at=FINISHED_AT),
+            id="queued-to-completed",
+        ),
+        pytest.param(
+            lambda document: document,
+            lambda document: _processing(document).fail(
+                at=FINISHED_AT,
+                code="PROCESSING_FAILED",
+                safe_message="Processing failed.",
+            ),
+            id="queued-to-failed",
+        ),
+        pytest.param(
+            lambda document: _processing(document, extractor=True),
+            lambda document: replace(
+                _processing(document, extractor=True),
+                extractor_version="pdf-v2",
+            ),
+            id="processing-replaces-recorded-extractor",
+        ),
+        pytest.param(
+            lambda document: _processing(document).complete(at=FINISHED_AT),
+            lambda document: _processing(document).fail(
+                at=FINISHED_AT,
+                code="PROCESSING_FAILED",
+                safe_message="Processing failed.",
+            ),
+            id="completed-to-failed",
+        ),
+        pytest.param(
+            lambda document: _processing(document).fail(
+                at=FINISHED_AT,
+                code="PROCESSING_FAILED",
+                safe_message="Processing failed.",
+            ),
+            lambda document: _processing(document).complete(at=FINISHED_AT),
+            id="failed-to-completed",
+        ),
+    ],
+)
+def test_update_rejects_illegal_or_terminal_lifecycle_successors(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+    expected_factory: Callable[[Document], Document],
+    illegal_successor_factory: Callable[[Document], Document],
+) -> None:
+    organization_public_id, file_public_id = _seed_file(migrated_engine)
+    initial = _document(organization_public_id, file_public_id)
+    expected = expected_factory(initial)
+    illegal_successor = illegal_successor_factory(initial)
+    persistence = _persistence(persistence_async_session_factory)
+    asyncio.run(persistence.create_document(expected))
+
+    with pytest.raises(DocumentConflictError, match="Document persistence conflict"):
+        asyncio.run(
+            persistence.update_document(
+                expected=expected,
+                document=illegal_successor,
+            )
+        )
+
+    stored = asyncio.run(
+        persistence.get_document(
+            organization_public_id=organization_public_id,
+            document_public_id=initial.public_id,
+        )
+    )
+    assert stored == expected
+
+
 def test_update_rejects_stale_snapshot_and_immutable_identity_change(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],

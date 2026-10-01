@@ -122,6 +122,11 @@ def upgrade() -> None:
             name="ck_documents_timestamp_order",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_documents"),
+        sa.UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_documents_id_organization_id",
+        ),
         sa.UniqueConstraint("public_id", name="uq_documents_public_id"),
     )
     op.create_index(

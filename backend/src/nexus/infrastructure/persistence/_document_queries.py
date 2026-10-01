@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.documents.domain import Document, DocumentFailure, DocumentStatus
-from nexus.documents.ports import DocumentReferenceError
+from nexus.documents.ports import DocumentPersistenceError, DocumentReferenceError
 from nexus.infrastructure.persistence.models.document import Document as DocumentModel
 from nexus.infrastructure.persistence.models.file import File as FileModel
 from nexus.infrastructure.persistence.models.organization import Organization
@@ -150,22 +150,25 @@ def _to_document(
     organization_public_id: UUID,
     source_file_public_id: UUID,
 ) -> Document:
-    failure = None
-    if model.failure_code is not None and model.failure_safe_message is not None:
-        failure = DocumentFailure(
-            code=model.failure_code,
-            safe_message=model.failure_safe_message,
+    try:
+        failure = None
+        if model.failure_code is not None and model.failure_safe_message is not None:
+            failure = DocumentFailure(
+                code=model.failure_code,
+                safe_message=model.failure_safe_message,
+            )
+        return Document(
+            public_id=model.public_id,
+            organization_public_id=organization_public_id,
+            source_file_public_id=source_file_public_id,
+            created_at=model.created_at,
+            status=DocumentStatus(model.status),
+            processing_version=model.processing_version,
+            extractor_version=model.extractor_version,
+            processing_started_at=model.processing_started_at,
+            processing_completed_at=model.processing_completed_at,
+            failed_at=model.failed_at,
+            failure=failure,
         )
-    return Document(
-        public_id=model.public_id,
-        organization_public_id=organization_public_id,
-        source_file_public_id=source_file_public_id,
-        created_at=model.created_at,
-        status=DocumentStatus(model.status),
-        processing_version=model.processing_version,
-        extractor_version=model.extractor_version,
-        processing_started_at=model.processing_started_at,
-        processing_completed_at=model.processing_completed_at,
-        failed_at=model.failed_at,
-        failure=failure,
-    )
+    except ValueError as exc:
+        raise DocumentPersistenceError("Document persistence failed") from exc

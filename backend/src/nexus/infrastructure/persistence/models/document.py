@@ -103,6 +103,11 @@ class Document(Base):
             name="ck_documents_timestamp_order",
         ),
         UniqueConstraint("public_id", name="uq_documents_public_id"),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            name="uq_documents_id_organization_id",
+        ),
         Index(
             "ix_documents_source_file_id_organization_id",
             "source_file_id",

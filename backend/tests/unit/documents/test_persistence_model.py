@@ -20,6 +20,12 @@ def test_document_model_defines_tenant_safe_file_relationship() -> None:
         and constraint.name == "uq_documents_public_id"
         for constraint in constraints
     )
+    assert any(
+        isinstance(constraint, UniqueConstraint)
+        and constraint.name == "uq_documents_id_organization_id"
+        and constraint.columns.keys() == ["id", "organization_id"]
+        for constraint in constraints
+    )
 
 
 def test_document_model_defines_lifecycle_constraints_and_active_index() -> None:

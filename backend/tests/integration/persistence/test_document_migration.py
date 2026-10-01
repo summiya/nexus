@@ -44,6 +44,14 @@ def test_document_migration_upgrade_and_downgrade(
         "ck_documents_status",
         "ck_documents_timestamp_order",
     }
+    unique_constraints = {
+        item["name"]: item["column_names"]
+        for item in inspector.get_unique_constraints("documents")
+    }
+    assert unique_constraints == {
+        "uq_documents_id_organization_id": ["id", "organization_id"],
+        "uq_documents_public_id": ["public_id"],
+    }
     with engine.connect() as connection:
         active_index = connection.execute(
             text(
