@@ -956,6 +956,26 @@ concerns, not additional Document processing states. Reprocessing is also a
 separate future lifecycle and is not represented by resetting a terminal
 Document.
 
+## Persistence
+
+PostgreSQL stores Document identity and lifecycle metadata only. The
+`documents` table uses internal organization and source File identifiers while
+the domain boundary continues to use public UUIDs. A composite foreign key from
+`(source_file_id, organization_id)` to `files(id, organization_id)` prevents a
+cross-tenant File relationship. The matching unique parent key on
+`documents(id, organization_id)` allows future child records to enforce the
+same tenant-safe relationship without implementing those children in DP-02.
+
+At most one Document may be `queued` or `processing` for a source File. The
+partial uniqueness rule does not apply to terminal rows, so terminal history
+and a later explicit processing-generation design remain possible. DP-02 does
+not implement reprocessing or processing generations.
+
+Extracted or normalized document bodies, chunks, embeddings, vector/search
+fields, retrieval state, and RAG state are not stored in `documents`. A future
+large normalized artifact belongs in object storage behind a provider-neutral
+boundary, with only minimal reference metadata in PostgreSQL if required.
+
 ---
 
 # 21. Entity: DocumentChunk
