@@ -493,6 +493,44 @@ def test_update_rejects_stale_snapshot_and_immutable_identity_change(
         )
 
 
+def test_update_hides_foreign_tenant_document_like_a_missing_document(
+    migrated_engine: Engine,
+    persistence_async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    caller_organization_public_id, caller_file_public_id = _seed_file(migrated_engine)
+    foreign_organization_public_id, foreign_file_public_id = _seed_file(migrated_engine)
+    foreign_document = _document(
+        foreign_organization_public_id,
+        foreign_file_public_id,
+    )
+    persistence = _persistence(persistence_async_session_factory)
+    asyncio.run(persistence.create_document(foreign_document))
+
+    missing = _document(caller_organization_public_id, caller_file_public_id)
+    disguised_foreign = replace(
+        foreign_document,
+        organization_public_id=caller_organization_public_id,
+        source_file_public_id=caller_file_public_id,
+    )
+    for expected in (missing, disguised_foreign):
+        proposed = _processing(expected)
+        with pytest.raises(
+            DocumentConflictError,
+            match="^Document persistence conflict$",
+        ):
+            asyncio.run(
+                persistence.update_document(expected=expected, document=proposed)
+            )
+
+    stored = asyncio.run(
+        persistence.get_document(
+            organization_public_id=foreign_organization_public_id,
+            document_public_id=foreign_document.public_id,
+        )
+    )
+    assert stored == foreign_document
+
+
 def test_create_transaction_settles_before_cancellation_propagates(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],

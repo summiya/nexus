@@ -158,6 +158,58 @@ def test_same_extractor_version_cannot_be_recorded_twice() -> None:
         processing.record_extractor_version("pdf-v1")
 
 
+def test_immediate_successor_accepts_each_single_legal_transition() -> None:
+    queued = _document()
+    processing = queued.start_processing(
+        at=STARTED_AT,
+        processing_version="pipeline-v1",
+    )
+
+    assert queued.is_immediate_successor(processing) is True
+    assert (
+        processing.is_immediate_successor(processing.record_extractor_version("pdf-v1"))
+        is True
+    )
+    assert (
+        processing.is_immediate_successor(processing.complete(at=FINISHED_AT)) is True
+    )
+    assert (
+        processing.is_immediate_successor(
+            processing.fail(
+                at=FINISHED_AT,
+                code="PROCESSING_FAILED",
+                safe_message="Processing failed.",
+            )
+        )
+        is True
+    )
+
+
+def test_immediate_successor_rejects_skips_reversals_and_terminal_updates() -> None:
+    queued = _document()
+    processing = queued.start_processing(
+        at=STARTED_AT,
+        processing_version="pipeline-v1",
+    )
+    extracted = processing.record_extractor_version("pdf-v1")
+    completed = processing.complete(at=FINISHED_AT)
+    failed = processing.fail(
+        at=FINISHED_AT,
+        code="PROCESSING_FAILED",
+        safe_message="Processing failed.",
+    )
+
+    assert queued.is_immediate_successor(processing.complete(at=FINISHED_AT)) is False
+    assert queued.is_immediate_successor(failed) is False
+    assert processing.is_immediate_successor(queued) is False
+    assert (
+        extracted.is_immediate_successor(replace(extracted, extractor_version="pdf-v2"))
+        is False
+    )
+    assert completed.is_immediate_successor(failed) is False
+    assert failed.is_immediate_successor(completed) is False
+
+
 @pytest.mark.parametrize("value", [None, 1, True, "", " ", "v" * 129])
 def test_versions_are_nonblank_bounded_strings(value: object) -> None:
     with pytest.raises(DocumentDomainError):

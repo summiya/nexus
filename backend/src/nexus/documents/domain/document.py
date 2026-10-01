@@ -187,6 +187,43 @@ class Document:
             failure=DocumentFailure(code=code, safe_message=safe_message),
         )
 
+    def is_immediate_successor(self, proposed: Document) -> bool:
+        """Return whether proposed is exactly one legal lifecycle transition later."""
+        successor: Document | None = None
+        if self.status is DocumentStatus.QUEUED:
+            if (
+                proposed.status is DocumentStatus.PROCESSING
+                and proposed.processing_started_at is not None
+                and proposed.processing_version is not None
+            ):
+                successor = self.start_processing(
+                    at=proposed.processing_started_at,
+                    processing_version=proposed.processing_version,
+                )
+        elif self.status is DocumentStatus.PROCESSING:
+            if (
+                proposed.status is DocumentStatus.PROCESSING
+                and self.extractor_version is None
+                and proposed.extractor_version is not None
+            ):
+                successor = self.record_extractor_version(proposed.extractor_version)
+            elif (
+                proposed.status is DocumentStatus.COMPLETED
+                and proposed.processing_completed_at is not None
+            ):
+                successor = self.complete(at=proposed.processing_completed_at)
+            elif (
+                proposed.status is DocumentStatus.FAILED
+                and proposed.failed_at is not None
+                and proposed.failure is not None
+            ):
+                successor = self.fail(
+                    at=proposed.failed_at,
+                    code=proposed.failure.code,
+                    safe_message=proposed.failure.safe_message,
+                )
+        return successor == proposed
+
     def _require_status(self, required: DocumentStatus, message: str) -> None:
         if self.status is not required:
             raise DocumentTransitionError(message)
