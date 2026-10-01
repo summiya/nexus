@@ -126,6 +126,8 @@ services:
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    environment:
+      AZURITE_SKIP_API_VERSION_CHECK: "true"
     ports:
       - "10000:10000"
     volumes:

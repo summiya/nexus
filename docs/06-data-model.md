@@ -880,8 +880,8 @@ does not replace application authorization.
 File
     binary identity, ownership, storage metadata
 
-Document (future)
-    parsed/indexable representation derived from a File
+Document
+    processing identity and lifecycle derived from a File
 ```
 
 Extracted text, pages, chunks, embeddings, vector identifiers, retrieval data,
@@ -916,45 +916,45 @@ storage phases.
 
 ## Purpose
 
-Represents a logical parsed/indexable document.
-
-A Document is usually derived from a File.
+Represents the provider-neutral processing identity and lifecycle derived from
+exactly one available File. DP-01 implements this domain contract only;
+Document persistence and File eligibility orchestration remain later phases.
 
 ## Fields
 
 ```text
-id
-organization_id
-workspace_id
-project_id
-file_id
-knowledge_base_id
-title
-source_type
-source_uri nullable
-mime_type
-version
-status
-metadata_json
+public_id UUID
+organization_public_id UUID
+source_file_public_id UUID
+status: queued | processing | completed | failed
+processing_version nullable while queued
+extractor_version nullable
 created_at
-updated_at
-deleted_at
+processing_started_at nullable
+processing_completed_at nullable
+failed_at nullable
+safe failure code/message nullable
 ```
 
 ## Lifecycle
 
 ```text
-uploaded
 queued
+    ↓
 processing
-parsed
-chunking
-embedding
-indexed
-ready
-failed
-deleted
+    ├──→ completed
+    └──→ failed
 ```
+
+`processing` covers source retrieval, extraction where required,
+normalization, chunking, and chunk persistence. `processing_version` is fixed
+when processing begins. `extractor_version` is recorded once the actual
+extractor is selected and remains null when no extractor is used.
+
+Embedding, vector indexing, and readiness for retrieval are later capability
+concerns, not additional Document processing states. Reprocessing is also a
+separate future lifecycle and is not represented by resetting a terminal
+Document.
 
 ---
 
