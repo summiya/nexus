@@ -6,6 +6,7 @@ from asyncio import CancelledError
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TypedDict
 
 from azure.core.exceptions import ResourceExistsError
 from azure.identity.aio import ManagedIdentityCredential
@@ -35,6 +36,23 @@ _LOCAL_CONNECTION_STRING_ENVIRONMENTS = frozenset({"development", "test"})
 _INVALID_ACCOUNT_URL_MESSAGE = (
     "Azure storage account URL must be a credential-free HTTPS service root"
 )
+
+
+class _AzureBlobClientOptions(TypedDict):
+    max_single_get_size: int
+    max_chunk_get_size: int
+    connection_timeout: int
+    read_timeout: int
+    retry_total: int
+
+
+_AZURE_BLOB_CLIENT_OPTIONS: _AzureBlobClientOptions = {
+    "max_single_get_size": 4 * 1024 * 1024,
+    "max_chunk_get_size": 4 * 1024 * 1024,
+    "connection_timeout": 5,
+    "read_timeout": 30,
+    "retry_total": 2,
+}
 
 type AsyncCloseCallback = Callable[[], Awaitable[None]]
 
@@ -234,11 +252,7 @@ async def build_storage_composition(
         if connection_string is not None:
             service_client = BlobServiceClient.from_connection_string(
                 connection_string,
-                max_single_get_size=4 * 1024 * 1024,
-                max_chunk_get_size=4 * 1024 * 1024,
-                connection_timeout=5,
-                read_timeout=30,
-                retry_total=2,
+                **_AZURE_BLOB_CLIENT_OPTIONS,
             )
         else:
             assert account_url is not None
@@ -251,11 +265,7 @@ async def build_storage_composition(
             service_client = BlobServiceClient(
                 account_url=account_url,
                 credential=credential,
-                max_single_get_size=4 * 1024 * 1024,
-                max_chunk_get_size=4 * 1024 * 1024,
-                connection_timeout=5,
-                read_timeout=30,
-                retry_total=2,
+                **_AZURE_BLOB_CLIENT_OPTIONS,
             )
         container_client = service_client.get_container_client(container_name)
         local_emulator_enabled = (
