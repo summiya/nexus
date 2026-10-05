@@ -1448,3 +1448,25 @@ Deleting a Document-referenced File returns a safe HTTP 409 before Blob deletion
 The guard runs under the same File lock used by initiation, preserving the DP-02
 restrictive foreign key and preventing source removal followed by database failure.
 Document cleanup, cascading deletion, and pipeline cancellation remain deferred.
+
+## DP-04 dispatch and Document worker boundary
+
+The File malware-scan flow still ends at the atomic DP-03 transaction. A separate
+bounded dispatcher publishes its durable requests to `document-processing-requests`.
+The small, strict versioned message uses public identity only and follows the
+existing 64 KiB transport bound. Azure SDK types stay in infrastructure/composition;
+Document contracts and application orchestration are provider neutral.
+
+Document consumption uses fixed receive slots, PeekLock, zero prefetch, bounded
+lock renewal, safe DLQ descriptions, type-only error logging, and hashed correlation.
+Malformed/unmatched requests are dead-lettered; transient failures are abandoned;
+successful handling (including lifecycle duplicates) is completed. Shutdown cancels
+unfinished handlers, waits for persistence settlement, and abandons the delivery.
+Different Documents can run concurrently. Same-Document competing claims are
+serialized by the existing PostgreSQL snapshot boundary, not by a global worker lock.
+
+Production `python -m nexus.workers.document_processing` runs dispatch using
+Managed Identity. `python -m nexus.workers.document_consumer` deliberately fails
+closed before creating resources: no real downstream processor is wired yet.
+Tests may inject a processor through composition, but no placeholder exists in
+production. DP-05 streaming/extraction and later processing/recovery are excluded.
