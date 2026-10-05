@@ -3,6 +3,9 @@
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.conversation import Conversation
 from nexus.infrastructure.persistence.models.document import Document
+from nexus.infrastructure.persistence.models.document_processing_request import (
+    DocumentProcessingRequest,
+)
 from nexus.infrastructure.persistence.models.file import File
 from nexus.infrastructure.persistence.models.generation import Generation
 from nexus.infrastructure.persistence.models.message import Message
@@ -24,6 +27,7 @@ __all__ = [
     "ConfiguredModel",
     "Conversation",
     "Document",
+    "DocumentProcessingRequest",
     "File",
     "Generation",
     "Message",

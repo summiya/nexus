@@ -21,6 +21,10 @@ class FilePersistenceError(Exception):
     """An unexpected File persistence failure occurred."""
 
 
+class FileReferencedError(Exception):
+    """A Document reference prevents deleting the File and its source object."""
+
+
 class FileReferenceError(Exception):
     """A required File organization or creator reference is invalid."""
 
@@ -101,5 +105,6 @@ __all__ = [
     "FilePersistence",
     "FilePersistenceError",
     "FileReferenceError",
+    "FileReferencedError",
     "FileStateConflictError",
 ]

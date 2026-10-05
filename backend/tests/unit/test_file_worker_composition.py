@@ -12,6 +12,9 @@ from nexus.composition import file_worker as composition_module
 from nexus.composition.file_worker import build_file_worker_composition
 from nexus.config.file_worker_settings import FileWorkerSettings
 from nexus.files.application import ApplyMalwareScanResult, VerifyUploadCompletion
+from nexus.infrastructure.persistence.document_initiation import (
+    SqlAlchemyDocumentInitiationPersistence,
+)
 from nexus.infrastructure.persistence.session import Database
 
 DEVELOPMENT_CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
@@ -201,6 +204,10 @@ def test_builds_dedicated_worker_and_closes_owned_resources_once() -> None:
             ApplyMalwareScanResult,
         )
 
+        assert isinstance(
+            composition.malware_scan_worker.handler.initiation,
+            SqlAlchemyDocumentInitiationPersistence,
+        )
         await composition.close()
 
         assert renewer.close_calls == 1

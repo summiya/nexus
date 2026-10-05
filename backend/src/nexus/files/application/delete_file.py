@@ -14,6 +14,7 @@ from nexus.files.application.delete_access import authorize_files_delete
 from nexus.files.ports import (
     FilePersistence,
     FilePersistenceError,
+    FileReferencedError,
     ObjectStorage,
     ObjectStorageError,
 )
@@ -61,6 +62,11 @@ class DeleteFile:
                 file_public_id=file_public_id,
                 updated_at=self.clock(),
             )
+        except FileReferencedError as exc:
+            raise NexusError(
+                ErrorCode.CONFLICT,
+                "The file is referenced by a document and cannot be deleted.",
+            ) from exc
         except FilePersistenceError as exc:
             logger.warning("file_delete_prepare_failed", correlation=correlation)
             raise NexusError(

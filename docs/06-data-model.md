@@ -917,8 +917,8 @@ storage phases.
 ## Purpose
 
 Represents the provider-neutral processing identity and lifecycle derived from
-exactly one available File. DP-01 implements this domain contract only;
-Document persistence and File eligibility orchestration remain later phases.
+exactly one available File. DP-01 implements the domain lifecycle, DP-02
+persists immutable snapshots, and DP-03 initiates eligible Files atomically.
 
 ## Fields
 
@@ -975,6 +975,37 @@ Extracted or normalized document bodies, chunks, embeddings, vector/search
 fields, retrieval state, and RAG state are not stored in `documents`. A future
 large normalized artifact belongs in object storage behind a provider-neutral
 boundary, with only minimal reference metadata in PostgreSQL if required.
+
+## Initial ingestion and durable request (DP-03)
+
+The verified CLEAN malware-scan handoff uses a dedicated Document initiation
+persistence boundary. A short PostgreSQL transaction locks the authoritative
+File and commits its `pending → available` transition together with one initial
+`queued` Document and one `document_processing_requests` row for eligible Files.
+Unsupported Files become available without a Document or request. Object
+properties are verified before opening the transaction; no queue call occurs.
+
+The request stores a stable public UUID, organization/source File/Document
+references, verified source ETag, expected byte size, creation time, and nullable
+future dispatch time. It does not duplicate the storage key: File remains the
+storage identity. The ETag identifies the object verified at initiation; it does
+not promise the object cannot change later. DP-05 owns exact-source verification.
+
+One initial request per source File is enforced even after its Document becomes
+terminal or its request is dispatched. A composite foreign key binds the request
+to the exact Document, organization, and source File; the additional Document
+unique key supports that relationship without changing lifecycle behavior.
+Requests contain no content or parser/retrieval payloads.
+
+`available` plus a matching request is an idempotent duplicate. A different ETag
+or size conflicts; the original request is never replaced. `available` without
+an initial request is not backfilled. Existing Documents without a compatible
+initial request are not adopted on the pending initiation path. Initial-ingestion
+markers must be retained after eventual dispatch. Historical backfill,
+reprocessing, dispatch/claim leases, and processing itself remain later work.
+
+File deletion rejects Document-referenced Files before marking deleting or
+removing their source object. The existing restrictive foreign keys remain intact.
 
 ---
 

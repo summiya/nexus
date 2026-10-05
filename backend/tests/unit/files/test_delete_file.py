@@ -12,6 +12,7 @@ from nexus.files.application import DeleteFile
 from nexus.files.ports import (
     FileDeletionTarget,
     FilePersistenceError,
+    FileReferencedError,
     ObjectStorageError,
 )
 
@@ -248,3 +249,21 @@ def test_delete_logs_only_safe_hashed_correlation(
     assert STORAGE_KEY not in serialized
     assert str(organization_id) not in serialized
     assert str(file_id) not in serialized
+
+
+def test_referenced_file_conflicts_before_blob_deletion() -> None:
+    events: list[str] = []
+    persistence = FakePersistence(events)
+    persistence.prepare_error = FileReferencedError("private database detail")
+    organization_id, user_id, file_id = _ids()
+    with pytest.raises(NexusError) as captured:
+        asyncio.run(
+            _service(persistence, FakeStorage(events)).execute(
+                organization_public_id=organization_id,
+                user_public_id=user_id,
+                file_public_id=file_id,
+            )
+        )
+    assert captured.value.code is ErrorCode.CONFLICT
+    assert events == ["prepare"]
+    assert "private" not in str(captured.value)

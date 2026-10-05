@@ -9,7 +9,12 @@ from sqlalchemy import delete, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.files.domain import File, FileStorageStatus
-from nexus.files.ports import FileDeletionTarget, FileReferenceError
+from nexus.files.ports import (
+    FileDeletionTarget,
+    FileReferencedError,
+    FileReferenceError,
+)
+from nexus.infrastructure.persistence.models.document import Document as DocumentModel
 from nexus.infrastructure.persistence.models.file import File as FileModel
 from nexus.infrastructure.persistence.models.organization import Organization
 from nexus.infrastructure.persistence.models.user import User
@@ -144,13 +149,22 @@ async def prepare_file_deletion(
                 Organization.public_id == organization_public_id,
                 FileModel.public_id == file_public_id,
             )
-            .with_for_update()
+            .with_for_update(of=FileModel)
         )
     ).one_or_none()
     if row is None:
         return None
 
     file_id, storage_key, storage_status = row
+    if (
+        await session.scalar(
+            select(DocumentModel.id)
+            .where(DocumentModel.source_file_id == file_id)
+            .limit(1)
+        )
+        is not None
+    ):
+        raise FileReferencedError("File is referenced by a Document")
     if storage_status != FileStorageStatus.DELETING.value:
         await session.execute(
             update(FileModel)
@@ -266,3 +280,24 @@ async def update_file_storage_status(
             updated_at=updated_at,
         )
     )
+
+
+async def file_for_update(session: AsyncSession, *, storage_key: str) -> File | None:
+    """Resolve authoritative ownership under the trusted storage-key File lock."""
+    row = (
+        await session.execute(
+            select(FileModel, Organization.public_id, User.public_id)
+            .join(Organization, Organization.id == FileModel.organization_id)
+            .join(
+                User,
+                (User.id == FileModel.created_by_user_id)
+                & (User.organization_id == FileModel.organization_id),
+            )
+            .where(FileModel.storage_key == storage_key)
+            .with_for_update(of=FileModel)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    model, organization_public_id, creator_public_id = row
+    return _to_file(model, organization_public_id, creator_public_id)

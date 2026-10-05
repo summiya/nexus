@@ -46,3 +46,11 @@ def test_document_ports_depend_only_on_document_contracts_and_standard_library()
             ):
                 continue
             assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)
+
+
+def test_document_application_has_no_provider_transport_or_orm_dependencies() -> None:
+    for path in sorted((DOMAIN_ROOT.parent / "application").rglob("*.py")):
+        for module in _imports(path):
+            assert not module.startswith(
+                ("azure", "sqlalchemy", "fastapi", "nexus.infrastructure")
+            ), (path, module)
