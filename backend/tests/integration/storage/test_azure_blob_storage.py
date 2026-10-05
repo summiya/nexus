@@ -248,3 +248,66 @@ def test_upload_context_metadata_round_trips_through_object_properties() -> None
         assert properties.entity_tag
 
     asyncio.run(_with_isolated_storage(scenario))
+
+
+def test_conditional_multichunk_read_matches_admitted_etag():
+    async def scenario(storage, client):
+        await storage.create_object(
+            storage_key="exact", content=byte_stream(b"0123456789abcdef")
+        )
+        properties = await storage.get_object_properties(storage_key="exact")
+        chunks = [
+            chunk
+            async for chunk in storage.stream_object(
+                storage_key="exact", expected_entity_tag=properties.entity_tag
+            )
+        ]
+        assert b"".join(chunks) == b"0123456789abcdef"
+        assert max(map(len, chunks)) <= 4
+
+    asyncio.run(_with_isolated_storage(scenario))
+
+
+def test_replacement_between_properties_and_download_is_rejected():
+    from nexus.files.ports import ObjectStorageError, ObjectStorageFailure
+
+    async def scenario(storage, client):
+        await storage.create_object(
+            storage_key="exact", content=byte_stream(b"old-source")
+        )
+        properties = await storage.get_object_properties(storage_key="exact")
+        await client.upload_blob(name="exact", data=b"new-source", overwrite=True)
+        with pytest.raises(ObjectStorageError) as caught:
+            await collect(
+                storage.stream_object(
+                    storage_key="exact", expected_entity_tag=properties.entity_tag
+                )
+            )
+        assert caught.value.reason == ObjectStorageFailure.CHANGED
+
+    asyncio.run(_with_isolated_storage(scenario))
+
+
+def test_replacement_during_multichunk_download_is_rejected():
+    from nexus.files.ports import ObjectStorageError, ObjectStorageFailure
+
+    async def scenario(storage, client):
+        await storage.create_object(
+            storage_key="exact", content=byte_stream(b"0123456789abcdef")
+        )
+        properties = await storage.get_object_properties(storage_key="exact")
+        stream = storage.stream_object(
+            storage_key="exact", expected_entity_tag=properties.entity_tag
+        )
+        try:
+            assert await anext(stream) == b"0123"
+            await client.upload_blob(
+                name="exact", data=b"changed-contents!", overwrite=True
+            )
+            with pytest.raises(ObjectStorageError) as caught:
+                await anext(stream)
+            assert caught.value.reason == ObjectStorageFailure.CHANGED
+        finally:
+            await stream.aclose()
+
+    asyncio.run(_with_isolated_storage(scenario))

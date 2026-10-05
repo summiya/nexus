@@ -175,11 +175,12 @@ requirement must be reviewed before adding a storage-location abstraction.
 ## Object storage contract
 
 `ObjectStorage` is the provider-neutral boundary for File binary content. It
-supports three operations:
+supports these operations:
 
 - streamed, single-pass object creation;
-- lazy streamed reads;
-- idempotent deletion.
+- lazy streamed reads, optionally pinned to an exact ETag;
+- idempotent deletion;
+- current object properties for source checks.
 
 Creation is create-only: a future adapter must enforce the new-object condition
 atomically and translate an existing key into
@@ -191,7 +192,8 @@ lazy, so the method does not promise an eager existence check. A missing object
 may raise `ObjectStorageNotFoundError` when iteration begins, and another
 provider failure may raise `ObjectStorageError` after streaming has started.
 Callers must therefore handle storage errors while consuming the iterator.
-There is no separate existence or metadata preflight operation.
+Callers can use `get_object_properties()` for metadata preflight; exact-version
+reads additionally require the conditional stream argument described in DP-05.
 
 Deletion is idempotent: deleting an already-absent object succeeds. Provider
 SDK exceptions must be translated to the provider-neutral errors at the future
@@ -1470,3 +1472,55 @@ Managed Identity. `python -m nexus.workers.document_consumer` deliberately fails
 closed before creating resources: no real downstream processor is wired yet.
 Tests may inject a processor through composition, but no placeholder exists in
 production. DP-05 streaming/extraction and later processing/recovery are excluded.
+
+## DP-05 exact source access
+
+`OpenDocumentSource` is a small application capability for a future real
+`DocumentProcessor`. It requires a PROCESSING Document and its matching durable
+request. `DocumentRequestReader.get_source_facts()` returns only the source File
+public UUID, verified ETag, and expected byte count, scoped by request, tenant,
+and Document with source linkage. `FilePersistence.get_file()` supplies the
+canonical storage key and metadata. The File must be AVAILABLE and its size
+must match the request. Both reads finish before Blob access; no DB session,
+transaction, or lock spans streaming. No request schema or message fields change.
+
+The capability takes the existing configured `file_upload_max_size_bytes` as
+`max_size_bytes`; there is no separate Document limit. Its async context manager
+checks current `get_object_properties()` against the durable ETag and size
+before yielding source metadata plus a lazy byte iterator. It calls the existing
+`ObjectStorage.stream_object(expected_entity_tag=...)` to pin the entire read to
+the admitted version. Azure formats the opaque ETag into a strong If-Match
+condition internally, rejecting wildcard/weak/malformed conditions. Conditional
+failure becomes a safe CHANGED storage classification; no fallback downloads a
+replacement object. Existing unconditional stream callers remain supported.
+
+Source bytes are pulled sequentially with backpressure, never accumulated.
+Overflow is rejected before yielding the offending chunk; premature EOF is
+rejected. Only reaching normal EOF proves the full expected byte count. Early
+exit closes the stream without draining it and does not establish full-source
+verification. Later processing must successfully consume the stream before
+publishing results. No parser-specific buffering or temporary files are added.
+
+Storage composition uses a 4 MiB initial download and 4 MiB range chunks;
+per-download concurrency is one. Client connection/read timeouts are 5/30
+seconds, with two SDK retries. SDK buffers and copies mean memory is a bounded
+multiple of chunk size per active stream, not exactly one chunk. Worker-wide
+parallelism remains the bounded DP-04 receive-slot limit. The adapter retains
+in-flight operations until they settle on cancellation, preserves cancellation
+even if the provider operation fails during settlement, and leaves shared
+clients reusable. Source-context exit closes the underlying iterator when it
+supports standard async-generator closure; no custom download/stream interface
+or private Azure response cleanup is introduced.
+
+Source errors expose safe reasons for invalid identity, unavailable source,
+changed source, size limit, transient storage, storage access, and unknown storage
+failure. Azure status codes/SDK errors remain inside infrastructure. These are
+classification hints for future policy, not automatic retries or lifecycle
+changes. Request persistence errors retain the existing DP-04 error contract.
+
+Production consumption remains fail-closed: DP-05 does not implement a stream-only
+processor or wire one into worker composition. Parsing, extraction contracts,
+normalization, chunking, completion, embeddings/retrieval, and DP-11 recovery
+remain deferred. Tests cover PostgreSQL tenant/linkage isolation, no DB connection
+held while reading, lazy/bounded streaming, byte counts, cancellation/closure,
+conditional Azure calls, and real Azurite replacement before/between range reads.

@@ -5,6 +5,7 @@ from typing import Protocol
 from uuid import UUID
 
 from nexus.documents.domain import Document
+from nexus.documents.ports.source import DocumentSourceFacts
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,10 @@ class ProcessingRequestRejected(Exception):
 
 class DocumentRequestReader(Protocol):
     async def matches(self, message: DocumentProcessingRequested) -> bool: ...
+
+    async def get_source_facts(
+        self, message: DocumentProcessingRequested
+    ) -> DocumentSourceFacts | None: ...
 
 
 class DocumentProcessor(Protocol):
