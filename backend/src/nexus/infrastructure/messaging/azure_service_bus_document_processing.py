@@ -8,7 +8,6 @@ from typing import Any, cast
 from uuid import UUID
 
 from azure.servicebus import (
-    ServiceBusMessage,
     ServiceBusReceivedMessage,
     ServiceBusReceiveMode,
 )
@@ -29,6 +28,10 @@ from nexus.documents.ports.processing import (
     DocumentMessageHandler,
     DocumentProcessingRequested,
     ProcessingRequestRejected,
+)
+from nexus.infrastructure.messaging.azure_service_bus_publisher import (
+    AzureServiceBusPublicationError,
+    AzureServiceBusQueuePublisher,
 )
 from nexus.logging import get_logger
 
@@ -102,22 +105,21 @@ def decode_document_message(
 
 
 class AzureServiceBusDocumentPublisher:
-    def __init__(self, client: ServiceBusClient, queue_name: str) -> None:
-        self._client = client
+    def __init__(
+        self, publisher: AzureServiceBusQueuePublisher, queue_name: str
+    ) -> None:
+        self._publisher = publisher
         self._queue = queue_name
 
     async def publish(self, message: DocumentProcessingRequested) -> None:
-        # Each bounded send owns its sender; no shared-link concurrency assumptions.
         try:
-            async with self._client.get_queue_sender(queue_name=self._queue) as sender:
-                await sender.send_messages(
-                    ServiceBusMessage(
-                        encode_document_message(message),
-                        message_id=str(message.request_public_id),
-                        content_type="application/json",
-                    )
-                )
-        except _FATAL_ERRORS as exc:
+            await self._publisher.publish(
+                queue_name=self._queue,
+                body=encode_document_message(message),
+                message_id=str(message.request_public_id),
+                content_type="application/json",
+            )
+        except AzureServiceBusPublicationError as exc:
             raise DocumentPublicationError(
                 "Document publication configuration failed"
             ) from exc

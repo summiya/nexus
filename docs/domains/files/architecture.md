@@ -1459,6 +1459,16 @@ The small, strict versioned message uses public identity only and follows the
 existing 64 KiB transport bound. Azure SDK types stay in infrastructure/composition;
 Document contracts and application orchestration are provider neutral.
 
+Outbound publication delegates from `AzureServiceBusDocumentPublisher` to the
+infrastructure-only `AzureServiceBusQueuePublisher`. Document encoding, stable
+request MessageId, and JSON content type remain in the Document adapter. The
+shared transport opens one sender per publication and borrows the composition-owned
+client without closing it. Only fatal authentication/authorization/entity errors
+become the fixed-message `AzureServiceBusPublicationError`, which the Document
+adapter maps to `DocumentPublicationError`; transient failures retain the existing
+dispatch retry/backoff path. Production and local dispatch share `_compose()`;
+authentication, inbound messaging, leases, and acknowledgement behavior are unchanged.
+
 Document consumption uses fixed receive slots, PeekLock, zero prefetch, bounded
 lock renewal, safe DLQ descriptions, type-only error logging, and hashed correlation.
 Malformed/unmatched requests are dead-lettered; transient failures are abandoned;
