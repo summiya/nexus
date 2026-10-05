@@ -22,6 +22,10 @@ from nexus.infrastructure.messaging.azure_service_bus_document_processing import
     decode_document_message,
     encode_document_message,
 )
+from nexus.infrastructure.messaging.azure_service_bus_publisher import (
+    AzureServiceBusPublicationError,
+    AzureServiceBusQueuePublisher,
+)
 
 
 def event():
@@ -160,16 +164,19 @@ def test_shutdown_abandons_after_handler_cancellation(cancel):
 
 def test_send_stable_message_id():
     async def run():
-        client = MagicMock()
-        sender = AsyncMock()
-        client.get_queue_sender.return_value.__aenter__.return_value = sender
+        transport = AsyncMock()
         request = event()
-        publisher = AzureServiceBusDocumentPublisher(client, "documents")
+        publisher = AzureServiceBusDocumentPublisher(transport, "documents")
         await publisher.publish(request)
         await publisher.publish(request)
-        assert [
-            call.args[0].message_id for call in sender.send_messages.await_args_list
-        ] == [str(request.request_public_id)] * 2
+        assert transport.publish.await_count == 2
+        for call in transport.publish.await_args_list:
+            assert call.kwargs == {
+                "queue_name": "documents",
+                "body": encode_document_message(request),
+                "message_id": str(request.request_public_id),
+                "content_type": "application/json",
+            }
 
     asyncio.run(run())
 
@@ -256,14 +263,69 @@ def test_fatal_sender_maps_to_provider_neutral_error():
     from nexus.documents.ports.dispatch import DocumentPublicationError
 
     async def run():
-        client = MagicMock()
-        sender = AsyncMock()
+        transport = AsyncMock()
+        original = AzureServiceBusPublicationError()
+        transport.publish.side_effect = original
+        with pytest.raises(
+            DocumentPublicationError, match="configuration failed"
+        ) as exc:
+            await AzureServiceBusDocumentPublisher(transport, "documents").publish(
+                event()
+            )
+        assert exc.value.__cause__ is original
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("outcome", ["success", "transient", "fatal"])
+def test_document_publication_preserves_dispatch_outcomes(outcome):
+    from nexus.documents.application.dispatch_processing import (
+        DispatchDocumentProcessing,
+    )
+    from nexus.documents.ports.dispatch import DispatchLease, DocumentPublicationError
+
+    async def run():
+        client, sender, store = MagicMock(), AsyncMock(), AsyncMock()
+        client.close = AsyncMock()
         client.get_queue_sender.return_value.__aenter__.return_value = sender
-        sender.send_messages.side_effect = ServiceBusAuthenticationError(
-            message="private"
+        request = event()
+        lease = DispatchLease(request, uuid4(), 1)
+        store.claim.return_value = [lease]
+        original = None
+        if outcome != "success":
+            error = (
+                ServiceBusAuthenticationError if outcome == "fatal" else ServiceBusError
+            )
+            original = error(message="private")
+            sender.send_messages.side_effect = original
+        dispatcher = DispatchDocumentProcessing(
+            persistence=store,
+            publisher=AzureServiceBusDocumentPublisher(
+                AzureServiceBusQueuePublisher(client), "documents"
+            ),
         )
-        with pytest.raises(DocumentPublicationError, match="configuration failed"):
-            await AzureServiceBusDocumentPublisher(client, "documents").publish(event())
+        if outcome == "fatal":
+            with pytest.raises(ExceptionGroup) as exc:
+                await dispatcher.run(asyncio.Event())
+            error = exc.value.exceptions[0]
+            assert isinstance(error, DocumentPublicationError)
+            assert isinstance(error.__cause__, AzureServiceBusPublicationError)
+            assert error.__cause__.__cause__ is original
+            store.retry.assert_not_awaited()
+            store.acknowledge.assert_not_awaited()
+        else:
+            assert await dispatcher.dispatch_once() == 1
+            if outcome == "success":
+                store.acknowledge.assert_awaited_once_with(lease)
+                store.retry.assert_not_awaited()
+            else:
+                store.retry.assert_awaited_once_with(lease, delay_seconds=2)
+                store.acknowledge.assert_not_awaited()
+        sent = sender.send_messages.await_args.args[0]
+        assert sent.message_id == str(request.request_public_id)
+        assert sent.content_type == "application/json"
+        assert b"".join(sent.body) == encode_document_message(request)
+        client.close.assert_not_called()
 
     asyncio.run(run())
 

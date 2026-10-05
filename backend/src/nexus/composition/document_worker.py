@@ -14,6 +14,9 @@ from nexus.infrastructure.messaging.azure_service_bus_document_processing import
     AzureServiceBusDocumentPublisher,
     AzureServiceBusDocumentWorker,
 )
+from nexus.infrastructure.messaging.azure_service_bus_publisher import (
+    AzureServiceBusQueuePublisher,
+)
 from nexus.infrastructure.persistence.document import SqlAlchemyDocumentPersistence
 from nexus.infrastructure.persistence.document_dispatch import (
     SqlAlchemyDocumentDispatchPersistence,
@@ -71,10 +74,11 @@ def _compose(
     )
     resources.push_async_callback(database.dispose)
     requests = SqlAlchemyDocumentDispatchPersistence(database.session_factory)
+    service_bus_publisher = AzureServiceBusQueuePublisher(client)
     dispatcher = DispatchDocumentProcessing(
         persistence=requests,
         publisher=AzureServiceBusDocumentPublisher(
-            client, settings.azure_service_bus_document_queue_name
+            service_bus_publisher, settings.azure_service_bus_document_queue_name
         ),
         concurrency=settings.document_dispatch_concurrency,
         lease_seconds=settings.document_dispatch_lease_seconds,
