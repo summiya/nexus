@@ -13,6 +13,9 @@ from azure.storage.blob.aio import BlobServiceClient
 from nexus.config.file_worker_settings import FileWorkerSettings
 from nexus.files.application import ApplyMalwareScanResult, VerifyUploadCompletion
 from nexus.infrastructure.messaging import AzureServiceBusUploadCompletionWorker
+from nexus.infrastructure.persistence.document_initiation import (
+    SqlAlchemyDocumentInitiationPersistence,
+)
 from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.infrastructure.storage import (
@@ -101,6 +104,9 @@ async def build_file_worker_composition(
         malware_scan_handler = ApplyMalwareScanResult(
             object_storage=object_storage,
             persistence=persistence,
+            initiation=SqlAlchemyDocumentInitiationPersistence(
+                database.session_factory
+            ),
         )
         auto_lock_renewer = AutoLockRenewer(
             max_lock_renewal_duration=(settings.file_worker_max_lock_renewal_seconds)

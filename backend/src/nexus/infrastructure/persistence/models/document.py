@@ -108,6 +108,12 @@ class Document(Base):
             "organization_id",
             name="uq_documents_id_organization_id",
         ),
+        UniqueConstraint(
+            "id",
+            "organization_id",
+            "source_file_id",
+            name="uq_documents_id_organization_source",
+        ),
         Index(
             "ix_documents_source_file_id_organization_id",
             "source_file_id",

@@ -19,6 +19,7 @@ from nexus.files.ports.persistence import (
     FileNotReadyError,
     FilePersistence,
     FilePersistenceError,
+    FileReferencedError,
     FileReferenceError,
     FileStateConflictError,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "FilePersistence",
     "FilePersistenceError",
     "FileReferenceError",
+    "FileReferencedError",
     "FileStateConflictError",
     "MalwareScanRejectionReason",
     "MalwareScanResultEvent",

@@ -1406,3 +1406,45 @@ Later phases own:
 - Document processing, chunks, embeddings, and RAG;
 - richer frontend File workflows such as multi-file upload, drag-and-drop,
   and resumability.
+
+## DP-03: Atomic Document initiation after a clean scan
+
+The existing malware handler verifies current object properties against the
+trusted scan ETag before writing PostgreSQL. CLEAN results go through the dedicated
+`DocumentInitiationPersistence` boundary; unsuccessful scan results retain the
+existing File persistence path. Production and emulator worker compositions use
+the same initiation adapter. Generic `FilePersistence` does not create Documents
+or processing requests.
+
+```text
+verified CLEAN scan
+    ↓
+short transaction + File row lock
+    ├── eligible: File AVAILABLE + Document QUEUED + pending processing request
+    └── unsupported: File AVAILABLE
+```
+
+Eligibility admits PDF (`.pdf`), plain text (`.txt`), and Markdown (`.md`) with
+matching declared MIME types. The generic `application/octet-stream` declaration
+is permitted for each, and Markdown also permits `text/plain`. Extensions are
+case-insensitive. This is metadata admission, not content sniffing or parser
+validation; zero-byte Files retain the existing File policy.
+
+The locked File supplies authoritative ownership and source identity. Verified
+size must match stored size. A stable durable request records ETag and expected
+size, while storage key remains on File. File availability, Document creation,
+and request creation either all commit or all roll back for eligible Files.
+Concurrent deliveries serialize only on their File; different Files are independent.
+Cancellation waits for transaction settlement before propagating.
+
+A matching AVAILABLE request is a duplicate, including after the Document becomes
+terminal. An AVAILABLE File without a request is left unchanged: this phase does
+not backfill historical Files. Changed source facts conflict safely. Failed Files
+cannot initiate; deleting Files are ignored; missing registration remains retryable.
+There is no queue send or content access in this transaction. DP-04 owns eventual
+dispatch; DP-05 owns checking and streaming the exact source.
+
+Deleting a Document-referenced File returns a safe HTTP 409 before Blob deletion.
+The guard runs under the same File lock used by initiation, preserving the DP-02
+restrictive foreign key and preventing source removal followed by database failure.
+Document cleanup, cascading deletion, and pipeline cancellation remain deferred.

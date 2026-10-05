@@ -11,6 +11,9 @@ from nexus.dev.local_file_worker import (
     LocalFileWorkerSettings,
     build_local_file_worker_composition,
 )
+from nexus.infrastructure.persistence.document_initiation import (
+    SqlAlchemyDocumentInitiationPersistence,
+)
 
 CONTEXT_KEY = "bmV4dXMtZGV2ZWxvcG1lbnQtdXBsb2FkLWtleS0wMDE"
 
@@ -173,6 +176,10 @@ def test_local_composition_uses_connection_string_clients_only(
         assert composition.upload_worker.queue_name == "file-upload-completions"
         assert composition.malware_scan_worker.queue_name == (
             "file-malware-scan-results"
+        )
+        assert isinstance(
+            composition.malware_scan_worker.handler.initiation,
+            SqlAlchemyDocumentInitiationPersistence,
         )
         assert composition.blob_service_client.container_names == ["nexus-files"]
 
