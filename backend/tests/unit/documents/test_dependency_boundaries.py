@@ -52,5 +52,11 @@ def test_document_application_has_no_provider_transport_or_orm_dependencies() ->
     for path in sorted((DOMAIN_ROOT.parent / "application").rglob("*.py")):
         for module in _imports(path):
             assert not module.startswith(
-                ("azure", "sqlalchemy", "fastapi", "nexus.infrastructure")
+                (
+                    "azure",
+                    "sqlalchemy",
+                    "fastapi",
+                    "markdown_it",
+                    "nexus.infrastructure",
+                )
             ), (path, module)

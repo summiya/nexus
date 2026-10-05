@@ -7,6 +7,12 @@ from nexus.documents.domain.document import (
     DocumentStatus,
     DocumentTransitionError,
 )
+from nexus.documents.domain.extracted_document import (
+    ExtractedBlock,
+    ExtractedBlockKind,
+    ExtractedDocument,
+    ExtractedListItem,
+)
 
 __all__ = [
     "Document",
@@ -14,4 +20,8 @@ __all__ = [
     "DocumentFailure",
     "DocumentStatus",
     "DocumentTransitionError",
+    "ExtractedBlock",
+    "ExtractedBlockKind",
+    "ExtractedDocument",
+    "ExtractedListItem",
 ]
