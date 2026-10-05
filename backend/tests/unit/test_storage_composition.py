@@ -42,8 +42,10 @@ class StubObjectStorage:
     ) -> None:
         del storage_key, content
 
-    def stream_object(self, *, storage_key: str) -> AsyncIterator[bytes]:
-        del storage_key
+    def stream_object(
+        self, *, storage_key: str, expected_entity_tag: str | None = None
+    ) -> AsyncIterator[bytes]:
+        del storage_key, expected_entity_tag
         return self._empty_stream()
 
     async def delete_object(self, *, storage_key: str) -> None:
@@ -125,9 +127,11 @@ class FakeBlobServiceClient:
         credential: object | None = None,
         *,
         connection_string: str | None = None,
+        **options: object,
     ) -> None:
         if self.__class__.construction_error is not None:
             raise self.__class__.construction_error
+        self.options = options
         self.account_url = account_url
         self.credential = credential
         self.connection_string = connection_string
@@ -139,11 +143,14 @@ class FakeBlobServiceClient:
         self.__class__.instances.append(self)
 
     @classmethod
-    def from_connection_string(cls, connection_string: str) -> FakeBlobServiceClient:
+    def from_connection_string(
+        cls, connection_string: str, **options: object
+    ) -> FakeBlobServiceClient:
         cls.connection_strings.append(connection_string)
         return cls(
             "http://azurite.local",
             connection_string=connection_string,
+            **options,
         )
 
     def get_container_client(self, container_name: str) -> FakeContainerClient:
@@ -324,6 +331,14 @@ def test_test_environment_allows_connection_string() -> None:
         assert FakeBlobServiceClient.connection_strings == [
             "UseDevelopmentStorage=true"
         ]
+        assert (
+            FakeBlobServiceClient.instances[0].options["max_single_get_size"]
+            == 4 * 1024 * 1024
+        )
+        assert (
+            FakeBlobServiceClient.instances[0].options["max_chunk_get_size"]
+            == 4 * 1024 * 1024
+        )
         await composition.close()
 
     asyncio.run(scenario())
@@ -352,6 +367,13 @@ def test_root_https_account_url_uses_system_assigned_managed_identity(
         assert credential.client_id is None
         assert service_client.account_url == ("https://account.blob.core.windows.net/")
         assert service_client.credential is credential
+        assert service_client.options == {
+            "max_single_get_size": 4 * 1024 * 1024,
+            "max_chunk_get_size": 4 * 1024 * 1024,
+            "connection_timeout": 5,
+            "read_timeout": 30,
+            "retry_total": 2,
+        }
         assert isinstance(
             composition.upload_grant_issuer,
             AzureUserDelegationUploadGrantIssuer,

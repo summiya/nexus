@@ -75,3 +75,12 @@ def test_stored_object_metadata_is_defensively_copied_and_read_only() -> None:
     assert properties.metadata["nexus_upload_context"] == "protected"
     with pytest.raises(TypeError):
         properties.metadata["new"] = "value"  # type: ignore[index]
+
+
+def test_conditional_version_is_optional_and_provider_neutral():
+    parameters = inspect.signature(ObjectStorage.stream_object).parameters
+    assert parameters["expected_entity_tag"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["expected_entity_tag"].default is None
+    assert (
+        get_type_hints(ObjectStorage.stream_object)["expected_entity_tag"] == str | None
+    )

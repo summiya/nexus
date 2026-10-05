@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.documents.ports.dispatch import DispatchLease, DocumentDispatchError
 from nexus.documents.ports.processing import DocumentProcessingRequested
+from nexus.documents.ports.source import DocumentSourceFacts
 from nexus.infrastructure.persistence.document import _settle_cancelled_transaction
-from nexus.infrastructure.persistence.models import Document, Organization
+from nexus.infrastructure.persistence.models import Document, File, Organization
 from nexus.infrastructure.persistence.models import DocumentProcessingRequest as Request
 
 
@@ -154,3 +155,41 @@ class SqlAlchemyDocumentDispatchPersistence:
                 return row is not None
         except SQLAlchemyError as exc:
             raise DocumentDispatchError("Document request persistence failed") from exc
+
+    async def get_source_facts(
+        self, message: DocumentProcessingRequested
+    ) -> DocumentSourceFacts | None:
+        try:
+            async with self._sessions() as session:
+                row = (
+                    await session.execute(
+                        select(
+                            File.public_id,
+                            Request.source_entity_tag,
+                            Request.expected_size_bytes,
+                        )
+                        .select_from(Request)
+                        .join(
+                            Document,
+                            (Document.id == Request.document_id)
+                            & (Document.organization_id == Request.organization_id)
+                            & (Document.source_file_id == Request.source_file_id),
+                        )
+                        .join(Organization, Organization.id == Request.organization_id)
+                        .join(
+                            File,
+                            (File.id == Request.source_file_id)
+                            & (File.organization_id == Request.organization_id),
+                        )
+                        .where(
+                            Request.public_id == message.request_public_id,
+                            Organization.public_id == message.organization_public_id,
+                            Document.public_id == message.document_public_id,
+                        )
+                    )
+                ).one_or_none()
+                return DocumentSourceFacts(*row) if row is not None else None
+        except (SQLAlchemyError, ValueError, TypeError) as exc:
+            raise DocumentDispatchError(
+                "Document source facts persistence failed"
+            ) from exc

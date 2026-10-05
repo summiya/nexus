@@ -4,12 +4,29 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol
 
 
+class ObjectStorageFailure(StrEnum):
+    OTHER = "other"
+    CHANGED = "changed"
+    TRANSIENT = "transient"
+    ACCESS = "access"
+
+
 class ObjectStorageError(Exception):
-    """An unexpected object storage failure occurred."""
+    """Safe storage failure with a small provider-neutral policy hint."""
+
+    def __init__(
+        self,
+        message: str = "The object storage operation failed.",
+        *,
+        reason: ObjectStorageFailure = ObjectStorageFailure.OTHER,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class ObjectStorageAlreadyExistsError(ObjectStorageError):
@@ -58,8 +75,13 @@ class ObjectStorage(Protocol):
         self,
         *,
         storage_key: str,
+        expected_entity_tag: str | None = None,
     ) -> AsyncIterator[bytes]:
-        """Return a lazy byte stream; storage errors may arise during iteration."""
+        """Lazy stream, optionally pinned to an exact version throughout reading.
+
+        Errors can arise during iteration. Callers close the async generator on
+        early exit; adapters settle their I/O without closing shared clients.
+        """
 
     async def delete_object(self, *, storage_key: str) -> None:
         """Delete an object, succeeding when it is already absent."""
@@ -76,6 +98,7 @@ __all__ = [
     "ObjectStorage",
     "ObjectStorageAlreadyExistsError",
     "ObjectStorageError",
+    "ObjectStorageFailure",
     "ObjectStorageNotFoundError",
     "StoredObjectProperties",
 ]

@@ -36,6 +36,7 @@ class FakeContainerClient:
         self.upload_calls: list[dict[str, object]] = []
         self.uploaded_chunks: list[bytes] = []
         self.download_calls: list[str] = []
+        self.download_options: list[dict[str, object]] = []
         self.delete_calls: list[str] = []
         self.properties_calls: list[str] = []
         self.upload_error: BaseException | None = None
@@ -79,8 +80,9 @@ class FakeContainerClient:
                     raise self.upload_failure_wrapper from exc
                 raise
 
-    async def download_blob(self, blob: str) -> FakeDownloader:
+    async def download_blob(self, blob: str, **kwargs: object) -> FakeDownloader:
         self.download_calls.append(blob)
+        self.download_options.append(kwargs)
         if self.download_error is not None:
             raise self.download_error
         return FakeDownloader(self.download_chunks)
@@ -422,3 +424,170 @@ def test_properties_translate_provider_errors(
         assert captured.value.__cause__ is provider_error
 
     asyncio.run(scenario())
+
+
+def test_conditional_download_pins_etag_at_adapter_boundary() -> None:
+    from azure.core import MatchConditions
+
+    async def run():
+        fake = FakeContainerClient()
+        adapter = adapter_for(fake)
+        for tag in ("0x8D123", '"0x8D123"'):
+            fake.download_chunks = byte_stream(b"content")
+            assert await collect(
+                adapter.stream_object(storage_key="opaque-key", expected_entity_tag=tag)
+            ) == [b"content"]
+            assert fake.download_options[-1] == {
+                "etag": '"0x8D123"',
+                "match_condition": MatchConditions.IfNotModified,
+                "max_concurrency": 1,
+            }
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("tag", ["*", 'W/"weak"', "", "\r\ninjected", 'bad"etag'])
+def test_unsafe_conditional_tags_fail_closed(tag):
+    from nexus.files.ports import ObjectStorageFailure
+
+    async def run():
+        fake = FakeContainerClient()
+        with pytest.raises(ObjectStorageError) as caught:
+            await collect(
+                adapter_for(fake).stream_object(
+                    storage_key="opaque-key", expected_entity_tag=tag
+                )
+            )
+        assert caught.value.reason == ObjectStorageFailure.CHANGED
+        assert fake.download_calls == []
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("where", ["properties", "start", "chunks"])
+@pytest.mark.parametrize(
+    "kind", ["changed", "access", "transient", "connection", "timeout", "other"]
+)
+def test_download_failures_have_safe_provider_neutral_classification(where, kind):
+    from azure.core.exceptions import HttpResponseError, ServiceRequestError
+
+    from nexus.files.ports import ObjectStorageFailure
+
+    if kind == "connection":
+        error = ServiceRequestError("private provider detail")
+    elif kind == "timeout":
+        error = TimeoutError("private provider detail")
+    elif kind == "other":
+        error = AzureError("private provider detail")
+    else:
+        error = HttpResponseError("private provider detail")
+        error.status_code = {"changed": 412, "access": 403, "transient": 503}[kind]
+
+    async def run():
+        fake = FakeContainerClient()
+        if where == "properties":
+            fake.properties_error = error
+        if where == "start":
+            fake.download_error = error
+        if where == "chunks":
+
+            async def chunks():
+                yield b"first"
+                raise error
+
+            fake.download_chunks = chunks()
+        adapter = adapter_for(fake)
+        with pytest.raises(ObjectStorageError) as caught:
+            if where == "properties":
+                await adapter.get_object_properties(storage_key="opaque-key")
+            else:
+                await collect(
+                    adapter.stream_object(
+                        storage_key="opaque-key", expected_entity_tag="admitted-version"
+                    )
+                )
+        expected = {
+            "connection": "transient",
+            "timeout": "transient",
+            "other": "other",
+        }.get(kind, kind)
+        assert caught.value.reason == ObjectStorageFailure(expected)
+        assert str(caught.value) == "The object storage operation failed."
+        assert caught.value.__cause__ is error
+
+    asyncio.run(run())
+
+
+def test_early_close_closes_underlying_generator_without_draining():
+    async def run():
+        closed = False
+        pulled = 0
+
+        async def chunks():
+            nonlocal closed, pulled
+            try:
+                for _ in range(5):
+                    pulled += 1
+                    yield b"chunk"
+            finally:
+                closed = True
+
+        fake = FakeContainerClient()
+        fake.download_chunks = chunks()
+        stream = adapter_for(fake).stream_object(
+            storage_key="opaque-key", expected_entity_tag="admitted-version"
+        )
+        assert await anext(stream) == b"chunk"
+        await stream.aclose()
+        assert closed and pulled == 1
+        assert fake.close_calls == 0
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("where", ["start", "properties"])
+@pytest.mark.parametrize("fails", [False, True])
+def test_cancellation_settles_inflight_operation_and_remains_cancellation(where, fails):
+    async def run():
+        fake = FakeContainerClient()
+        started, release = asyncio.Event(), asyncio.Event()
+        settled = False
+
+        async def block(*args, **kwargs):
+            nonlocal settled
+            started.set()
+            await release.wait()
+            settled = True
+            if fails:
+                raise AzureError("private provider failure during cancellation")
+            return (
+                FakeDownloader(byte_stream(b"content"))
+                if where == "start"
+                else fake.properties
+            )
+
+        if where == "start":
+            fake.download_blob = block
+        else:
+            fake.get_blob_properties = block
+        adapter = adapter_for(fake)
+        stream = adapter.stream_object(
+            storage_key="opaque-key", expected_entity_tag="admitted-version"
+        )
+        task = asyncio.create_task(
+            anext(stream)
+            if where == "start"
+            else adapter.get_object_properties(storage_key="opaque-key")
+        )
+        await started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done() and not settled
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert settled and fake.close_calls == 0
+
+    asyncio.run(run())

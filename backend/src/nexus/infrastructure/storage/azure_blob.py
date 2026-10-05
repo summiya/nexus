@@ -5,13 +5,23 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable
 
-from azure.core.exceptions import AzureError, ResourceExistsError, ResourceNotFoundError
+from azure.core import MatchConditions
+from azure.core.exceptions import (
+    AzureError,
+    ClientAuthenticationError,
+    HttpResponseError,
+    ResourceExistsError,
+    ResourceNotFoundError,
+    ServiceRequestError,
+    ServiceResponseError,
+)
 from azure.storage.blob import BlobType
 from azure.storage.blob.aio import ContainerClient
 
 from nexus.files.ports import (
     ObjectStorageAlreadyExistsError,
     ObjectStorageError,
+    ObjectStorageFailure,
     ObjectStorageNotFoundError,
     StoredObjectProperties,
 )
@@ -51,6 +61,8 @@ async def _await_provider_operation[T](awaitable: Awaitable[T]) -> T:
                 await asyncio.shield(operation)
             except asyncio.CancelledError:
                 continue
+            except Exception:  # noqa: BLE001 - cancellation remains authoritative
+                break
         if not operation.cancelled():
             operation.exception()
         raise
@@ -86,15 +98,32 @@ class AzureBlobObjectStorage:
                 raise ObjectStorageAlreadyExistsError(_ALREADY_EXISTS_MESSAGE) from exc
             raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
 
-    def stream_object(self, *, storage_key: str) -> AsyncIterator[bytes]:
+    def stream_object(
+        self, *, storage_key: str, expected_entity_tag: str | None = None
+    ) -> AsyncIterator[bytes]:
         """Return a lazy stream of bytes from Azure Blob Storage."""
-        return self._stream_object(storage_key=storage_key)
+        return self._stream_object(
+            storage_key=storage_key, expected_entity_tag=expected_entity_tag
+        )
 
-    async def _stream_object(self, *, storage_key: str) -> AsyncIterator[bytes]:
+    async def _stream_object(
+        self, *, storage_key: str, expected_entity_tag: str | None
+    ) -> AsyncIterator[bytes]:
+        chunks = None
         try:
-            downloader = await _await_provider_operation(
-                self._container_client.download_blob(storage_key)
-            )
+            etag = _conditional_entity_tag(expected_entity_tag)
+            if etag is None:
+                operation = self._container_client.download_blob(
+                    storage_key, max_concurrency=1
+                )
+            else:
+                operation = self._container_client.download_blob(
+                    storage_key,
+                    etag=etag,
+                    match_condition=MatchConditions.IfNotModified,
+                    max_concurrency=1,
+                )
+            downloader = await _await_provider_operation(operation)
             chunks = downloader.chunks()
             while True:
                 try:
@@ -104,8 +133,12 @@ class AzureBlobObjectStorage:
                 yield chunk
         except ResourceNotFoundError as exc:
             raise ObjectStorageNotFoundError(_NOT_FOUND_MESSAGE) from exc
-        except AzureError as exc:
-            raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
+        except (AzureError, TimeoutError) as exc:
+            raise _storage_failure(exc) from exc
+        finally:
+            close = getattr(chunks, "aclose", None)
+            if close is not None:
+                await _await_provider_operation(close())
 
     async def delete_object(self, *, storage_key: str) -> None:
         """Delete an object, succeeding when it is already absent."""
@@ -134,8 +167,8 @@ class AzureBlobObjectStorage:
             )
         except ResourceNotFoundError as exc:
             raise ObjectStorageNotFoundError(_NOT_FOUND_MESSAGE) from exc
-        except AzureError as exc:
-            raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
+        except (AzureError, TimeoutError) as exc:
+            raise _storage_failure(exc) from exc
         except (AttributeError, TypeError, ValueError) as exc:
             raise ObjectStorageError(_STORAGE_FAILURE_MESSAGE) from exc
 
@@ -154,3 +187,41 @@ def normalize_azure_entity_tag(value: object) -> str:
 
 
 __all__ = ["AzureBlobObjectStorage", "normalize_azure_entity_tag"]
+
+
+def _conditional_entity_tag(expected_entity_tag: str | None) -> str | None:
+    if expected_entity_tag is None:
+        return None
+    try:
+        tag = normalize_azure_entity_tag(expected_entity_tag)
+    except ValueError as exc:
+        raise ObjectStorageError(
+            _STORAGE_FAILURE_MESSAGE, reason=ObjectStorageFailure.CHANGED
+        ) from exc
+    if (
+        tag == "*"
+        or tag.startswith("W/")
+        or any(c == '"' or c.isspace() or ord(c) < 32 for c in tag)
+    ):
+        raise ObjectStorageError(
+            _STORAGE_FAILURE_MESSAGE, reason=ObjectStorageFailure.CHANGED
+        )
+    return f'"{tag}"'
+
+
+def _storage_failure(error: AzureError | TimeoutError) -> ObjectStorageError:
+    reason = ObjectStorageFailure.OTHER
+    if isinstance(error, (ServiceRequestError, ServiceResponseError, TimeoutError)):
+        reason = ObjectStorageFailure.TRANSIENT
+    elif isinstance(error, ClientAuthenticationError):
+        reason = ObjectStorageFailure.ACCESS
+    elif isinstance(error, HttpResponseError):
+        if error.status_code == 412:
+            reason = ObjectStorageFailure.CHANGED
+        elif error.status_code in {401, 403}:
+            reason = ObjectStorageFailure.ACCESS
+        elif error.status_code == 429 or (
+            error.status_code is not None and 500 <= error.status_code <= 599
+        ):
+            reason = ObjectStorageFailure.TRANSIENT
+    return ObjectStorageError(_STORAGE_FAILURE_MESSAGE, reason=reason)

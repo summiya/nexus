@@ -232,7 +232,14 @@ async def build_storage_composition(
     service_client: BlobServiceClient | None = None
     try:
         if connection_string is not None:
-            service_client = BlobServiceClient.from_connection_string(connection_string)
+            service_client = BlobServiceClient.from_connection_string(
+                connection_string,
+                max_single_get_size=4 * 1024 * 1024,
+                max_chunk_get_size=4 * 1024 * 1024,
+                connection_timeout=5,
+                read_timeout=30,
+                retry_total=2,
+            )
         else:
             assert account_url is not None
             client_id = settings.azure_storage_managed_identity_client_id
@@ -244,6 +251,11 @@ async def build_storage_composition(
             service_client = BlobServiceClient(
                 account_url=account_url,
                 credential=credential,
+                max_single_get_size=4 * 1024 * 1024,
+                max_chunk_get_size=4 * 1024 * 1024,
+                connection_timeout=5,
+                read_timeout=30,
+                retry_total=2,
             )
         container_client = service_client.get_container_client(container_name)
         local_emulator_enabled = (

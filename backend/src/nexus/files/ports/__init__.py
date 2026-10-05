@@ -27,6 +27,7 @@ from nexus.files.ports.storage import (
     ObjectStorage,
     ObjectStorageAlreadyExistsError,
     ObjectStorageError,
+    ObjectStorageFailure,
     ObjectStorageNotFoundError,
     StoredObjectProperties,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "ObjectStorage",
     "ObjectStorageAlreadyExistsError",
     "ObjectStorageError",
+    "ObjectStorageFailure",
     "ObjectStorageNotFoundError",
     "StoredObjectProperties",
     "UploadCompletionEvent",
