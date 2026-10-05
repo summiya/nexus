@@ -457,3 +457,37 @@ Production monitoring must cover:
 Capacity changes follow measurements, not user count. Alerts and reconciliation
 are release requirements even when the monitoring platform itself is delivered
 by a later shared observability phase.
+
+### Document processing (DP-04)
+
+Deploy `document-processing.bicep` into the resource group containing the existing
+Nexus Service Bus namespace; it creates only `document-processing-requests` and
+optional queue-scoped RBAC assignments. Supply the dispatcher's Managed Identity
+principal for Data Sender. Leave the consumer principal/deployment unactivated
+until a real downstream processor is integrated. The template neither changes
+namespace network rules nor enables shared-key authentication. Provide the same
+private/approved network reachability as the existing File workers.
+
+Production dispatcher: `python -m nexus.workers.document_processing`, requiring
+`DATABASE_URL` and `AZURE_SERVICE_BUS_FULLY_QUALIFIED_NAMESPACE`.
+Optional `AZURE_SERVICE_BUS_MANAGED_IDENTITY_CLIENT_ID` selects an identity.
+`AZURE_SERVICE_BUS_DOCUMENT_QUEUE_NAME` defaults to `document-processing-requests`.
+Defaults: `DOCUMENT_DATABASE_POOL_SIZE=2` (zero overflow),
+`DOCUMENT_DISPATCH_CONCURRENCY=2`, `DOCUMENT_DISPATCH_LEASE_SECONDS=60`,
+`DOCUMENT_DISPATCH_SEND_TIMEOUT_SECONDS=20`, `DOCUMENT_DISPATCH_POLL_SECONDS=2`.
+Future consumption defaults: `DOCUMENT_WORKER_CONCURRENCY=2`,
+`DOCUMENT_WORKER_MAX_LOCK_RENEWAL_SECONDS=300`, `DOCUMENT_PROCESSING_VERSION=dp-04`.
+Send timeout must be shorter than the lease. Receive prefetch is always zero.
+
+For local use, run `docker compose --profile azure-emulators up document-dispatcher`
+after migrating the database. Connection-string authentication lives only in
+`nexus.dev.local_document_dispatcher`, restricted to development/test. The shared
+emulator has the dedicated queue; no local fake processor/consumer is deployed.
+
+Monitor pending-request age, dispatch failure counts, queue depth, DLQ depth, and
+stalled PROCESSING Documents. The queue retains deliveries for seven days and
+DLQs expiry/max-delivery failures. Delivery is at least once; duplicate detection
+is optional traffic reduction. DB acknowledgement does not prove Document completion.
+DP-04 provides transport resend only, not DLQ replay or interrupted-processing
+recovery (DP-11). Before enabling dispatch in production, ensure queue capacity
+and retention cover the period until real consumers are activated.

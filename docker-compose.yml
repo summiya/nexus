@@ -135,6 +135,28 @@ services:
     networks:
       - nexus-network
 
+  document-dispatcher:
+    profiles: ["azure-emulators"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python -m nexus.dev.local_document_dispatcher
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: ${DATABASE_URL}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING}
+      AZURE_SERVICE_BUS_DOCUMENT_QUEUE_NAME: document-processing-requests
+      DOCUMENT_DISPATCH_CONCURRENCY: ${DOCUMENT_DISPATCH_CONCURRENCY:-2}
+      DOCUMENT_DATABASE_POOL_SIZE: ${DOCUMENT_DATABASE_POOL_SIZE:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      servicebus-emulator:
+        condition: service_started
+    networks:
+      - nexus-network
+
   file-worker:
     profiles: ["azure-emulators"]
     build:

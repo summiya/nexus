@@ -24,6 +24,10 @@ def test_document_request_migration_upgrade_and_downgrade(
         "expected_size_bytes",
         "created_at",
         "dispatched_at",
+        "dispatch_lease_token",
+        "dispatch_lease_until",
+        "dispatch_next_attempt_at",
+        "dispatch_attempts",
     }
     constraints = inspector.get_foreign_keys("document_processing_requests")
     assert len(constraints) == 1
@@ -53,6 +57,13 @@ def test_document_request_migration_upgrade_and_downgrade(
             )
         ).scalar_one()
     assert "dispatched_at IS NULL" in index
+    assert "dispatch_next_attempt_at" in index
+    command.downgrade(config, "20261005_0016")
+    assert "dispatch_lease_token" not in {
+        column["name"]
+        for column in inspect(engine).get_columns("document_processing_requests")
+    }
+    command.upgrade(config, "head")
     command.downgrade(config, "20261001_0015")
     assert "document_processing_requests" not in inspect(engine).get_table_names()
     assert "uq_documents_id_organization_source" not in {

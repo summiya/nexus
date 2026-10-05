@@ -3400,3 +3400,32 @@ The goal is deliberately simple:
 > **One authoritative relational database, one vector extension, one durable binary store, one ephemeral infrastructure store, one secret manager, and a provider-agnostic AI gateway.**
 
 This gives Nexus a secure foundation for multi-tenancy, RAG, agents, tools, MCP, workflows, artifacts, usage, and future enterprise scale without prematurely introducing unnecessary infrastructure.
+
+### DP-04 Document dispatch leases
+
+`document_processing_requests` remains the initial-ingestion identity record after
+publication. Migration `20261005_0017` adds `dispatch_lease_token`,
+`dispatch_lease_until`, `dispatch_next_attempt_at`, and `dispatch_attempts` (nonnegative).
+Lease token/expiry are both NULL or both present. The pending partial index now
+orders by next attempt and internal ID, restricted to `dispatched_at IS NULL`.
+Existing pending rows become immediately eligible when the migration runs.
+
+Dispatchers use database time and `FOR UPDATE OF document_processing_requests
+SKIP LOCKED` to claim at most their configured send concurrency. Claims commit
+before Service Bus I/O. Each send has a timeout shorter than its lease; successful
+sends are acknowledged in a fresh transaction, fenced by the unexpired token.
+Failure clears the current lease and schedules a capped 2–60 second transport
+backoff; process interruption or acknowledgement loss leaves an expiring lease.
+Resends use the same request public UUID as Service Bus MessageId. Broker duplicate
+detection reduces traffic only; correctness comes from persisted request identity
+and the Document snapshot claim. No network operation holds a DB transaction.
+
+The v1 message contains only schema version and public request, organization, and
+Document UUIDs. Verified ETag and expected size remain on the request; the File is
+the authoritative storage identity. The worker validates all three message IDs
+against one durable request, including tenant/source linkage, before loading the
+Document. `dispatched_at` is not required: delivery may precede publisher acknowledgement.
+The existing DP-02 expected-snapshot update performs the single-winner
+QUEUED → PROCESSING transition. Only its winner invokes the injected processor.
+PROCESSING and terminal duplicates never invoke it again. A crash/cancellation
+after claim may leave PROCESSING; interrupted-processing recovery belongs to DP-11.

@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     UniqueConstraint,
     Uuid,
@@ -45,9 +46,14 @@ class DocumentProcessingRequest(Base):
             "dispatched_at IS NULL OR dispatched_at >= created_at",
             name="ck_document_requests_timestamp_order",
         ),
+        CheckConstraint("dispatch_attempts >= 0", name="ck_document_requests_attempts"),
+        CheckConstraint(
+            "(dispatch_lease_token IS NULL) = (dispatch_lease_until IS NULL)",
+            name="ck_document_requests_lease_pair",
+        ),
         Index(
             "ix_document_requests_pending",
-            "created_at",
+            "dispatch_next_attempt_at",
             "id",
             postgresql_where=text("dispatched_at IS NULL"),
         ),
@@ -65,4 +71,17 @@ class DocumentProcessingRequest(Base):
     )
     dispatched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    dispatch_lease_token: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    dispatch_lease_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dispatch_next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    dispatch_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
     )
