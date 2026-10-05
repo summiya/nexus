@@ -25,9 +25,20 @@ class ExtractedListItem:
     ordinal: int | None = None
 
     def __post_init__(self) -> None:
-        if not 1 <= self.list_start_line <= self.item_start_line or self.depth < 1:
+        if (
+            any(
+                type(value) is not int
+                for value in (self.list_start_line, self.item_start_line, self.depth)
+            )
+            or not 1 <= self.list_start_line <= self.item_start_line
+            or self.depth < 1
+        ):
             raise ValueError("Invalid list provenance")
-        if self.ordered != (self.ordinal is not None):
+        if (
+            type(self.ordered) is not bool
+            or (self.ordinal is not None and type(self.ordinal) is not int)
+            or self.ordered != (self.ordinal is not None)
+        ):
             raise ValueError("Invalid list ordinal")
 
 
@@ -43,10 +54,22 @@ class ExtractedBlock:
     quote_depth: int = 0
 
     def __post_init__(self) -> None:
-        if self.index < 0 or not 1 <= self.start_line < self.end_line:
+        if (
+            any(
+                type(value) is not int
+                for value in (self.index, self.start_line, self.end_line)
+            )
+            or self.index < 0
+            or not 1 <= self.start_line < self.end_line
+        ):
             raise ValueError("Invalid block order or provenance")
-        if not isinstance(self.kind, ExtractedBlockKind) or self.quote_depth < 0:
-            raise ValueError("Invalid block kind or quote depth")
+        if (
+            not isinstance(self.kind, ExtractedBlockKind)
+            or not isinstance(self.text, str)
+            or type(self.quote_depth) is not int
+            or self.quote_depth < 0
+        ):
+            raise ValueError("Invalid block kind, text, or quote depth")
         if self.kind is ExtractedBlockKind.HEADING:
             if self.heading_level is None or not 1 <= self.heading_level <= 6:
                 raise ValueError("Invalid heading level")
@@ -73,7 +96,7 @@ class ExtractedDocument:
             self.extractor_id,
             self.extractor_version,
         ):
-            if not value.strip() or len(value) > 1024:
+            if not isinstance(value, str) or not value.strip() or len(value) > 1024:
                 raise ValueError("Invalid extraction metadata")
         if not isinstance(self.blocks, tuple) or not self.blocks:
             raise ValueError("Extraction requires ordered blocks")
