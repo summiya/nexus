@@ -1524,3 +1524,58 @@ normalization, chunking, completion, embeddings/retrieval, and DP-11 recovery
 remain deferred. Tests cover PostgreSQL tenant/linkage isolation, no DB connection
 held while reading, lazy/bounded streaming, byte counts, cancellation/closure,
 conditional Azure calls, and real Azurite replacement before/between range reads.
+
+## DP-06 structured TXT and Markdown extraction
+
+`ExtractDocument` opens the existing DP-05 source context and selects one of two
+injected `DocumentExtractor` implementations using the same case-insensitive
+extension/MIME rules as DP-03. PDF remains unsupported by extraction in this
+phase. Extractors must consume normal verified EOF before returning output;
+source errors propagate unchanged and source-context exit closes streaming.
+There are no lifecycle mutations, database writes, or production processor wiring.
+
+`ExtractedDocument` is an immutable ordered tuple of content blocks with source
+File public identity, opaque ETag, and explicit Nexus extractor identity/version.
+Block indexes are sequential and deterministic. Source line ranges are **one-based,
+end-exclusive** for both formats. Headings carry levels; list metadata identifies
+the observed list/item start lines, nesting depth, ordered style, and logical
+ordinal (including a declared zero start). Quote depth is retained on content.
+There is no container tree, page provenance, byte-offset mapping, or precomputed
+section hierarchy. Later phases can derive sections from ordered headings.
+
+TXT decodes strict UTF-8 incrementally, accepts an initial BOM, and emits physical
+lines without their LF/CRLF/CR delimiters. Blank/whitespace lines remain in a
+nonempty document; an entirely nonmeaningful document fails safely. TXT does not
+infer semantic structure. Invalid UTF-8 and NUL-bearing binary input are malformed.
+
+Markdown uses pinned `markdown-it-py` 4.2.0 inside infrastructure with the fixed
+CommonMark preset and no plugins. Headings, paragraphs, code, literal HTML, and
+thematic breaks become content blocks. Lists and quotes annotate those blocks
+without adding container blocks. Inline text, code, entities, link labels, image
+alt text, and line breaks produce deterministic logical content. Original Markdown
+spelling and character offsets are not promised. HTML remains inert literal text;
+links/images are never fetched. CommonMark-valid incomplete syntax remains valid
+content. Whitespace-only or structure-only input without meaningful text fails
+as empty. No canonical normalization or external parser types cross the port.
+
+Both extractors default to an 8 MiB input/output-text ceiling and 50,000 emitted
+blocks, separate from the existing File admission bound. Limits can be reduced
+through constructor arguments. TXT retains only the unfinished line plus bounded
+output. Markdown requires bounded whole decoded input and parser tokens; memory
+is a bounded multiple of input size plus block metadata, not a streaming parser
+or a fixed 8 MiB resident-memory promise. Parser nesting is limited to 32; token
+mapping conservatively rejects content reaching that boundary rather than allowing
+silent parser depth truncation. Synchronous parsing/mapping runs off the event
+loop. Cancellation retains the processing slot until the parser task settles,
+discards its result, and propagates cancellation, including if parsing fails or
+another cancellation arrives during settlement. There are no detached parser
+tasks, global locks, new storage abstractions, or long database transactions.
+
+Safe extraction reasons are unsupported, empty, malformed, resource limit, and
+parser failure. The Nexus-owned `nexus.txt`/`nexus.commonmark` version `1` constants
+identify intentional extraction behavior; changes to parser configuration,
+dependency behavior, or mapping require an explicit version review.
+
+Production consumption remains fail-closed. PDF/OCR, normalization, chunking,
+DocumentChunk persistence, Document completion, embeddings/retrieval, and DP-11
+retry/reprocessing remain deferred.
