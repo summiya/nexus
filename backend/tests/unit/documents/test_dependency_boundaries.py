@@ -64,3 +64,13 @@ def test_document_application_has_no_provider_transport_or_orm_dependencies() ->
                     "nexus.infrastructure",
                 )
             ), (path, module)
+
+
+def test_segmentation_depends_only_on_document_values_ports_and_standard_library() -> (
+    None
+):
+    path = DOMAIN_ROOT.parent / "application" / "segment_document.py"
+    for module in _imports(path):
+        if module.startswith(("nexus.documents.domain.", "nexus.documents.ports.")):
+            continue
+        assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)
