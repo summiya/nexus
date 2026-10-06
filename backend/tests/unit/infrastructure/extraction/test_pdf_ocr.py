@@ -75,12 +75,24 @@ def test_selected_pages_replace_native_text_preserve_original_pages_and_metadata
         result = await extractor.extract(source(data))
         assert [(b.page_number, b.text) for b in result.blocks] == expected
         assert [b.index for b in result.blocks] == list(range(len(expected)))
+        assert (
+            result.page_count
+            == {"mixed.pdf": 4, "scan-footer.pdf": 3, "image-only.pdf": 1}[name]
+        )
         assert all(b.start_line is None and b.end_line is None for b in result.blocks)
         assert result.source_file_public_id == UUID(int=1)
         assert result.source_entity_tag == "verified"
         assert (result.extractor_id, result.extractor_version) == ("nexus.pdf-ocr", "1")
         assert ocr.calls == [(data, (1,) if name == "image-only.pdf" else (2,))]
         assert result == await extractor.extract(source(data))
+        from nexus.documents.application.normalize_document import NormalizeDocument
+
+        normalized = NormalizeDocument().execute(result)
+        assert normalized.page_count == result.page_count
+        assert [b.page_number for b in normalized.blocks] == [
+            b.page_number for b in result.blocks
+        ]
+        assert [b.kind for b in normalized.blocks] == [b.kind for b in result.blocks]
 
     asyncio.run(run())
 
@@ -280,3 +292,16 @@ def test_pdf_inspection_and_limits_are_explicit_infrastructure_api():
         native.max_blocks = 100
     with pytest.raises(AttributeError):
         native.max_text_bytes = 1000
+
+
+def test_composite_propagates_total_count_including_trailing_blank_pages():
+    data = (FIXTURES / "multi.pdf").read_bytes()
+    assert data.count(b"/Contents 11 0 R") == 1
+    data = data.replace(b"/Contents 11 0 R", b"/Contents 10 0 R")
+    ocr = FakeOcr()
+    result = asyncio.run(
+        PdfWithOcrDocumentExtractor(PdfDocumentExtractor(), ocr).extract(source(data))
+    )
+    assert result.page_count == 3
+    assert [block.page_number for block in result.blocks] == [1]
+    assert not ocr.calls

@@ -59,6 +59,7 @@ def test_single_page_text_boxes_metadata_and_default_memory_policy():
         block.kind is ExtractedBlockKind.PARAGRAPH and block.heading_level is None
         for block in result.blocks
     )
+    assert result.page_count == 1
     assert result.source_file_public_id == UUID(int=1)
     assert result.source_entity_tag == "verified-version"
     assert (result.extractor_id, result.extractor_version) == ("nexus.pdf", "1")
@@ -70,6 +71,7 @@ def test_page_order_skips_empty_pages_without_renumbering_and_is_deterministic()
     assert [
         (block.index, block.page_number, block.text) for block in result.blocks
     ] == [(0, 1, "Page one\n"), (1, 3, "Page three\n")]
+    assert result.page_count == 3
     assert result == extract("multi.pdf")
 
 
@@ -315,3 +317,20 @@ def test_cancellation_during_child_startup_still_reaps_child(monkeypatch):
 def test_limits_require_positive_finite_values(limits):
     with pytest.raises(ValueError):
         PdfDocumentExtractor(**limits)
+
+
+def test_total_page_count_includes_trailing_blank_pages():
+    data = (FIXTURES / "multi.pdf").read_bytes()
+    # Reuse the existing blank page stream without changing xref offsets.
+    assert data.count(b"/Contents 11 0 R") == 1
+    data = data.replace(b"/Contents 11 0 R", b"/Contents 10 0 R")
+    result = asyncio.run(PdfDocumentExtractor().extract(source(data)))
+    assert result.page_count == 3
+    assert [block.page_number for block in result.blocks] == [1]
+    from nexus.documents.application.normalize_document import NormalizeDocument
+
+    normalized = NormalizeDocument().execute(result)
+    assert normalized.page_count == 3
+    assert [
+        (block.source_block_index, block.page_number) for block in normalized.blocks
+    ] == [(0, 1)]
