@@ -232,6 +232,24 @@ def test_section_paths_must_reference_meaningful_headings_in_level_order():
             )
 
 
+def test_section_paths_must_preserve_heading_source_order():
+    result = NormalizeDocument().execute(
+        extracted(
+            line(0, Kind.HEADING, "H2", heading_level=2),
+            line(1, Kind.HEADING, "H1", heading_level=1),
+            line(2, Kind.TEXT, "content"),
+        )
+    )
+    with pytest.raises(ValueError):
+        replace(
+            result,
+            blocks=(
+                *result.blocks[:2],
+                replace(result.blocks[2], section_path=(1, 0)),
+            ),
+        )
+
+
 @pytest.mark.parametrize("markdown", [False, True])
 def test_actual_text_extractors_feed_normalization_without_provenance_changes(markdown):
     import asyncio
