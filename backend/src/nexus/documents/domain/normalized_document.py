@@ -87,11 +87,7 @@ class NormalizedDocument:
             previous_level = 0
             for index in block.section_path:
                 level = heading_levels.get(index)
-                if (
-                    level is None
-                    or index <= previous_index
-                    or level <= previous_level
-                ):
+                if level is None or index <= previous_index or level <= previous_level:
                     raise ValueError(
                         "Section path requires ordered meaningful headings"
                     )
