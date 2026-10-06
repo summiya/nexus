@@ -9,10 +9,12 @@ import os
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from azure.servicebus import ServiceBusMessage
 from azure.servicebus.aio import ServiceBusClient
 from azure.storage.blob.aio import BlobServiceClient
 
+from nexus.infrastructure.messaging.azure_service_bus_publisher import (
+    AzureServiceBusQueuePublisher,
+)
 from nexus.infrastructure.storage.azure_blob import normalize_azure_entity_tag
 
 _DEFAULT_CONTAINER = "nexus-files"
@@ -52,16 +54,12 @@ async def _resolve_blob(container_client: object, storage_key: str | None):
 
 async def _send(queue_name: str, payload: dict[str, object]) -> None:
     connection_string = _required_env("AZURE_SERVICE_BUS_CONNECTION_STRING")
-    async with (
-        ServiceBusClient.from_connection_string(connection_string) as client,
-        client.get_queue_sender(queue_name=queue_name) as sender,
-    ):
-        await sender.send_messages(
-            ServiceBusMessage(
-                json.dumps(payload, separators=(",", ":")),
-                message_id=str(payload["id"]),
-                content_type="application/json",
-            )
+    async with ServiceBusClient.from_connection_string(connection_string) as client:
+        await AzureServiceBusQueuePublisher(client).publish(
+            queue_name=queue_name,
+            body=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+            message_id=str(payload["id"]),
+            content_type="application/json",
         )
 
 
