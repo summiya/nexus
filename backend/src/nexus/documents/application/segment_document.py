@@ -184,12 +184,15 @@ def _slices(
                 while split >= pending[0] and text[split].isspace():
                     split -= 1
                 if split <= pending[0] or not text[pending[0] : split].strip():
-                    raise _resource_limit()
+                    # A single remaining anchor still has room for part of the run.
+                    # Keep it until the following meaningful piece can take the rest.
+                    split = pending[0]
                 remaining = maximum - len(text[split:start].encode("utf-8"))
                 attached = _whitespace_end(text, start, boundary, remaining)
                 if attached == start:
                     raise _resource_limit()
-                yield pending[0], split
+                if split > pending[0]:
+                    yield pending[0], split
                 pending = (split, attached)
                 boundary = attached
         else:

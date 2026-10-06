@@ -474,3 +474,65 @@ def test_hard_splitting_uses_bounded_forward_scans():
     )
     assert "".join(c.text for c in result.chunks) == text
     assert text.inspected < 10 * len(text)
+
+
+@pytest.mark.parametrize("kind", [Kind.TEXT, Kind.PARAGRAPH, Kind.CODE, Kind.RAW])
+@pytest.mark.parametrize("maximum", [4, 16, 1024, 4096])
+def test_long_whitespace_run_uses_remaining_anchor_capacity(kind, maximum):
+    # At four bytes this is the reported "aaaa a      a" regression.
+    text = "a" * maximum + " a" + " " * (2 * maximum - 2) + "a"
+    source = document((kind, text))
+    segmenter = SegmentDocument(preferred_chunk_bytes=maximum, max_chunk_bytes=maximum)
+    chunks = segmenter.execute(source).chunks
+    assert chunks == segmenter.execute(source).chunks
+    assert "".join(chunk.text for chunk in chunks) == text
+    assert all(chunk.text.strip() for chunk in chunks)
+    assert all(len(chunk.text.encode("utf-8")) <= maximum for chunk in chunks)
+    position = 0
+    for chunk in chunks:
+        (contribution,) = chunk.contributions
+        assert contribution.source_block_index == 0
+        assert contribution.text_start == position
+        assert contribution.text_end > position
+        assert text[contribution.text_start : contribution.text_end] == chunk.text
+        position = contribution.text_end
+    assert position == len(text)
+
+
+@pytest.mark.parametrize("kind", [Kind.TEXT, Kind.CODE])
+def test_whitespace_reservation_accounts_for_multibyte_meaningful_characters(kind):
+    text = "aaaa é    é"
+    chunks = (
+        SegmentDocument(preferred_chunk_bytes=4, max_chunk_bytes=4)
+        .execute(document((kind, text)))
+        .chunks
+    )
+    assert "".join(chunk.text for chunk in chunks) == text
+    assert all(
+        chunk.text.strip() and len(chunk.text.encode("utf-8")) <= 4 for chunk in chunks
+    )
+
+
+def test_repeated_whitespace_reservations_keep_scanning_bounded():
+    class CountedText(str):
+        inspected = 0
+
+        def __getitem__(self, key):
+            result = super().__getitem__(key)
+            self.inspected += len(result)
+            return result
+
+    original = ("a" * 64 + " a" + " " * 126 + "a") * 500
+    source = document((Kind.CODE, original))
+    text = CountedText(original)
+    source = replace(source, blocks=(replace(source.blocks[0], text=text),))
+    chunks = (
+        SegmentDocument(preferred_chunk_bytes=64, max_chunk_bytes=64)
+        .execute(source)
+        .chunks
+    )
+    assert "".join(chunk.text for chunk in chunks) == original
+    assert all(
+        chunk.text.strip() and len(chunk.text.encode("utf-8")) <= 64 for chunk in chunks
+    )
+    assert text.inspected < 15 * len(text)
