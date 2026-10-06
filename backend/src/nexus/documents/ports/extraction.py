@@ -1,9 +1,13 @@
 """Provider-neutral structured extraction boundary and safe failures."""
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from nexus.documents.domain.extracted_document import ExtractedDocument
+from nexus.documents.domain.extracted_document import (
+    ExtractedBlockKind,
+    ExtractedDocument,
+)
 from nexus.documents.ports.source import DocumentSource
 
 
@@ -14,6 +18,9 @@ class DocumentExtractionFailure(StrEnum):
     RESOURCE_LIMIT = "resource_limit"
     PARSER_FAILURE = "parser_failure"
     ENCRYPTED = "encrypted"
+    PROVIDER_ACCESS = "provider_access"
+    PROVIDER_TRANSIENT = "provider_transient"
+    PROVIDER_FAILURE = "provider_failure"
 
 
 class DocumentExtractionError(Exception):
@@ -26,3 +33,42 @@ class DocumentExtractor(Protocol):
     """Consume verified EOF before returning; the caller owns the source context."""
 
     async def extract(self, source: DocumentSource) -> ExtractedDocument: ...
+
+
+@dataclass(frozen=True, repr=False)
+class OcrBlock:
+    kind: ExtractedBlockKind
+    text: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ExtractedBlockKind) or self.kind not in (
+            ExtractedBlockKind.TEXT,
+            ExtractedBlockKind.PARAGRAPH,
+        ):
+            raise ValueError("Invalid OCR block kind")
+        if type(self.text) is not str:
+            raise ValueError("Invalid OCR block text")
+
+
+@dataclass(frozen=True, repr=False)
+class OcrPage:
+    """Original PDF page and ordered logical text blocks; empty pages are valid."""
+
+    page_number: int
+    blocks: tuple[OcrBlock, ...]
+
+    def __post_init__(self) -> None:
+        if type(self.page_number) is not int or self.page_number < 1:
+            raise ValueError("Invalid OCR page number")
+        if type(self.blocks) is not tuple or any(
+            not isinstance(block, OcrBlock) for block in self.blocks
+        ):
+            raise ValueError("Invalid OCR text blocks")
+
+
+class PdfPageOcr(Protocol):
+    async def extract_pages(
+        self, pdf_bytes: bytes, *, page_numbers: tuple[int, ...]
+    ) -> tuple[OcrPage, ...]:
+        """Analyze bounded verified PDF bytes, preserving requested original pages."""
+        ...
