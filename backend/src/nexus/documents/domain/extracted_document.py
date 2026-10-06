@@ -94,6 +94,7 @@ class ExtractedDocument:
     extractor_id: str
     extractor_version: str
     blocks: tuple[ExtractedBlock, ...]
+    page_count: int | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -111,6 +112,10 @@ class ExtractedDocument:
         if not isinstance(self.blocks, tuple) or not self.blocks:
             raise ValueError("Extraction requires ordered blocks")
         uses_pages = self.blocks[0].page_number is not None
+        if self.page_count is not None and (
+            not uses_pages or type(self.page_count) is not int or self.page_count < 1
+        ):
+            raise ValueError("Invalid page count")
         previous_position = 1
         for index, block in enumerate(self.blocks):
             if (block.page_number is not None) != uses_pages:
@@ -119,5 +124,7 @@ class ExtractedDocument:
             if position is None or block.index != index or position < previous_position:
                 raise ValueError("Invalid extraction order")
             previous_position = position
+        if self.page_count is not None and self.page_count < previous_position:
+            raise ValueError("Page count excludes observed pages")
         if not any(block.text.strip() for block in self.blocks):
             raise ValueError("Extraction requires meaningful content")

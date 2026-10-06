@@ -75,4 +75,5 @@ class PdfWithOcrDocumentExtractor:
             PDF_OCR_EXTRACTOR_ID if selected else PDF_EXTRACTOR_ID,
             PDF_OCR_EXTRACTOR_VERSION if selected else PDF_EXTRACTOR_VERSION,
             tuple(blocks),
+            len(pages),
         )

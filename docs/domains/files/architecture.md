@@ -1727,3 +1727,74 @@ required by the default suite. No self-hosted OCR engine is needed. DP-07B ends 
 `ExtractedDocument`: normalization, chunking, persistence, Document completion,
 embeddings, retrieval, standalone image ingestion, training, and retry/reprocessing
 remain out of scope.
+
+## DP-08 canonical normalization and normalized artifacts
+
+`NormalizeDocument` consumes the existing `ExtractedDocument` from TXT, Markdown,
+native PDF, or OCR-assisted PDF. Its immutable `NormalizedDocument` retains ordered
+blocks, original source block indexes, File public identity and verified ETag,
+extractor identity/version, line or page provenance, heading levels, list metadata,
+quote depth, and code/raw distinctions. It does not flatten content. A section path
+is a tuple of meaningful source-heading indexes: a heading replaces stack entries
+at its level and deeper, includes itself, and never invents skipped levels. Paths
+have at most six entries and resolve to the retained normalized heading text.
+
+`ExtractedDocument.page_count` is an optional final field, preserving positional
+construction. Line-provenance documents require `None`; older page-provenance
+values may omit the count. A supplied count is a positive exact integer at least
+as large as every observed page number. Both PDF adapters propagate the total
+count already observed by their parser/inspection, including trailing blank pages.
+Normalized values and artifacts retain that count and original page-number gaps;
+no synthetic page blocks or source lines are created. Pages with no emitted text
+remain boundaries, not evidence about physical layout or why text was absent.
+
+Normalization identity/version is `nexus.normalization` / `1`. All blocks use LF
+line endings. Ordinary text, paragraphs, and headings use Unicode NFC and remove
+trailing ASCII spaces/tabs per line. Paragraphs/headings trim outer blank lines;
+only headings collapse horizontal ASCII spaces/tabs and trim outer ASCII spaces.
+TEXT/PARAGRAPH internal spacing and indentation survive. CODE/RAW undergo only
+line-ending conversion, preserving all other characters and whitespace. Blank
+blocks and thematic breaks retain their indexes and structural roles. The whole
+result must contain meaningful content. Replacement characters, CID-looking text,
+repeated body text, headers, and footers are not heuristically erased. Current
+logical block order supplies insufficient physical-edge evidence for safe repeated
+header/footer deletion, even on many pages. No table structure is inferred from
+aligned text. Changes to canonical rules, section paths, repeated-noise policy, or
+provenance require an explicit normalization-version review.
+
+Defaults bound input and normalized UTF-8 text to 8 MiB each and block count to
+50,000, configurable through constructor arguments. Processing is synchronous and
+linear with a bounded heading stack; there are no parser libraries, background
+jobs, worker threads, process pools, global locks, or database transactions.
+
+`WriteNormalizedArtifact` receives the organization public UUID explicitly from
+trusted processing/application context. The value and content themselves are not
+proof of tenant ownership; later integration must supply the tenant from the
+already-authorized Document/source resolution. The writer reuses `ObjectStorage`
+without a new artifact repository or provider SDK dependency. Schema `1` is compact,
+sorted-key UTF-8 JSON with explicit fields, ordered blocks, and no runtime IDs or
+timestamps. A first serialization pass counts bytes and hashes the exact bytes
+with SHA-256; a second deterministic pass streams those same bytes into create-only
+storage. Individual text fragments are escaped in bounded pieces. Defaults cap
+serialized artifacts at 32 MiB and recheck the 50,000-block / 8 MiB text bounds.
+Neither pass constructs a complete artifact byte string.
+
+Keys are `documents/{organization_uuid}/{source_file_uuid}/normalized/v1/{sha256}.json`.
+The checksum includes source ETag, extraction and normalization versions, provenance,
+and canonical content. Tenant prefixes isolate otherwise identical artifacts.
+An existing key is accepted only after checking object size and streaming its bytes
+pinned to its current opaque ETag, verifying exact byte count and SHA-256. Size,
+hash, or conditional-read failures never trigger overwrite or deletion. Verification
+streams close on early exit/cancellation. Safe `ObjectStorageError` failures and
+cancellation propagate; normalization failures have a fixed public message and
+small reasons (`empty`, `resource_limit`, `artifact_mismatch`). No content is logged.
+Cancellation returns no reference, but need not prove that a remote create did not
+commit: an identical later attempt safely verifies and reuses the artifact.
+
+The returned immutable reference contains tenant/source identities, source ETag,
+storage key, exact byte length/checksum, schema version, and extractor/normalizer
+identity/version. No PostgreSQL migration, Document state change, or large relational
+body is added. Persistence/integration of the reference belongs to the real downstream
+pipeline. DP-08 ends at normalized content/artifact: segmentation, chunks, tokens,
+embeddings, retrieval, completion, retry/reprocessing machinery, and production
+consumer activation remain outside this phase.

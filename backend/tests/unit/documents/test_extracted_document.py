@@ -183,3 +183,31 @@ def test_original_positional_block_arguments_keep_their_meaning():
     assert value.start_line == 1 and value.end_line == 2
     assert value.heading_level == 2 and value.list_item is item
     assert value.quote_depth == 1 and value.page_number is None
+
+
+@pytest.mark.parametrize("count", [True, 0, -1, 1.0, "3", 2])
+def test_page_count_rejects_invalid_types_and_excluded_pages(count):
+    with pytest.raises(ValueError):
+        ExtractedDocument(
+            UUID(int=1),
+            "etag",
+            "nexus.pdf",
+            "1",
+            (ExtractedBlock(0, Kind.PARAGRAPH, "content", page_number=3),),
+            count,
+        )
+
+
+def test_page_count_is_optional_final_field_and_not_valid_for_lines():
+    page = ExtractedBlock(0, Kind.PARAGRAPH, "content", page_number=3)
+    assert (
+        ExtractedDocument(UUID(int=1), "etag", "nexus.pdf", "1", (page,)).page_count
+        is None
+    )
+    assert (
+        ExtractedDocument(UUID(int=1), "etag", "nexus.pdf", "1", (page,), 5).page_count
+        == 5
+    )
+    assert document().page_count is None
+    with pytest.raises(ValueError):
+        document(page_count=1)

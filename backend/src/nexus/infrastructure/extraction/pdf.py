@@ -94,12 +94,14 @@ class PdfDocumentExtractor:
 
     async def extract(self, source: DocumentSource) -> ExtractedDocument:
         _, parsed = await self._read_and_parse(source, inspect=False)
+        blocks, page_count = cast(tuple[list[ExtractedBlock], int], parsed)
         return ExtractedDocument(
             source.source_file_public_id,
             source.entity_tag,
             PDF_EXTRACTOR_ID,
             PDF_EXTRACTOR_VERSION,
-            tuple(cast(list[ExtractedBlock], parsed)),
+            tuple(blocks),
+            page_count,
         )
 
     @property
@@ -119,7 +121,7 @@ class PdfDocumentExtractor:
 
     async def _read_and_parse(
         self, source: DocumentSource, *, inspect: bool
-    ) -> tuple[bytes, list[ExtractedBlock] | list[PdfPageInspection]]:
+    ) -> tuple[bytes, tuple[list[ExtractedBlock], int] | list[PdfPageInspection]]:
         if source.expected_size_bytes > self._max_bytes:
             raise DocumentExtractionError(DocumentExtractionFailure.RESOURCE_LIMIT)
         data = bytearray()
@@ -176,7 +178,7 @@ def _parse_in_process(
     memory_bytes: int,
     cancelled: Event,
     inspect: bool = False,
-) -> list[ExtractedBlock] | list[PdfPageInspection]:
+) -> tuple[list[ExtractedBlock], int] | list[PdfPageInspection]:
     # File-backed exchange avoids pipe deadlocks and keeps all blocking work
     # (including JSON decoding) off the event loop. The directory is private.
     with tempfile.TemporaryDirectory(prefix="nexus-pdf-") as directory:
@@ -238,12 +240,13 @@ def _parse_in_process(
                     )
                     for number, texts, raster, substantial, unusable in result["pages"]
                 ]
-            return [
+            blocks = [
                 ExtractedBlock(
                     index, ExtractedBlockKind.PARAGRAPH, text, page_number=page
                 )
                 for index, (text, page) in enumerate(result["blocks"])
             ]
+            return blocks, result["page_count"]
         finally:
             if process.poll() is None:
                 process.kill()
@@ -252,12 +255,12 @@ def _parse_in_process(
 
 def _parse_pdf(
     source: BinaryIO, max_pages: int, max_blocks: int, max_text_bytes: int
-) -> list[tuple[str, int]]:
+) -> tuple[list[tuple[str, int]], int]:
     pages = _inspect_pdf(source, max_pages, max_blocks, max_text_bytes)
     blocks = [(text, page.page_number) for page in pages for text in page.texts]
     if not blocks:
         raise DocumentExtractionError(DocumentExtractionFailure.EMPTY)
-    return blocks
+    return blocks, len(pages)
 
 
 def _inspect_pdf(
@@ -373,11 +376,10 @@ def _child_main() -> int:
                         ]
                     }
                 else:
-                    result = {
-                        "blocks": _parse_pdf(
-                            source, max_pages, max_blocks, max_text_bytes
-                        )
-                    }
+                    blocks, page_count = _parse_pdf(
+                        source, max_pages, max_blocks, max_text_bytes
+                    )
+                    result = {"blocks": blocks, "page_count": page_count}
         except DocumentExtractionError as exc:
             result = {"failure": exc.reason.value}
         with output_path.open("w", encoding="utf-8") as output:

@@ -311,3 +311,43 @@ def test_replacement_during_multichunk_download_is_rejected():
             await stream.aclose()
 
     asyncio.run(_with_isolated_storage(scenario))
+
+
+def test_normalized_artifact_create_and_verified_duplicate_round_trip() -> None:
+    import hashlib
+
+    from nexus.documents.application.normalize_document import NormalizeDocument
+    from nexus.documents.application.write_normalized_artifact import (
+        WriteNormalizedArtifact,
+        canonical_artifact_chunks,
+    )
+    from nexus.documents.domain.extracted_document import (
+        ExtractedBlock,
+        ExtractedBlockKind,
+        ExtractedDocument,
+    )
+
+    async def scenario(storage: AzureBlobObjectStorage, _: ContainerClient) -> None:
+        document = NormalizeDocument().execute(
+            ExtractedDocument(
+                uuid.UUID(int=1),
+                "source-etag",
+                "nexus.txt",
+                "1",
+                (ExtractedBlock(0, ExtractedBlockKind.TEXT, "Cafe\u0301 Ω", 1, 2),),
+            )
+        )
+        writer = WriteNormalizedArtifact(storage)
+        reference = await writer.execute(
+            document, organization_public_id=uuid.UUID(int=2)
+        )
+        assert (
+            await writer.execute(document, organization_public_id=uuid.UUID(int=2))
+            == reference
+        )
+        body = await collect(storage.stream_object(storage_key=reference.storage_key))
+        assert body == b"".join(canonical_artifact_chunks(document))
+        assert hashlib.sha256(body).hexdigest() == reference.checksum_sha256
+        assert len(body) == reference.size_bytes
+
+    asyncio.run(_with_isolated_storage(scenario))
