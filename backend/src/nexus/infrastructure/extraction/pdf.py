@@ -7,9 +7,10 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import BinaryIO
+from typing import BinaryIO, cast
 
 from nexus.documents.domain.extracted_document import (
     ExtractedBlock,
@@ -32,6 +33,26 @@ DEFAULT_MAX_PDF_PAGES = 500
 DEFAULT_PDF_TIMEOUT_SECONDS = 30.0
 DEFAULT_PDF_MEMORY_BYTES = 512 * 1024 * 1024
 _MEMORY_LIMIT_EXIT_CODE = 2
+
+
+@dataclass(frozen=True)
+class _PdfPage:
+    page_number: int
+    texts: tuple[str, ...]
+    has_raster: bool
+    substantial_raster: bool
+    unusable_text: bool
+
+    @property
+    def needs_ocr(self) -> bool:
+        meaningful = any(
+            character.isalnum() for text in self.texts for character in text
+        )
+        return (
+            self.unusable_text
+            or self.substantial_raster
+            or (self.has_raster and not meaningful)
+        )
 
 
 class PdfDocumentExtractor:
@@ -70,6 +91,22 @@ class PdfDocumentExtractor:
         self._memory_bytes = memory_bytes
 
     async def extract(self, source: DocumentSource) -> ExtractedDocument:
+        _, parsed = await self._read_and_parse(source, inspect=False)
+        return ExtractedDocument(
+            source.source_file_public_id,
+            source.entity_tag,
+            PDF_EXTRACTOR_ID,
+            PDF_EXTRACTOR_VERSION,
+            tuple(cast(list[ExtractedBlock], parsed)),
+        )
+
+    async def _inspect(self, source: DocumentSource) -> tuple[bytes, list[_PdfPage]]:
+        data, pages = await self._read_and_parse(source, inspect=True)
+        return data, cast(list[_PdfPage], pages)
+
+    async def _read_and_parse(
+        self, source: DocumentSource, *, inspect: bool
+    ) -> tuple[bytes, list[ExtractedBlock] | list[_PdfPage]]:
         if source.expected_size_bytes > self._max_bytes:
             raise DocumentExtractionError(DocumentExtractionFailure.RESOURCE_LIMIT)
         data = bytearray()
@@ -89,6 +126,7 @@ class PdfDocumentExtractor:
                 self._timeout,
                 self._memory_bytes,
                 cancelled,
+                inspect,
             )
         )
         try:
@@ -113,13 +151,7 @@ class PdfDocumentExtractor:
             raise DocumentExtractionError(
                 DocumentExtractionFailure.PARSER_FAILURE
             ) from exc
-        return ExtractedDocument(
-            source.source_file_public_id,
-            source.entity_tag,
-            PDF_EXTRACTOR_ID,
-            PDF_EXTRACTOR_VERSION,
-            tuple(blocks),
-        )
+        return bytes(data), blocks
 
 
 def _parse_in_process(
@@ -130,7 +162,8 @@ def _parse_in_process(
     timeout_seconds: float,
     memory_bytes: int,
     cancelled: Event,
-) -> list[ExtractedBlock]:
+    inspect: bool = False,
+) -> list[ExtractedBlock] | list[_PdfPage]:
     # File-backed exchange avoids pipe deadlocks and keeps all blocking work
     # (including JSON decoding) off the event loop. The directory is private.
     with tempfile.TemporaryDirectory(prefix="nexus-pdf-") as directory:
@@ -150,6 +183,7 @@ def _parse_in_process(
                 str(max_blocks),
                 str(max_text_bytes),
                 str(memory_bytes),
+                "inspect" if inspect else "native",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -174,13 +208,21 @@ def _parse_in_process(
             if process.returncode != 0:
                 raise DocumentExtractionError(DocumentExtractionFailure.PARSER_FAILURE)
             # JSON escaping can expand text sixfold; block metadata is also bounded.
-            if output_path.stat().st_size > max_text_bytes * 6 + max_blocks * 64 + 1024:
+            if (
+                output_path.stat().st_size
+                > max_text_bytes * 6 + max_blocks * 64 + max_pages * 256 + 1024
+            ):
                 raise DocumentExtractionError(DocumentExtractionFailure.RESOURCE_LIMIT)
             result = json.loads(output_path.read_text(encoding="utf-8"))
             if "failure" in result:
                 raise DocumentExtractionError(
                     DocumentExtractionFailure(result["failure"])
                 )
+            if inspect:
+                return [
+                    _PdfPage(number, tuple(texts), raster, substantial, unusable)
+                    for number, texts, raster, substantial, unusable in result["pages"]
+                ]
             return [
                 ExtractedBlock(
                     index, ExtractedBlockKind.PARAGRAPH, text, page_number=page
@@ -196,9 +238,19 @@ def _parse_in_process(
 def _parse_pdf(
     source: BinaryIO, max_pages: int, max_blocks: int, max_text_bytes: int
 ) -> list[tuple[str, int]]:
+    pages = _inspect_pdf(source, max_pages, max_blocks, max_text_bytes)
+    blocks = [(text, page.page_number) for page in pages for text in page.texts]
+    if not blocks:
+        raise DocumentExtractionError(DocumentExtractionFailure.EMPTY)
+    return blocks
+
+
+def _inspect_pdf(
+    source: BinaryIO, max_pages: int, max_blocks: int, max_text_bytes: int
+) -> list[_PdfPage]:
     # These imports occur only after the child has installed its memory limit.
     from pdfminer.converter import PDFPageAggregator
-    from pdfminer.layout import LAParams, LTTextBox
+    from pdfminer.layout import LAParams, LTContainer, LTImage, LTTextBox
     from pdfminer.pdfdocument import PDFDocument, PDFEncryptionError
     from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
     from pdfminer.pdfpage import PDFPage
@@ -219,7 +271,8 @@ def _parse_pdf(
         resources = PDFResourceManager(caching=False)
         device = PDFPageAggregator(resources, laparams=LAParams())
         interpreter = PDFPageInterpreter(resources, device)
-        blocks: list[tuple[str, int]] = []
+        pages: list[_PdfPage] = []
+        block_count = 0
         text_bytes = 0
         try:
             for page_number, page in enumerate(PDFPage.create_pages(document), start=1):
@@ -228,23 +281,50 @@ def _parse_pdf(
                         DocumentExtractionFailure.RESOURCE_LIMIT
                     )
                 interpreter.process_page(page)
-                for element in device.get_result():
+                layout = device.get_result()
+                texts: list[str] = []
+                for element in layout:
                     if not isinstance(element, LTTextBox):
                         continue
                     text = element.get_text()
                     if not text.strip():
                         continue
                     text_bytes += len(text.encode("utf-8"))
-                    if len(blocks) >= max_blocks or text_bytes > max_text_bytes:
+                    if block_count >= max_blocks or text_bytes > max_text_bytes:
                         raise DocumentExtractionError(
                             DocumentExtractionFailure.RESOURCE_LIMIT
                         )
-                    blocks.append((text, page_number))
+                    texts.append(text)
+                    block_count += 1
+                # Geometry stays private: only routing booleans leave the child.
+                images = []
+                pending = list(layout)
+                while pending:
+                    element = pending.pop()
+                    if isinstance(element, LTImage):
+                        images.append(element)
+                    elif isinstance(element, LTContainer) and not isinstance(
+                        element, LTTextBox
+                    ):
+                        pending.extend(element)
+                area = max(0, layout.width) * max(0, layout.height)
+                raster_area = sum(
+                    max(0, min(image.x1, layout.x1) - max(image.x0, layout.x0))
+                    * max(0, min(image.y1, layout.y1) - max(image.y0, layout.y0))
+                    for image in images
+                )
+                pages.append(
+                    _PdfPage(
+                        page_number,
+                        tuple(texts),
+                        bool(images),
+                        area > 0 and raster_area >= area * 0.5,
+                        any("\ufffd" in text or "(cid:" in text for text in texts),
+                    )
+                )
         finally:
             device.close()
-        if not blocks:
-            raise DocumentExtractionError(DocumentExtractionFailure.EMPTY)
-        return blocks
+        return pages
     except PDFEncryptionError as exc:
         raise DocumentExtractionError(DocumentExtractionFailure.ENCRYPTED) from exc
     except (PDFSyntaxError, PSEOF) as exc:
@@ -263,9 +343,26 @@ def _child_main() -> int:
         resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
         try:
             with input_path.open("rb") as source:
-                result: dict[str, object] = {
-                    "blocks": _parse_pdf(source, max_pages, max_blocks, max_text_bytes)
-                }
+                if sys.argv[7] == "inspect":
+                    pages = _inspect_pdf(source, max_pages, max_blocks, max_text_bytes)
+                    result: dict[str, object] = {
+                        "pages": [
+                            [
+                                page.page_number,
+                                page.texts,
+                                page.has_raster,
+                                page.substantial_raster,
+                                page.unusable_text,
+                            ]
+                            for page in pages
+                        ]
+                    }
+                else:
+                    result = {
+                        "blocks": _parse_pdf(
+                            source, max_pages, max_blocks, max_text_bytes
+                        )
+                    }
         except DocumentExtractionError as exc:
             result = {"failure": exc.reason.value}
         with output_path.open("w", encoding="utf-8") as output:

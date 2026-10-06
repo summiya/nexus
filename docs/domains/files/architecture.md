@@ -1639,3 +1639,82 @@ Source failures remain `DocumentSourceError` and prevent parser startup.
 DP-07 ends at `ExtractedDocument`. Production consumption remains unactivated;
 OCR, normalization, chunking, persistence, Document completion, embeddings,
 retrieval, and retry/reprocessing machinery remain outside this phase.
+
+## DP-07B managed PDF OCR
+
+`PdfWithOcrDocumentExtractor` implements the existing `DocumentExtractor` port.
+It consumes `DocumentSource` to verified EOF once, retains the bounded original
+PDF, and reuses DP-07's disposable parser, deadline, memory enforcement, and
+kill/reap cleanup. Private inspection records native text and small page routing
+flags, including empty pages. No parser geometry crosses into domain/application
+contracts. The provider-neutral `PdfPageOcr` capability returns ordered original
+page numbers and logical text blocks, not a partial `ExtractedDocument`.
+
+Routing is deterministic: clearly unusable decoded text (replacement characters
+or unresolved CID placeholders), image-bearing pages with no meaningful native
+text, and substantial raster content require OCR. Substantial means summed
+page-clipped raster area reaches half the page area. This deliberately conservative
+heuristic may OCR large decorative images or overlapping images and may miss small
+scanned inserts on otherwise readable pages. It does not claim semantic image
+understanding. Blank pages without raster/text emit no blocks and do not trigger
+OCR. Short valid native text has no minimum character-count threshold.
+
+The Azure adapter submits the bounded original PDF to `prebuilt-read`, selecting
+only required original page numbers. The entire PDF is uploaded to Azure even
+when only some pages are analyzed. Selected pages replace their native text;
+merge order is original page order, with final contiguous indexes. Reliable
+single-page paragraphs become paragraph blocks; ambiguous/unattributed paragraphs
+use that page's ordered lines instead, never both. No headings, tables, source
+line numbers, coordinates, or Azure SDK objects enter the output. Empty OCR pages
+are valid, but an entirely empty merged document fails. Missing/duplicated pages,
+invalid spans, failed operations, and malformed provider results fail the whole
+extraction. Native-only results retain `nexus.pdf` / `1`; OCR-assisted results use
+Nexus-owned `nexus.pdf-ocr` / `1`. Azure constants are infrastructure-only:
+`azure-ai-documentintelligence==1.0.2`, API `2024-11-30`, model `prebuilt-read`.
+Ordering is deterministic for the same provider response; managed model updates
+can change recognized text despite a stable API version.
+
+Defaults retain 8 MiB input, 500 original pages, 50,000 combined blocks, and 8 MiB
+combined UTF-8 text. OCR has two active operations per adapter/process, a 120-second
+deadline including semaphore admission and polling, two-second polling intervals
+(subject to the SDK's service Retry-After handling), and 20-second connection/read
+timeouts. No application retry loop is added; per-call SDK retries are disabled,
+including analyze submission. These are input/logical-output limits, not a hard
+Azure SDK heap ceiling: the SDK deserializes the bounded-page service response
+before logical output validation. Per-process slots are not distributed quota
+control; deployment replica counts must respect Azure account quotas. 429,
+network/5xx failures, and deadlines map to `provider_transient`; authentication
+and missing configuration/resource access map to `provider_access`; unexpected
+provider failures map to `provider_failure`. Existing source/parser/resource errors
+retain their contracts. Public messages are fixed; no document content or provider
+error text is logged.
+
+The adapter borrows an async `DocumentIntelligenceClient` configured with API
+`2024-11-30`; it never closes the shared client or credential. Awaited SDK polling
+has no detached Nexus task. Cancellation propagates, stops local waiting, and
+releases the semaphore. It does not cancel remote Azure work; a later resubmission
+may create another billable operation. Durable operation recovery belongs to DP-11.
+No database sessions or locks are held. Before eventual consumer activation,
+composition must ensure the source/native/OCR deadlines plus settlement headroom
+fit the configured Service Bus lock-renewal budget; the default OCR deadline is
+not automatically safe for a reduced worker renewal configuration.
+
+Production consumption remains unactivated and no unused runtime composition or
+settings are added. Future real processor composition owns a shared async Managed
+Identity credential/client using `AsyncExitStack`, then injects the composite into
+`ExtractDocument`'s existing `pdf` argument. Production is Managed Identity only,
+without an API-key path. Deployment requires a pre-provisioned single-service
+Document Intelligence account (`FormRecognizer`, S0), a custom-subdomain HTTPS
+endpoint (regional endpoints do not support Entra), local authentication disabled,
+and appropriate worker network access. `infra/azure/document-ocr.bicep` references
+that account and grants the worker identity **Cognitive Services User** at the
+account scope. It does not provision the account or change network rules. Deploying
+this role assignment does not activate a consumer.
+
+Local development/tests use a fake page OCR capability or mocked Azure client.
+Optional live smoke tests may use an explicitly supplied development Entra
+credential and isolated test resource; neither credentials nor Azure access are
+required by the default suite. No self-hosted OCR engine is needed. DP-07B ends at
+`ExtractedDocument`: normalization, chunking, persistence, Document completion,
+embeddings, retrieval, standalone image ingestion, training, and retry/reprocessing
+remain out of scope.
