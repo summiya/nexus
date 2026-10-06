@@ -4,14 +4,15 @@ from uuid import UUID
 
 import pytest
 
-from nexus.documents.ports.extraction import DocumentExtractionError, OcrPage
+from nexus.documents.domain.extracted_document import ExtractedBlockKind as Kind
+from nexus.documents.ports.extraction import DocumentExtractionError, OcrBlock, OcrPage
 from nexus.documents.ports.extraction import DocumentExtractionFailure as Failure
 from nexus.documents.ports.source import (
     DocumentSource,
     DocumentSourceError,
     DocumentSourceFailure,
 )
-from nexus.infrastructure.extraction.pdf import PdfDocumentExtractor, _PdfPage
+from nexus.infrastructure.extraction.pdf import PdfDocumentExtractor, PdfPageInspection
 from nexus.infrastructure.extraction.pdf_ocr import PdfWithOcrDocumentExtractor
 
 FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "extraction"
@@ -37,7 +38,9 @@ class FakeOcr:
         return (
             self.pages
             if self.pages is not None
-            else tuple(OcrPage(page, ("OCR Ω",)) for page in page_numbers)
+            else tuple(
+                OcrPage(page, (OcrBlock(Kind.TEXT, "OCR Ω"),)) for page in page_numbers
+            )
         )
 
 
@@ -85,12 +88,12 @@ def test_selected_pages_replace_native_text_preserve_original_pages_and_metadata
 @pytest.mark.parametrize(
     "page,expected",
     [
-        (_PdfPage(1, (), False, False, False), False),
-        (_PdfPage(1, (), True, False, False), True),
-        (_PdfPage(1, ("A",), False, False, False), False),
-        (_PdfPage(1, ("A",), True, False, False), False),
-        (_PdfPage(1, ("Footer",), True, True, False), True),
-        (_PdfPage(1, ("(cid:10)",), False, False, True), True),
+        (PdfPageInspection(1, (), False, False, False), False),
+        (PdfPageInspection(1, (), True, False, False), True),
+        (PdfPageInspection(1, ("A",), False, False, False), False),
+        (PdfPageInspection(1, ("A",), True, False, False), False),
+        (PdfPageInspection(1, ("Footer",), True, True, False), True),
+        (PdfPageInspection(1, ("(cid:10)",), False, False, True), True),
     ],
 )
 def test_routing_is_explicit_and_short_native_text_is_valid(page, expected):
@@ -119,7 +122,14 @@ def test_blank_and_rejected_native_documents_do_not_trigger_ocr(name, reason):
 
 @pytest.mark.parametrize(
     "pages",
-    [(), (OcrPage(1, ("wrong page",)),), (OcrPage(2, ("a",)), OcrPage(2, ("b",)))],
+    [
+        (),
+        (OcrPage(1, (OcrBlock(Kind.TEXT, "wrong page"),)),),
+        (
+            OcrPage(2, (OcrBlock(Kind.TEXT, "a"),)),
+            OcrPage(2, (OcrBlock(Kind.TEXT, "b"),)),
+        ),
+    ],
 )
 def test_partial_wrong_or_duplicate_ocr_pages_fail_whole_document(pages):
     with pytest.raises(DocumentExtractionError) as exc:
@@ -210,7 +220,8 @@ def test_cancellation_during_ocr_propagates_without_tasks():
 
 
 @pytest.mark.parametrize(
-    "page,texts", [(True, ("a",)), (0, ()), (1, ["a"]), (1, (True,))]
+    "page,texts",
+    [(True, (OcrBlock(Kind.TEXT, "a"),)), (0, ()), (1, ["a"]), (1, (True,))],
 )
 def test_page_ocr_values_reject_invalid_python_types(page, texts):
     with pytest.raises(ValueError):
@@ -227,3 +238,45 @@ def test_malformed_pdf_does_not_fall_back_to_ocr():
         )
     assert exc.value.reason is Failure.MALFORMED
     assert not ocr.calls
+
+
+@pytest.mark.parametrize("kind", [Kind.TEXT, Kind.PARAGRAPH])
+def test_composite_preserves_ocr_kind_without_duplicate_native_page_text(kind):
+    result = asyncio.run(
+        PdfWithOcrDocumentExtractor(
+            PdfDocumentExtractor(),
+            FakeOcr((OcrPage(2, (OcrBlock(kind, "OCR page two"),)),)),
+        ).extract(source((FIXTURES / "scan-footer.pdf").read_bytes()))
+    )
+    assert [(block.page_number, block.kind, block.text) for block in result.blocks] == [
+        (1, Kind.PARAGRAPH, "Native one\n"),
+        (2, kind, "OCR page two"),
+        (3, Kind.PARAGRAPH, "Native three\n"),
+    ]
+    assert [block.index for block in result.blocks] == [0, 1, 2]
+
+
+@pytest.mark.parametrize(
+    "kind,text", [("text", "a"), (Kind.HEADING, "a"), (Kind.TEXT, True)]
+)
+def test_ocr_blocks_reject_invalid_kinds_and_text_types(kind, text):
+    with pytest.raises(ValueError):
+        OcrBlock(kind, text)
+
+
+def test_pdf_inspection_and_limits_are_explicit_infrastructure_api():
+    data = (FIXTURES / "multi.pdf").read_bytes()
+    native = PdfDocumentExtractor(max_blocks=3, max_text_bytes=100)
+    inspected_data, pages = asyncio.run(native.inspect_source(source(data)))
+    assert inspected_data == data
+    assert [(page.page_number, page.texts) for page in pages] == [
+        (1, ("Page one\n",)),
+        (2, ()),
+        (3, ("Page three\n",)),
+    ]
+    assert native.max_blocks == 3
+    assert native.max_text_bytes == 100
+    with pytest.raises(AttributeError):
+        native.max_blocks = 100
+    with pytest.raises(AttributeError):
+        native.max_text_bytes = 1000

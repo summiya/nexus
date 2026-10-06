@@ -8,6 +8,7 @@ from nexus.documents.domain.extracted_document import (
 from nexus.documents.ports.extraction import (
     DocumentExtractionError,
     DocumentExtractionFailure,
+    OcrBlock,
     PdfPageOcr,
 )
 from nexus.documents.ports.source import DocumentSource
@@ -27,28 +28,33 @@ class PdfWithOcrDocumentExtractor:
         self._ocr = ocr
 
     async def extract(self, source: DocumentSource) -> ExtractedDocument:
-        data, pages = await self._native._inspect(source)
+        data, pages = await self._native.inspect_source(source)
         selected = tuple(page.page_number for page in pages if page.needs_ocr)
-        replacements: dict[int, tuple[str, ...]] = {}
+        replacements: dict[int, tuple[OcrBlock, ...]] = {}
         if selected:
             ocr_pages = await self._ocr.extract_pages(data, page_numbers=selected)
             if tuple(page.page_number for page in ocr_pages) != selected:
                 raise DocumentExtractionError(
                     DocumentExtractionFailure.PROVIDER_FAILURE
                 )
-            replacements = {page.page_number: page.texts for page in ocr_pages}
+            replacements = {page.page_number: page.blocks for page in ocr_pages}
 
         blocks: list[ExtractedBlock] = []
         text_bytes = 0
         for page in pages:
-            texts = replacements.get(page.page_number, page.texts)
-            for text in texts:
+            page_blocks = replacements.get(page.page_number)
+            if page_blocks is None:
+                page_blocks = tuple(
+                    OcrBlock(ExtractedBlockKind.PARAGRAPH, text) for text in page.texts
+                )
+            for block in page_blocks:
+                text = block.text
                 if not text.strip():
                     continue
                 text_bytes += len(text.encode("utf-8"))
                 if (
-                    len(blocks) >= self._native._max_blocks
-                    or text_bytes > self._native._max_text_bytes
+                    len(blocks) >= self._native.max_blocks
+                    or text_bytes > self._native.max_text_bytes
                 ):
                     raise DocumentExtractionError(
                         DocumentExtractionFailure.RESOURCE_LIMIT
@@ -56,7 +62,7 @@ class PdfWithOcrDocumentExtractor:
                 blocks.append(
                     ExtractedBlock(
                         len(blocks),
-                        ExtractedBlockKind.PARAGRAPH,
+                        block.kind,
                         text,
                         page_number=page.page_number,
                     )

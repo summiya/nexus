@@ -11,7 +11,8 @@ from azure.core.exceptions import (
     ServiceResponseError,
 )
 
-from nexus.documents.ports.extraction import DocumentExtractionError, OcrPage
+from nexus.documents.domain.extracted_document import ExtractedBlockKind as Kind
+from nexus.documents.ports.extraction import DocumentExtractionError, OcrBlock, OcrPage
 from nexus.documents.ports.extraction import DocumentExtractionFailure as Failure
 from nexus.infrastructure.extraction.azure_document_intelligence import (
     AzureDocumentIntelligenceOcr,
@@ -65,7 +66,9 @@ def test_exact_request_order_unicode_and_borrowed_client_ownership():
         return poller
 
     sdk.begin_analyze_document.side_effect = submit
-    assert extract(sdk) == (OcrPage(2, ("Café Ω", "Second")),)
+    assert extract(sdk) == (
+        OcrPage(2, (OcrBlock(Kind.TEXT, "Café Ω"), OcrBlock(Kind.TEXT, "Second"))),
+    )
     args, kwargs = sdk.begin_analyze_document.call_args
     assert args == ("prebuilt-read",)
     assert submitted == [b"verified-pdf"]
@@ -97,7 +100,7 @@ def test_reliable_paragraphs_replace_lines_without_duplicates():
             ]
         )
     )
-    assert extract(sdk) == (OcrPage(2, ("Café Ω\nSecond",)),)
+    assert extract(sdk) == (OcrPage(2, (OcrBlock(Kind.PARAGRAPH, "Café Ω\nSecond"),)),)
 
 
 @pytest.mark.parametrize("regions", [None, [{"pageNumber": 2}, {"pageNumber": 4}]])
@@ -130,7 +133,10 @@ def test_ambiguous_paragraphs_fall_back_to_original_pages_ordered_lines(regions)
     output = asyncio.run(
         AzureDocumentIntelligenceOcr(sdk).extract_pages(b"pdf", page_numbers=(2, 4))
     )
-    assert output == (OcrPage(2, ("Café Ω",)), OcrPage(4, ("Second",)))
+    assert output == (
+        OcrPage(2, (OcrBlock(Kind.TEXT, "Café Ω"),)),
+        OcrPage(4, (OcrBlock(Kind.TEXT, "Second"),)),
+    )
     assert sdk.begin_analyze_document.call_args.kwargs["pages"] == "2,4"
 
 
@@ -231,15 +237,15 @@ def test_failures_are_safe_chained_and_not_retried(stage, error, reason):
         (408, Failure.PROVIDER_TRANSIENT),
         (429, Failure.PROVIDER_TRANSIENT),
         (503, Failure.PROVIDER_TRANSIENT),
-        (400, Failure.MALFORMED),
-        (415, Failure.MALFORMED),
-        (422, Failure.MALFORMED),
+        (400, Failure.PROVIDER_FAILURE),
+        (415, Failure.PROVIDER_FAILURE),
+        (422, Failure.PROVIDER_FAILURE),
         (200, Failure.PROVIDER_FAILURE),
         (409, Failure.PROVIDER_FAILURE),
     ],
 )
 def test_http_failure_classification(status, reason):
-    error = HttpResponseError("private")
+    error = HttpResponseError("InvalidContent in a human-readable message: private")
     error.status_code = status
     sdk, poller = client()
     poller.result.side_effect = error
@@ -382,7 +388,19 @@ def test_concurrent_operations_are_bounded_and_event_loop_remains_responsive():
 
 
 @pytest.mark.parametrize(
-    "mode", ["success", "submit_429", "poll_429", "failed", "cancel", "timeout"]
+    "mode",
+    [
+        "success",
+        "submit_429",
+        "poll_429",
+        "failed",
+        "cancel",
+        "timeout",
+        "invalid_request",
+        "invalid_content",
+        "unsupported_content",
+        "failed_invalid_content",
+    ],
 )
 def test_pinned_async_sdk_request_poll_failure_and_cancellation_behavior(mode):
     from aiohttp import web
@@ -396,6 +414,26 @@ def test_pinned_async_sdk_request_poll_failure_and_cancellation_behavior(mode):
         async def handle(request):
             requests.append((request.method, dict(request.query), await request.read()))
             if request.method == "POST":
+                if mode in {
+                    "invalid_request",
+                    "invalid_content",
+                    "unsupported_content",
+                }:
+                    code = {
+                        "invalid_request": "InvalidParameter",
+                        "invalid_content": "InvalidContent",
+                        "unsupported_content": "UnsupportedContent",
+                    }[mode]
+                    return web.json_response(
+                        {
+                            "error": {
+                                "code": "InvalidRequest",
+                                "message": "private InvalidContent",
+                                "innererror": {"code": code, "message": "private"},
+                            }
+                        },
+                        status=400,
+                    )
                 if mode == "submit_429":
                     return web.json_response(
                         {"error": {"code": "TooManyRequests", "message": "private"}},
@@ -413,6 +451,20 @@ def test_pinned_async_sdk_request_poll_failure_and_cancellation_behavior(mode):
                 return web.json_response(
                     {"error": {"code": "TooManyRequests", "message": "private"}},
                     status=429,
+                )
+            if mode == "failed_invalid_content":
+                return web.json_response(
+                    {
+                        "status": "failed",
+                        "error": {
+                            "code": "InvalidRequest",
+                            "message": "private",
+                            "innererror": {
+                                "code": "InvalidContent",
+                                "message": "private",
+                            },
+                        },
+                    }
                 )
             if mode == "failed":
                 return web.json_response(
@@ -454,15 +506,28 @@ def test_pinned_async_sdk_request_poll_failure_and_cancellation_behavior(mode):
                     with pytest.raises(asyncio.CancelledError):
                         await task
                 elif mode == "success":
-                    assert await task == (OcrPage(2, ("Café Ω", "Second")),)
+                    assert await task == (
+                        OcrPage(
+                            2,
+                            (
+                                OcrBlock(Kind.TEXT, "Café Ω"),
+                                OcrBlock(Kind.TEXT, "Second"),
+                            ),
+                        ),
+                    )
                 else:
                     with pytest.raises(DocumentExtractionError) as exc:
                         await task
-                    assert exc.value.reason is (
-                        Failure.PROVIDER_FAILURE
-                        if mode == "failed"
-                        else Failure.PROVIDER_TRANSIENT
-                    )
+                    expected = Failure.PROVIDER_TRANSIENT
+                    if mode in {"failed", "invalid_request"}:
+                        expected = Failure.PROVIDER_FAILURE
+                    elif mode in {
+                        "invalid_content",
+                        "unsupported_content",
+                        "failed_invalid_content",
+                    }:
+                        expected = Failure.MALFORMED
+                    assert exc.value.reason is expected
                     assert str(exc.value) == "Document extraction failed"
                 release.set()
                 # Cancellation settles the HTTP connection without closing the borrowed client.
@@ -470,7 +535,15 @@ def test_pinned_async_sdk_request_poll_failure_and_cancellation_behavior(mode):
                 assert not transport.session.closed
                 assert not transport.session.connector._acquired
             assert [r[0] for r in requests] == (
-                ["POST"] if mode == "submit_429" else ["POST", "GET"]
+                ["POST"]
+                if mode
+                in {
+                    "submit_429",
+                    "invalid_request",
+                    "invalid_content",
+                    "unsupported_content",
+                }
+                else ["POST", "GET"]
             )
             assert requests[0][1] == {
                 "pages": "2",

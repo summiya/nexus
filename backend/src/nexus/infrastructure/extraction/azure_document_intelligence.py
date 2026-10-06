@@ -2,6 +2,7 @@
 
 import asyncio
 import math
+from collections.abc import Mapping
 from io import BytesIO
 
 from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
@@ -19,8 +20,10 @@ from azure.core.exceptions import (
     ServiceResponseError,
 )
 
+from nexus.documents.domain.extracted_document import ExtractedBlockKind
 from nexus.documents.ports.extraction import (
     DocumentExtractionError,
+    OcrBlock,
     OcrPage,
 )
 from nexus.documents.ports.extraction import (
@@ -117,7 +120,7 @@ class AzureDocumentIntelligenceOcr:
                 exc.status_code is not None and exc.status_code >= 500
             ):
                 reason = Failure.PROVIDER_TRANSIENT
-            elif exc.status_code in (400, 415, 422):
+            elif _is_invalid_content(exc):
                 reason = Failure.MALFORMED
             raise DocumentExtractionError(reason) from exc
         except (TimeoutError, ServiceRequestError, ServiceResponseError) as exc:
@@ -170,14 +173,16 @@ class AzureDocumentIntelligenceOcr:
             # Use one representation for the whole page, never paragraph + line text.
             if page.page_number in fallback_pages or not paragraphs:
                 units = list(page.lines or [])
+                kind = ExtractedBlockKind.TEXT
             else:
                 units = list(paragraphs)
+                kind = ExtractedBlockKind.PARAGRAPH
             if len(units) + count > self._max_blocks:
                 raise DocumentExtractionError(Failure.RESOURCE_LIMIT)
             ordered = sorted(
                 units, key=lambda unit: self._span_offset(unit.spans, result.content)
             )
-            texts = []
+            blocks = []
             previous_end = 0
             for unit in ordered:
                 offset = self._span_offset(unit.spans, result.content)
@@ -192,8 +197,8 @@ class AzureDocumentIntelligenceOcr:
                 text_bytes += len(unit.content.encode("utf-8"))
                 if count > self._max_blocks or text_bytes > self._max_text_bytes:
                     raise DocumentExtractionError(Failure.RESOURCE_LIMIT)
-                texts.append(unit.content)
-            output.append(OcrPage(page.page_number, tuple(texts)))
+                blocks.append(OcrBlock(kind, unit.content))
+            output.append(OcrPage(page.page_number, tuple(blocks)))
         return tuple(output)
 
     @staticmethod
@@ -208,3 +213,14 @@ class AzureDocumentIntelligenceOcr:
         ):
             raise DocumentExtractionError(Failure.PROVIDER_FAILURE)
         return min(span.offset for span in spans)
+
+
+def _is_invalid_content(exc: HttpResponseError) -> bool:
+    """Use SDK-parsed document error codes only; never inspect error messages."""
+    error = exc.error
+    if error is None:
+        return False
+    codes = ("InvalidContent", "UnsupportedContent")
+    inner = error.innererror
+    inner_code = inner.get("code") if isinstance(inner, Mapping) else None
+    return error.code in codes or inner_code in codes

@@ -36,7 +36,9 @@ _MEMORY_LIMIT_EXIT_CODE = 2
 
 
 @dataclass(frozen=True)
-class _PdfPage:
+class PdfPageInspection:
+    """Infrastructure-only native text and OCR routing signals for one page."""
+
     page_number: int
     texts: tuple[str, ...]
     has_raster: bool
@@ -100,13 +102,24 @@ class PdfDocumentExtractor:
             tuple(cast(list[ExtractedBlock], parsed)),
         )
 
-    async def _inspect(self, source: DocumentSource) -> tuple[bytes, list[_PdfPage]]:
+    @property
+    def max_blocks(self) -> int:
+        return self._max_blocks
+
+    @property
+    def max_text_bytes(self) -> int:
+        return self._max_text_bytes
+
+    async def inspect_source(
+        self, source: DocumentSource
+    ) -> tuple[bytes, list[PdfPageInspection]]:
+        """Read verified EOF and inspect pages for the infrastructure OCR composite."""
         data, pages = await self._read_and_parse(source, inspect=True)
-        return data, cast(list[_PdfPage], pages)
+        return data, cast(list[PdfPageInspection], pages)
 
     async def _read_and_parse(
         self, source: DocumentSource, *, inspect: bool
-    ) -> tuple[bytes, list[ExtractedBlock] | list[_PdfPage]]:
+    ) -> tuple[bytes, list[ExtractedBlock] | list[PdfPageInspection]]:
         if source.expected_size_bytes > self._max_bytes:
             raise DocumentExtractionError(DocumentExtractionFailure.RESOURCE_LIMIT)
         data = bytearray()
@@ -163,7 +176,7 @@ def _parse_in_process(
     memory_bytes: int,
     cancelled: Event,
     inspect: bool = False,
-) -> list[ExtractedBlock] | list[_PdfPage]:
+) -> list[ExtractedBlock] | list[PdfPageInspection]:
     # File-backed exchange avoids pipe deadlocks and keeps all blocking work
     # (including JSON decoding) off the event loop. The directory is private.
     with tempfile.TemporaryDirectory(prefix="nexus-pdf-") as directory:
@@ -220,7 +233,9 @@ def _parse_in_process(
                 )
             if inspect:
                 return [
-                    _PdfPage(number, tuple(texts), raster, substantial, unusable)
+                    PdfPageInspection(
+                        number, tuple(texts), raster, substantial, unusable
+                    )
                     for number, texts, raster, substantial, unusable in result["pages"]
                 ]
             return [
@@ -247,7 +262,7 @@ def _parse_pdf(
 
 def _inspect_pdf(
     source: BinaryIO, max_pages: int, max_blocks: int, max_text_bytes: int
-) -> list[_PdfPage]:
+) -> list[PdfPageInspection]:
     # These imports occur only after the child has installed its memory limit.
     from pdfminer.converter import PDFPageAggregator
     from pdfminer.layout import LAParams, LTContainer, LTImage, LTTextBox
@@ -271,7 +286,7 @@ def _inspect_pdf(
         resources = PDFResourceManager(caching=False)
         device = PDFPageAggregator(resources, laparams=LAParams())
         interpreter = PDFPageInterpreter(resources, device)
-        pages: list[_PdfPage] = []
+        pages: list[PdfPageInspection] = []
         block_count = 0
         text_bytes = 0
         try:
@@ -314,7 +329,7 @@ def _inspect_pdf(
                     for image in images
                 )
                 pages.append(
-                    _PdfPage(
+                    PdfPageInspection(
                         page_number,
                         tuple(texts),
                         bool(images),

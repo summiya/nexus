@@ -1648,7 +1648,10 @@ PDF, and reuses DP-07's disposable parser, deadline, memory enforcement, and
 kill/reap cleanup. Private inspection records native text and small page routing
 flags, including empty pages. No parser geometry crosses into domain/application
 contracts. The provider-neutral `PdfPageOcr` capability returns ordered original
-page numbers and logical text blocks, not a partial `ExtractedDocument`.
+page numbers and logical `OcrBlock` values (`kind`, `text`), not a partial
+`ExtractedDocument`. The infrastructure-only `inspect_source()` capability and
+read-only `max_blocks` / `max_text_bytes` properties support the composite without
+access to private extractor members.
 
 Routing is deterministic: clearly unusable decoded text (replacement characters
 or unresolved CID placeholders), image-bearing pages with no meaningful native
@@ -1664,8 +1667,10 @@ only required original page numbers. The entire PDF is uploaded to Azure even
 when only some pages are analyzed. Selected pages replace their native text;
 merge order is original page order, with final contiguous indexes. Reliable
 single-page paragraphs become paragraph blocks; ambiguous/unattributed paragraphs
-use that page's ordered lines instead, never both. No headings, tables, source
-line numbers, coordinates, or Azure SDK objects enter the output. Empty OCR pages
+use that page's ordered lines as `TEXT` blocks instead, never both. The composite
+preserves OCR block kinds; reliable paragraphs remain `PARAGRAPH` blocks. No
+headings, tables, source line numbers, coordinates, or Azure SDK objects enter the
+output. Empty OCR pages
 are valid, but an entirely empty merged document fails. Missing/duplicated pages,
 invalid spans, failed operations, and malformed provider results fail the whole
 extraction. Native-only results retain `nexus.pdf` / `1`; OCR-assisted results use
@@ -1685,8 +1690,12 @@ before logical output validation. Per-process slots are not distributed quota
 control; deployment replica counts must respect Azure account quotas. 429,
 network/5xx failures, and deadlines map to `provider_transient`; authentication
 and missing configuration/resource access map to `provider_access`; unexpected
-provider failures map to `provider_failure`. Existing source/parser/resource errors
-retain their contracts. Public messages are fixed; no document content or provider
+provider failures map to `provider_failure`. Generic HTTP 400/415/422 responses
+do not imply malformed documents: only SDK-parsed `InvalidContent` or
+`UnsupportedContent` error codes identify invalid/unsupported document content
+and map to `malformed`. Human-readable provider messages are not inspected.
+Existing source/parser/resource errors retain their contracts. Public messages are
+fixed; no document content or provider
 error text is logged.
 
 The adapter borrows an async `DocumentIntelligenceClient` configured with API
