@@ -1798,3 +1798,71 @@ body is added. Persistence/integration of the reference belongs to the real down
 pipeline. DP-08 ends at normalized content/artifact: segmentation, chunks, tokens,
 embeddings, retrieval, completion, retry/reprocessing machinery, and production
 consumer activation remain outside this phase.
+
+## DP-09 deterministic structure-aware segmentation
+
+`DocumentSegmenter` is a small synchronous provider-neutral protocol. Its single
+implementation, `SegmentDocument`, consumes the authoritative `NormalizedDocument`
+and returns an immutable in-memory `SegmentedDocument` of ordered
+`DocumentChunkCandidate` values. No storage, parser, tokenizer, ORM, provider SDK,
+worker thread, process, or runtime composition is involved.
+
+Segmentation identity/version is `nexus.structure` / `1`. The result retains File
+identity/verified ETag, extractor and normalizer versions, total page count when
+known, and the three output-affecting settings: preferred chunk bytes, hard chunk
+bytes, and maximum source contributions per chunk. Operational safety ceilings
+are not semantic result metadata. Changes to grouping, separators, splitting,
+provenance, or overlap require an explicit segmentation-version review.
+
+Adjacent ordinary paragraphs group only within the same section path and quote
+depth, separated by `\n\n`. Adjacent non-list TEXT groups separately using `\n`.
+A pending group below the preferred target accepts a whole compatible natural
+unit when hard byte and contribution bounds allow it; that addition may cross the
+preferred target. The group flushes before the next unit once it reaches the
+target. A natural unit fitting the hard bound remains whole even above the target.
+Separators count toward all byte bounds. Page changes alone do not force a split.
+Headings provide existing DP-08 section paths without repeated heading prefixes
+in body text. Headings, blank blocks, and thematic breaks terminate pending groups.
+Only when no body chunks result do meaningful headings emit individual HEADING
+chunks in source order; oversized fallback headings follow the same hard bounds.
+
+Contiguous compatible observed lists stay whole when bounds permit, otherwise
+fall back to observed item boundaries, existing block boundaries, and finally
+hard splitting of an oversized block. Nested list metadata is retained without a
+list AST or reconstructed bullets. CODE/RAW outside lists remain standalone and
+verbatim; list contributions retain their original kinds, including CODE/RAW.
+No headings, tables, or other structure are inferred.
+
+Oversized TEXT/PARAGRAPH/heading blocks prefer newline boundaries, then whitespace,
+then Unicode code-point boundaries. CODE/RAW prefer newlines, then code points.
+Bounded forward scanning preserves delimiters and consumes input on every step.
+Blank slices attach to meaningful neighboring content within the hard bound,
+including reserving meaningful text for a whitespace tail where needed. If exact
+preservation cannot fit the bound, segmentation fails safely. Concatenating slices
+of a hard-split normalized block reconstructs that block exactly, without overlap,
+trimming, or synthetic text. Structural blank blocks produce no retrieval content.
+
+Each chunk stores ordered immutable `SourceContribution` values: original block
+index/kind, line range or page number, list metadata, quote depth, and optional
+zero-based, end-exclusive normalized-text character slices for hard splits only.
+Slice offsets refer to normalized block text, never binary File offsets. Line
+provenance remains the original one-based, end-exclusive block range; no finer
+source lines are invented. Source block indexes and ordered unique page numbers
+are derived from contributions. Pages `(2, 4)` remain `(2, 4)`, not a continuous
+range. The chunk's section path and contributions provide context references;
+there are no parent IDs, heading trees, or duplicate provenance hierarchies.
+
+Defaults are a 4 KiB preferred target, 8 KiB hard maximum, 128 contributions per
+chunk, 50,000 input blocks, 8 MiB input normalized text, 16 MiB output text including
+separators, and 10,000 chunks. Constructor limits require positive exact integers
+and preferred must not exceed hard. Byte counts and forward scans avoid repeated
+joins of growing chunks or scans of whole remaining suffixes. Failure returns no
+partial result and exposes only a fixed message with `empty` or `resource_limit`.
+No content is logged. There is no overlap or tokenizer/model-specific sizing.
+
+DP-09 ends at in-memory segmentation. It adds no database schema or chunk rows,
+persistence, embeddings, lexical/vector indexing, retrieval/RAG/citations,
+Document completion, recovery/reprocessing, OCR or normalization changes, or
+production Document consumer activation. Later integration must preserve the
+already-authorized tenant/source context; segmentation itself performs no lookup
+or authorization and its source metadata is not proof of tenant ownership.
