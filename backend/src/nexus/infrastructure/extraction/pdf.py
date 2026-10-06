@@ -197,7 +197,6 @@ def _parse_pdf(
     source: BinaryIO, max_pages: int, max_blocks: int, max_text_bytes: int
 ) -> list[tuple[str, int]]:
     # These imports occur only after the child has installed its memory limit.
-    from pdfminer import settings
     from pdfminer.converter import PDFPageAggregator
     from pdfminer.layout import LAParams, LTTextBox
     from pdfminer.pdfdocument import PDFDocument, PDFEncryptionError
@@ -206,7 +205,6 @@ def _parse_pdf(
     from pdfminer.pdfparser import PDFParser, PDFSyntaxError
     from pdfminer.psparser import PSEOF
 
-    settings.STRICT = True  # Child-local: never modify another parser's settings.
     try:
         if not source.read(8).startswith(b"%PDF-"):
             raise DocumentExtractionError(DocumentExtractionFailure.MALFORMED)

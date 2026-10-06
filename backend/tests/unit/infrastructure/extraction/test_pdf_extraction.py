@@ -2,6 +2,7 @@ import asyncio
 import subprocess
 import sys
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 from threading import Event, get_ident
 from uuid import UUID
@@ -74,6 +75,29 @@ def test_page_order_skips_empty_pages_without_renumbering_and_is_deterministic()
 
 def test_unicode_text_is_preserved():
     assert extract("unicode.pdf").blocks[0].text == "Café Ω\n"
+
+
+def test_recoverable_catalog_type_uses_pinned_parser_defaults(monkeypatch):
+    from pdfminer import settings
+    from pdfminer.high_level import extract_text
+    from pdfminer.pdfparser import PDFSyntaxError
+
+    data = (FIXTURES / "single.pdf").read_bytes()
+    assert data.count(b"/Type /Catalog") == 1
+    # Equal-length replacement preserves every xref offset and the intact page tree.
+    data = data.replace(b"/Type /Catalog", b"/Type /Unknown")
+    assert settings.STRICT is False
+    assert "First paragraph" in extract_text(BytesIO(data))
+    with monkeypatch.context() as strict:
+        strict.setattr(settings, "STRICT", True)
+        with pytest.raises(PDFSyntaxError):
+            extract_text(BytesIO(data))
+
+    result = asyncio.run(PdfDocumentExtractor().extract(source(data)))
+    assert [block.text for block in result.blocks] == [
+        "First paragraph\n",
+        "Second paragraph\n",
+    ]
 
 
 @pytest.mark.parametrize(

@@ -1607,7 +1607,7 @@ and consecutive global indexes with nondecreasing source positions.
 PDF extraction consumes the DP-05 stream to verified EOF before parsing. The
 adapter buffers at most 8 MiB of input, then performs all blocking work off the
 event loop. One disposable Python child runs pinned `pdfminer.six` 20260107 with
-fixed layout settings, strict parsing, and disabled document/resource caching.
+fixed layout settings, default tolerant parsing, and disabled document/resource caching.
 Reliable page text boxes become ordinary paragraph blocks; no font-size heading
 heuristics, table reconstruction, coordinates, or layout objects enter the
 contract. Empty pages emit no blocks and do not renumber later pages. Extractor
