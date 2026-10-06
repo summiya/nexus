@@ -57,6 +57,10 @@ def test_document_application_has_no_provider_transport_or_orm_dependencies() ->
                     "sqlalchemy",
                     "fastapi",
                     "markdown_it",
+                    "pdfminer",
+                    "subprocess",
+                    "multiprocessing",
+                    "resource",
                     "nexus.infrastructure",
                 )
             ), (path, module)

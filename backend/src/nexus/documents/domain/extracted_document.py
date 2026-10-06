@@ -1,4 +1,4 @@
-"""Ordered extraction values; source lines are one-based and end-exclusive."""
+"""Ordered extraction values with source lines or one-based PDF pages."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -47,22 +47,32 @@ class ExtractedBlock:
     index: int
     kind: ExtractedBlockKind
     text: str
-    start_line: int
-    end_line: int
+    start_line: int | None = None
+    end_line: int | None = None
     heading_level: int | None = None
     list_item: ExtractedListItem | None = None
     quote_depth: int = 0
+    page_number: int | None = None
 
     def __post_init__(self) -> None:
-        if (
-            any(
-                type(value) is not int
-                for value in (self.index, self.start_line, self.end_line)
-            )
-            or self.index < 0
-            or not 1 <= self.start_line < self.end_line
+        if type(self.index) is not int or self.index < 0:
+            raise ValueError("Invalid block order")
+        if self.page_number is None:
+            if (
+                type(self.start_line) is not int
+                or type(self.end_line) is not int
+                or not 1 <= self.start_line < self.end_line
+            ):
+                raise ValueError("Invalid line provenance")
+        elif (
+            type(self.page_number) is not int
+            or self.page_number < 1
+            or self.start_line is not None
+            or self.end_line is not None
+            or self.list_item is not None
+            or self.quote_depth != 0
         ):
-            raise ValueError("Invalid block order or provenance")
+            raise ValueError("Invalid page provenance")
         if (
             not isinstance(self.kind, ExtractedBlockKind)
             or not isinstance(self.text, str)
@@ -100,10 +110,14 @@ class ExtractedDocument:
                 raise ValueError("Invalid extraction metadata")
         if not isinstance(self.blocks, tuple) or not self.blocks:
             raise ValueError("Extraction requires ordered blocks")
-        previous_line = 1
+        uses_pages = self.blocks[0].page_number is not None
+        previous_position = 1
         for index, block in enumerate(self.blocks):
-            if block.index != index or block.start_line < previous_line:
+            if (block.page_number is not None) != uses_pages:
+                raise ValueError("Extraction requires consistent provenance")
+            position = block.page_number if uses_pages else block.start_line
+            if position is None or block.index != index or position < previous_position:
                 raise ValueError("Invalid extraction order")
-            previous_line = block.start_line
+            previous_position = position
         if not any(block.text.strip() for block in self.blocks):
             raise ValueError("Extraction requires meaningful content")

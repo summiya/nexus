@@ -1589,3 +1589,53 @@ dependency behavior, or mapping require an explicit version review.
 Production consumption remains fail-closed. PDF/OCR, normalization, chunking,
 DocumentChunk persistence, Document completion, embeddings/retrieval, and DP-11
 retry/reprocessing remain deferred.
+
+## DP-07 bounded PDF extraction
+
+`ExtractDocument` now also accepts an injected `PdfDocumentExtractor` through the
+existing `DocumentExtractor` port. Admission and extraction share the small
+`document_format()` extension/MIME helper. PDF supports `.pdf` with
+`application/pdf` or `application/octet-stream`, case-insensitively. TXT/Markdown
+selection and extraction behavior are unchanged.
+
+An `ExtractedBlock` has exactly one provenance form: the existing one-based,
+end-exclusive line range, or a positive one-based `page_number` with no line
+numbers. `page_number` is appended to the constructor, preserving existing
+positional calls. Each `ExtractedDocument` uses one consistent provenance form
+and consecutive global indexes with nondecreasing source positions.
+
+PDF extraction consumes the DP-05 stream to verified EOF before parsing. The
+adapter buffers at most 8 MiB of input, then performs all blocking work off the
+event loop. One disposable Python child runs pinned `pdfminer.six` 20260107 with
+fixed layout settings, default tolerant parsing, and disabled document/resource caching.
+Reliable page text boxes become ordinary paragraph blocks; no font-size heading
+heuristics, table reconstruction, coordinates, or layout objects enter the
+contract. Empty pages emit no blocks and do not renumber later pages. Extractor
+identity/version is `nexus.pdf` / `1`; Unicode and parser-observed line breaks
+remain logical extracted text, not normalized content.
+
+Constructor-local defaults are 500 pages, 50,000 blocks, 8 MiB of extracted UTF-8
+text, a 30-second parser deadline, and a 512 MiB child address-space ceiling.
+The latter uses Linux `RLIMIT_AS` and is tested in the backend Docker environment;
+it is not a resident-memory promise. Unsupported memory enforcement fails closed.
+The existing File admission limit remains upstream and unchanged. Page limits
+include empty pages, and exceeding any limit fails the whole extraction rather
+than returning partial content. Private temporary files exchange bounded input
+and simple JSON block data; no parser-specific objects cross the boundary.
+
+Cancellation signals the off-loop waiting thread to kill/reap its child. The
+caller retains its slot until cleanup settles, including repeated cancellation
+and cancellation during process startup. Timeout and parser failure also reap the
+child and remove temporary files. There are no pools, supervisors, global locks,
+new storage abstractions, or database transactions during parsing.
+
+Encrypted PDFs (including those readable with an empty password) fail as
+`encrypted`. Empty/image-only PDFs fail as `empty`; invalid headers, missing EOF,
+and parser syntax failures are `malformed`. Size/page/block/text/time/memory
+violations are `resource_limit`; other parser/process failures are `parser_failure`.
+Public errors retain the fixed extraction message, and child stderr is discarded.
+Source failures remain `DocumentSourceError` and prevent parser startup.
+
+DP-07 ends at `ExtractedDocument`. Production consumption remains unactivated;
+OCR, normalization, chunking, persistence, Document completion, embeddings,
+retrieval, and retry/reprocessing machinery remain outside this phase.

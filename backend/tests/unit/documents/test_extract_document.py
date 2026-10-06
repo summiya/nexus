@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from nexus.documents.ports.extraction import (
     DocumentExtractionFailure as Failure,
 )
 from nexus.documents.ports.source import DocumentSourceError, DocumentSourceFailure
+from nexus.infrastructure.extraction.pdf import PdfDocumentExtractor
 from nexus.infrastructure.extraction.text import (
     MarkdownDocumentExtractor,
     TxtDocumentExtractor,
@@ -30,7 +32,7 @@ def capability(
     data=b"# Heading", *, name="source.md", mime="text/markdown", chunks=None
 ):
     opener, document, request, requests, files, storage = setup(
-        chunks=[data] if chunks is None else chunks
+        chunks=[data] if chunks is None else chunks, limit=max(8, len(data))
     )
     files.get_file.return_value = replace(
         files.get_file.return_value,
@@ -47,6 +49,7 @@ def capability(
             source=opener,
             txt=TxtDocumentExtractor(),
             markdown=MarkdownDocumentExtractor(),
+            pdf=PdfDocumentExtractor(),
         ),
         document,
         request,
@@ -83,7 +86,7 @@ def test_selection_reuses_admission_rules_and_source_closes_after_success(
 @pytest.mark.parametrize(
     "name,mime",
     [
-        ("a.pdf", "application/pdf"),
+        ("a.pdf", "text/plain"),
         ("a.txt", "text/markdown"),
         ("a.md", "application/pdf"),
         ("a.rst", "text/plain"),
@@ -145,9 +148,12 @@ def test_extraction_errors_close_source(data, reason):
     asyncio.run(run())
 
 
-def test_cancellation_while_reading_closes_source():
+@pytest.mark.parametrize(
+    "name,mime", [("source.md", "text/markdown"), ("source.pdf", "application/pdf")]
+)
+def test_cancellation_while_reading_closes_source(name, mime):
     async def run():
-        app, document, request, storage = capability()
+        app, document, request, storage = capability(name=name, mime=mime)
         reading = asyncio.Event()
         closed = asyncio.Event()
 
@@ -193,10 +199,44 @@ def test_extractors_are_swappable_without_infrastructure_types():
         fake = AsyncMock()
         fake.extract.side_effect = read
         other = AsyncMock()
-        app = ExtractDocument(source=opener, txt=fake, markdown=other)
+        app = ExtractDocument(source=opener, txt=fake, markdown=other, pdf=other)
         assert await app.execute(document=document, request=request) == expected
         fake.extract.assert_awaited_once()
         other.extract.assert_not_called()
+        assert storage.closed == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("mime", ["APPLICATION/PDF", "application/octet-stream"])
+def test_pdf_selection_uses_verified_source_and_does_not_complete_document(mime):
+    data = (
+        Path(__file__).resolve().parents[2] / "fixtures/extraction/single.pdf"
+    ).read_bytes()
+
+    async def run():
+        app, document, request, storage = capability(data, name="report.PDF", mime=mime)
+        result = await app.execute(document=document, request=request)
+        assert result.extractor_id == "nexus.pdf"
+        assert all(block.page_number == 1 for block in result.blocks)
+        assert storage.closed == 1
+        assert document.status is DocumentStatus.PROCESSING
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("chunks", [[b"short"], [b"too many bytes"], [b"# Heading"]])
+def test_pdf_source_failure_remains_a_source_error(chunks):
+    async def run():
+        app, document, request, storage = capability(
+            name="a.pdf", mime="application/pdf", chunks=chunks
+        )
+        if chunks == [b"# Heading"]:
+            storage.stream_error = DocumentSourceError(
+                DocumentSourceFailure.TRANSIENT_STORAGE
+            )
+        with pytest.raises(DocumentSourceError):
+            await app.execute(document=document, request=request)
         assert storage.closed == 1
 
     asyncio.run(run())

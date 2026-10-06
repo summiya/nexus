@@ -13,6 +13,7 @@ class DocumentExtractionFailure(StrEnum):
     MALFORMED = "malformed"
     RESOURCE_LIMIT = "resource_limit"
     PARSER_FAILURE = "parser_failure"
+    ENCRYPTED = "encrypted"
 
 
 class DocumentExtractionError(Exception):

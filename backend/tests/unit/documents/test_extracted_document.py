@@ -142,3 +142,44 @@ def test_valid_integer_and_string_values_preserve_existing_behavior():
     assert document(
         source_entity_tag="etag", extractor_id="nexus.txt", extractor_version="1"
     ).blocks == (block(),)
+
+
+def test_page_provenance_preserves_order_without_source_lines():
+    first = ExtractedBlock(0, Kind.PARAGRAPH, "first", page_number=1)
+    second = ExtractedBlock(1, Kind.PARAGRAPH, "second", page_number=3)
+    assert document(blocks=(first, second)).blocks == (first, second)
+    assert first.start_line is None and first.end_line is None
+
+
+@pytest.mark.parametrize("page", [True, False, 0, -1, 1.0, "1"])
+def test_page_number_requires_a_positive_actual_integer(page):
+    with pytest.raises(ValueError):
+        ExtractedBlock(0, Kind.PARAGRAPH, "content", page_number=page)
+
+
+@pytest.mark.parametrize(
+    "kwargs", [{"start_line": 1}, {"end_line": 2}, {"start_line": 1, "end_line": 2}]
+)
+def test_page_blocks_cannot_also_have_line_provenance(kwargs):
+    with pytest.raises(ValueError):
+        ExtractedBlock(0, Kind.PARAGRAPH, "content", page_number=1, **kwargs)
+
+
+def test_document_rejects_mixed_or_decreasing_page_provenance():
+    with pytest.raises(ValueError):
+        document(blocks=(block(), ExtractedBlock(1, Kind.TEXT, "page", page_number=1)))
+    with pytest.raises(ValueError):
+        document(
+            blocks=(
+                ExtractedBlock(0, Kind.TEXT, "page", page_number=2),
+                ExtractedBlock(1, Kind.TEXT, "page", page_number=1),
+            )
+        )
+
+
+def test_original_positional_block_arguments_keep_their_meaning():
+    item = ExtractedListItem(1, 1, 1, False)
+    value = ExtractedBlock(0, Kind.HEADING, "heading", 1, 2, 2, item, 1)
+    assert value.start_line == 1 and value.end_line == 2
+    assert value.heading_level == 2 and value.list_item is item
+    assert value.quote_depth == 1 and value.page_number is None
