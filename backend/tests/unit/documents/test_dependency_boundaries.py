@@ -74,3 +74,23 @@ def test_segmentation_depends_only_on_document_values_ports_and_standard_library
         if module.startswith(("nexus.documents.domain.", "nexus.documents.ports.")):
             continue
         assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)
+
+
+def test_chunk_persistence_has_only_document_and_sql_persistence_dependencies() -> None:
+    root = DOMAIN_ROOT.parents[1] / "infrastructure" / "persistence"
+    for path in (
+        root / "document_chunk.py",
+        root / "_document_chunk_queries.py",
+        root / "models" / "document_chunk.py",
+    ):
+        for module in _imports(path):
+            if module.startswith(
+                (
+                    "sqlalchemy",
+                    "nexus.documents.domain",
+                    "nexus.documents.ports",
+                    "nexus.infrastructure.persistence",
+                )
+            ):
+                continue
+            assert module.split(".", 1)[0] in sys.stdlib_module_names, (path, module)

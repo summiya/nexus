@@ -1009,55 +1009,60 @@ removing their source object. The existing restrictive foreign keys remain intac
 
 ---
 
-# 21. Entity: DocumentChunk
+# 21. Entities: DocumentChunkSet and DocumentChunk
 
-## Purpose
+DP-10 persists one immutable authoritative chunk set per Document. The existing
+Document UUID identifies the processing generation; no separate generation exists.
+These tables store content and provenance, not embeddings or retrieval indexes.
 
-Represents a searchable segment of a Document.
-
-## Fields
-
-```text
-id
-organization_id
-workspace_id
-project_id
-document_id
-chunk_index
-content
-token_count
-embedding
-embedding_model_id
-embedding_dimension
-metadata_json
-created_at
-```
-
-## Rules
-
-A chunk belongs to exactly one document.
-
-Chunk index should be unique within a document:
+## `document_chunk_sets`
 
 ```text
-UNIQUE(document_id, chunk_index)
+document_id                 bigint PK (one set per Document)
+organization_id             bigint
+source_entity_tag
+extractor_id / extractor_version
+normalizer_id / normalizer_version
+segmenter_id / segmenter_version
+preferred_chunk_bytes / max_chunk_bytes / max_source_contributions
+page_count                  nullable positive bigint
+chunk_count                 positive integer
 ```
 
-## Vector search
+The `(document_id, organization_id)` pair is unique and references
+`documents(id, organization_id)` with a restrictive composite foreign key.
+Metadata is required and nonblank; segmentation settings are positive with
+preferred bytes no greater than maximum bytes.
 
-Use pgvector.
+## `document_chunks`
 
-Every retrieval query MUST enforce authorization scope.
-
-Recommended conceptual filter:
-
-```sql
-WHERE organization_id = :organization_id
-  AND project_id = :project_id
-  AND knowledge_base_id = :knowledge_base_id
+```text
+id                          bigint internal PK
+document_id / organization_id
+chunk_index                 nonnegative integer
+text                        nonblank text
+kind                        text / paragraph / list / code / raw / heading
+section_path                bigint array of source-heading indexes
+contributions               nonempty ordered JSONB array
 ```
 
-The exact SQL may differ based on schema normalization.
+`UNIQUE(document_id, chunk_index)` supports ordered reads. The tenant-safe
+composite foreign key references the chunk-set header. Section paths and ordered
+contributions retain DP-09 semantics; richer validation uses the immutable Python
+contracts. Contribution JSON explicitly stores source block index/kind, original
+line range or page number, optional list metadata, quote depth, and optional
+normalized-text slice offsets. There is no contribution table or JSONB index.
+
+A trusted tenant-owned PROCESSING Document with its extractor version recorded
+and matching is required for writes. The locked stored Document must exactly match
+the expected snapshot. A single transaction inserts the header and all bounded
+chunk batches, or validates that the existing complete set is exactly identical.
+Conflicts never replace or repair an existing set. Reads return detached validated
+`SegmentedDocument` values and remain available after terminal Document transitions.
+Chunk-set presence does not mark a Document COMPLETED.
+
+Tokenization, vector/lexical indexes, embeddings, search, retrieval authorization,
+and retry/reprocessing policy are later phases, not columns or behavior in DP-10.
 
 ---
 

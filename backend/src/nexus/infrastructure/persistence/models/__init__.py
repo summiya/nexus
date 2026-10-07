@@ -3,6 +3,10 @@
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
 from nexus.infrastructure.persistence.models.conversation import Conversation
 from nexus.infrastructure.persistence.models.document import Document
+from nexus.infrastructure.persistence.models.document_chunk import (
+    DocumentChunk,
+    DocumentChunkSet,
+)
 from nexus.infrastructure.persistence.models.document_processing_request import (
     DocumentProcessingRequest,
 )
@@ -27,6 +31,8 @@ __all__ = [
     "ConfiguredModel",
     "Conversation",
     "Document",
+    "DocumentChunk",
+    "DocumentChunkSet",
     "DocumentProcessingRequest",
     "File",
     "Generation",
