@@ -17,7 +17,7 @@ from nexus.documents.ports.initiation import (
 from nexus.files.domain import FileStorageStatus, is_canonical_file_storage_key
 from nexus.infrastructure.persistence import _document_initiation_queries as queries
 from nexus.infrastructure.persistence import _file_queries
-from nexus.infrastructure.persistence.document import _settle_cancelled_transaction
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.logging import get_logger
 
 logger = get_logger(__name__)

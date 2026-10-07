@@ -16,7 +16,7 @@ from nexus.documents.ports.reprocessing import (
 )
 from nexus.files.domain import FileStorageStatus
 from nexus.infrastructure.persistence import _document_initiation_queries as queries
-from nexus.infrastructure.persistence.document import _settle_cancelled_transaction
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.infrastructure.persistence.models.document import Document as DocumentModel
 from nexus.infrastructure.persistence.models.document_processing_request import (
     DocumentProcessingRequest,

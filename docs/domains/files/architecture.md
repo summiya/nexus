@@ -1914,14 +1914,14 @@ RAG, or further processing changes.
 
 ## DP-11 durable processing outcomes and explicit generations
 
-`ProcessDocument` owns request validation, start/resume/drain admission, recipe
-compatibility, one safe failure classifier, delivery exhaustion, and failure
+`DocumentProcessingHandler` owns request validation, start/resume/drain admission,
+attempt deadlines, one safe failure classifier, delivery exhaustion, and failure
 finalization. QUEUED starts through the existing snapshot CAS. A lost CAS re-reads
 PROCESSING to resume or a terminal state to drain. PROCESSING deliveries resume
 the same generation; COMPLETED/FAILED duplicates complete without work. No state
 is reset to QUEUED.
 
-`ProcessDocumentPipeline` reads committed chunks first. Existing valid output
+`DocumentProcessingPipeline` reads committed chunks first. Existing valid output
 completes even under an older processing recipe. Otherwise it checks the stored
 recipe, extracts through DP-05/06/07/07B, CAS-records the immutable extractor
 version, normalizes, creates the immutable artifact, segments, commits the full
@@ -1933,12 +1933,20 @@ configuration require version review. No component-version registry exists.
 The finalizer locks the tenant-owned Document and validates chunks in the same
 short transaction, sharing DP-10's private bounded loader. Committed valid chunks
 win over requested failure. If FAILED commits first, later chunk persistence
-cannot establish output. Completion without chunks conflicts; corrupt sets fail
-safely. No database transaction spans provider I/O.
+cannot establish output. Completion without chunks conflicts. Successfully read
+but invalid stored output raises a specific corruption exception; the handler
+classifies it as `PROCESSING_OUTPUT_CORRUPT` and requests failure settlement.
+The finalizer revalidates under the lock and preserves corrupt rows while recording
+a terminal failure. Query failures remain retryable. A newly finalized failure is
+reported as terminal-finalized, never as successful processing. No database
+transaction spans provider I/O. Persistence cancellation settlement is shared in
+the small private `_transaction.py` helper.
 
 Known permanent input/resource/version/semantic conflicts get fixed safe failure
 codes/messages. Generic PARSER_FAILURE, provider/storage/persistence failures,
-unknown runtime errors and deadlines retry. Retryable metadata is not written to
+unknown runtime errors and deadlines retry. Known infrastructure failures log
+warnings; unexpected fallback failures log errors with safe type/code/correlation
+fields only. Retryable metadata is not written to
 Document. On the final attempt, RETRY_EXHAUSTED is committed before dead-lettering.
 A failed terminal write returns retryable. Cancellation does not mark FAILED;
 commit-sensitive database/storage operations and parser/thread cleanup settle
@@ -1949,12 +1957,15 @@ The transport handles only success, retryable and terminal-finalized outcomes.
 Attempt is SDK `delivery_count + 1`; invalid/missing metadata is abandoned. The
 Document worker and queue default to ten deliveries (File queues are unchanged).
 Shutdown or lock-renewal loss cancels, settles and abandons the handler. A bounded
-DLQ peek pass on the explicit dead-letter subqueue reconciles broker exhaustion
-or expiry through durable ownership admission and the same finalizer, without
-running the pipeline or removing evidence. Each pass inspects at most 100 messages
-for ten seconds in batches of at most twenty; an in-memory sequence cursor moves
-across passes, resets at the end and may rescan after restart. Unresolved finalization is
-revisited on the next cycle without blocking later records. There is no persistent checkpoint or replay.
+DLQ reconciler consumes the explicit dead-letter subqueue in PEEK_LOCK mode.
+Each pass receives at most 100 messages for ten seconds in batches of at most
+twenty, with no prefetch and one reconciliation slot. Broker exhaustion/expiry
+calls durable exhaustion settlement without running the pipeline: settled records
+are completed; retryable records are held until pass cleanup and then abandoned,
+allowing later records to be reconciled. Application-terminal records are decoded
+and tenant-validated before removal. Invalid/foreign records are removed with safe
+metadata-only logging. Deadline/cancellation abandons unsettled records before
+closing the receiver. There is no cursor, persistent checkpoint, or replay.
 
 Explicit trusted reprocessing uses `DocumentReprocessing.create_generation()`.
 The caller must authorize the tenant/File operation; no public API/UI is added.

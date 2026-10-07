@@ -12,13 +12,12 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from tests.integration.persistence.test_document_initiation import _scan, _seed_file
 
-from nexus.documents.application.process_document import ProcessDocument
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
 from nexus.documents.domain import DocumentStatus
 from nexus.documents.ports.processing import ProcessingRequestRejected
 from nexus.infrastructure.persistence.document import SqlAlchemyDocumentPersistence
-from nexus.infrastructure.persistence.document_chunk import (
-    SqlAlchemyDocumentChunkPersistence,
-)
 from nexus.infrastructure.persistence.document_dispatch import (
     SqlAlchemyDocumentDispatchPersistence,
 )
@@ -118,11 +117,8 @@ def test_single_start_snapshot_and_tenant_safe_resume(
                 await asyncio.sleep(0.02)
 
         documents = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
-            chunks=SqlAlchemyDocumentChunkPersistence(
-                persistence_async_session_factory
-            ),
             finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=documents,
             processor=Processor(),
@@ -170,11 +166,8 @@ def test_different_documents_run_concurrently_and_interrupted_processing_resumes
                 if len(calls) <= 2:
                     await asyncio.Event().wait()
 
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
-            chunks=SqlAlchemyDocumentChunkPersistence(
-                persistence_async_session_factory
-            ),
             finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=SqlAlchemyDocumentPersistence(persistence_async_session_factory),
             processor=Processor(),
@@ -205,11 +198,8 @@ def test_foreign_request_document_pair_is_rejected_without_mutation(
         ]
         processor = AsyncMock()
         documents = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
-            chunks=SqlAlchemyDocumentChunkPersistence(
-                persistence_async_session_factory
-            ),
             finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=documents,
             processor=processor,

@@ -47,6 +47,7 @@ def worker(handler=None, client=None, concurrency=2):
     return AzureServiceBusDocumentWorker(
         client=client or MagicMock(),
         queue_name="documents",
+        requests=AsyncMock(matches=AsyncMock(return_value=True)),
         handler=handler
         or AsyncMock(
             execute=AsyncMock(return_value=ProcessingResult(ProcessingOutcome.SUCCESS))
@@ -443,104 +444,6 @@ def test_lock_renewal_loss_cancels_and_settles_handler():
     asyncio.run(run())
 
 
-def test_dlq_browse_is_bounded_and_continues_sequence_between_passes():
-    from azure.servicebus import ServiceBusSubQueue
-
-    async def run():
-        client, receiver, handler = MagicMock(), AsyncMock(), AsyncMock()
-        client.get_queue_receiver.return_value = receiver
-        handler.settle_exhausted.return_value = ProcessingResult(
-            ProcessingOutcome.SUCCESS
-        )
-        messages = [delivery() for _ in range(5)]
-        for number, message in enumerate(messages):
-            message.sequence_number = number
-            message.dead_letter_reason = "MaxDeliveryCountExceeded"
-
-        async def peek(*, max_message_count, sequence_number):
-            return messages[sequence_number : sequence_number + max_message_count]
-
-        receiver.peek_messages.side_effect = peek
-        value = AzureServiceBusDocumentWorker(
-            client=client,
-            queue_name="documents",
-            handler=handler,
-            auto_lock_renewer=MagicMock(),
-            dlq_pass_limit=2,
-        )
-        assert await value.browse_dlq_once(asyncio.Event()) == 2
-        assert await value.browse_dlq_once(asyncio.Event()) == 2
-        assert await value.browse_dlq_once(asyncio.Event()) == 1
-        assert handler.settle_exhausted.await_count == 5
-        assert [
-            c.kwargs["sequence_number"] for c in receiver.peek_messages.await_args_list
-        ] == [0, 2, 4, 5]
-        assert value._dlq_sequence == 0
-        assert all(
-            c.kwargs["sub_queue"] is ServiceBusSubQueue.DEAD_LETTER
-            for c in client.get_queue_receiver.call_args_list
-        )
-        receiver.complete_message.assert_not_awaited()
-        receiver.dead_letter_message.assert_not_awaited()
-        handler.execute.assert_not_awaited()
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize("mode", ["invalid", "foreign", "application", "retry"])
-def test_dlq_invalid_foreign_and_application_dlq_are_safe(mode):
-    async def run():
-        client, receiver, handler = MagicMock(), AsyncMock(), AsyncMock()
-        client.get_queue_receiver.return_value = receiver
-        message = delivery([b"invalid"] if mode == "invalid" else None)
-        message.sequence_number = 0
-        message.dead_letter_reason = (
-            "MALFORMED_DOCUMENT"
-            if mode == "application"
-            else "MaxDeliveryCountExceeded"
-        )
-        receiver.peek_messages.side_effect = [[message], []]
-        handler.settle_exhausted.return_value = ProcessingResult(
-            ProcessingOutcome.RETRYABLE
-            if mode == "retry"
-            else ProcessingOutcome.SUCCESS
-        )
-        if mode == "foreign":
-            handler.settle_exhausted.side_effect = ProcessingRequestRejected()
-        value = worker(handler, client)
-        assert await value.browse_dlq_once(asyncio.Event()) == 1
-        assert handler.settle_exhausted.await_count == (
-            1 if mode in ("foreign", "retry") else 0
-        )
-        assert value._dlq_sequence == 0
-        handler.execute.assert_not_awaited()
-
-    asyncio.run(run())
-
-
-def test_dlq_browse_deadline_closes_receiver():
-    async def run():
-        client, receiver = MagicMock(), AsyncMock()
-        client.get_queue_receiver.return_value = receiver
-
-        async def peek(**kwargs):
-            await asyncio.Event().wait()
-
-        receiver.peek_messages.side_effect = peek
-        value = AzureServiceBusDocumentWorker(
-            client=client,
-            queue_name="documents",
-            handler=AsyncMock(),
-            auto_lock_renewer=MagicMock(),
-            dlq_pass_seconds=0.01,
-        )
-        with pytest.raises(TimeoutError):
-            await value.browse_dlq_once(asyncio.Event())
-        receiver.__aexit__.assert_awaited_once()
-
-    asyncio.run(run())
-
-
 def test_missing_delivery_metadata_is_not_assumed_first_attempt():
     async def run():
         handler, receiver, message = AsyncMock(), AsyncMock(), delivery()
@@ -548,26 +451,5 @@ def test_missing_delivery_metadata_is_not_assumed_first_attempt():
         await worker(handler).handle_delivery(receiver, message, asyncio.Event())
         handler.execute.assert_not_awaited()
         receiver.abandon_message.assert_awaited_once()
-
-    asyncio.run(run())
-
-
-def test_dlq_retryable_record_does_not_starve_later_records():
-    async def run():
-        client, receiver, handler = MagicMock(), AsyncMock(), AsyncMock()
-        client.get_queue_receiver.return_value = receiver
-        messages = [delivery(), delivery()]
-        for number, message in enumerate(messages):
-            message.sequence_number = number
-            message.dead_letter_reason = "MaxDeliveryCountExceeded"
-        receiver.peek_messages.side_effect = [messages, []]
-        handler.settle_exhausted.side_effect = [
-            ProcessingResult(ProcessingOutcome.RETRYABLE),
-            ProcessingResult(ProcessingOutcome.SUCCESS),
-        ]
-        value = worker(handler, client)
-        assert await value.browse_dlq_once(asyncio.Event()) == 2
-        assert handler.settle_exhausted.await_count == 2
-        assert value._dlq_sequence == 0
 
     asyncio.run(run())

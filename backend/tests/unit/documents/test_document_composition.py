@@ -221,7 +221,9 @@ def test_startup_failure_closes_resources():
 def test_real_consumer_composition_borrows_clients_and_keeps_resources_owned():
     from unittest.mock import AsyncMock, MagicMock
 
-    from nexus.documents.application.document_processor import ProcessDocumentPipeline
+    from nexus.documents.application.document_processing_pipeline import (
+        DocumentProcessingPipeline,
+    )
 
     async def run():
         credential, client, database, blob, read = (
@@ -263,7 +265,7 @@ def test_real_consumer_composition_borrows_clients_and_keeps_resources_owned():
             composition = await build_document_worker_composition(config, consume=True)
             assert composition.worker is not None
             assert isinstance(
-                composition.worker._handler._processor, ProcessDocumentPipeline
+                composition.worker._handler._processor, DocumentProcessingPipeline
             )
             assert storage.call_args.kwargs["credential"] is credential
             assert ocr.call_args.kwargs["credential"] is credential

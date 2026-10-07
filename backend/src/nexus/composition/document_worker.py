@@ -13,11 +13,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from nexus.composition.storage import AZURE_BLOB_CLIENT_OPTIONS
 from nexus.config.document_worker_settings import DocumentWorkerSettings
 from nexus.documents.application.dispatch_processing import DispatchDocumentProcessing
-from nexus.documents.application.document_processor import ProcessDocumentPipeline
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
+from nexus.documents.application.document_processing_pipeline import (
+    DocumentProcessingPipeline,
+)
 from nexus.documents.application.extract_document import ExtractDocument
 from nexus.documents.application.normalize_document import NormalizeDocument
 from nexus.documents.application.open_source import OpenDocumentSource
-from nexus.documents.application.process_document import ProcessDocument
 from nexus.documents.application.segment_document import SegmentDocument
 from nexus.documents.application.write_normalized_artifact import (
     WriteNormalizedArtifact,
@@ -183,12 +187,12 @@ def _compose(
         )
         resources.push_async_callback(renewer.close)
         worker = AzureServiceBusDocumentWorker(
+            requests=requests,
             client=client,
             queue_name=settings.azure_service_bus_document_queue_name,
-            handler=ProcessDocument(
+            handler=DocumentProcessingHandler(
                 requests=requests,
                 documents=documents,
-                chunks=chunks,
                 finalizer=finalizer,
                 processor=processor,
                 processing_version=settings.document_processing_version,
@@ -236,7 +240,7 @@ def _processor(
         markdown=MarkdownDocumentExtractor(),
         pdf=PdfWithOcrDocumentExtractor(PdfDocumentExtractor(), ocr),
     )
-    return ProcessDocumentPipeline(
+    return DocumentProcessingPipeline(
         documents=documents,
         chunks=chunks,
         finalizer=finalizer,

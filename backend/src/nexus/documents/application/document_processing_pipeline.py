@@ -1,4 +1,4 @@
-"""Successful processing only; delivery policy belongs to ProcessDocument."""
+"""Successful processing only; delivery policy belongs to DocumentProcessingHandler."""
 
 import asyncio
 from collections.abc import Callable
@@ -19,7 +19,7 @@ from nexus.documents.ports.processing import (
 from nexus.documents.ports.segmentation import DocumentSegmenter
 
 
-class ProcessDocumentPipeline:
+class DocumentProcessingPipeline:
     def __init__(
         self,
         *,

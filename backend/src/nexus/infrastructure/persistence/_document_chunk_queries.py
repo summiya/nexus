@@ -17,7 +17,7 @@ from nexus.documents.domain.segmented_document import (
     SegmentedDocument,
     SourceContribution,
 )
-from nexus.documents.ports.chunk_persistence import ChunkPersistenceError
+from nexus.documents.ports.chunk_persistence import StoredChunkCorruptionError
 from nexus.infrastructure.persistence.models.document import Document as DocumentModel
 from nexus.infrastructure.persistence.models.document_chunk import (
     DocumentChunk,
@@ -181,7 +181,7 @@ def to_segmented(
             metadata.page_count,
         )
     except (ValueError, TypeError, KeyError, OverflowError) as exc:
-        raise ChunkPersistenceError() from exc
+        raise StoredChunkCorruptionError() from exc
 
 
 async def get_owned_set(
@@ -247,7 +247,7 @@ async def load_set(
 ) -> SegmentedDocument:
     """One bounded reconstruction path; caller owns the session/transaction."""
     if metadata.chunk_count > max_chunks:
-        raise ChunkPersistenceError()
+        raise StoredChunkCorruptionError()
     count, text, per_chunk, total, provenance = await stored_sizes(
         session,
         document_id=metadata.document_id,
@@ -260,7 +260,7 @@ async def load_set(
         or total > max_total_contributions
         or provenance > max_provenance_bytes
     ):
-        raise ChunkPersistenceError()
+        raise StoredChunkCorruptionError()
     rows = await get_chunks(
         session,
         document_id=metadata.document_id,
@@ -272,5 +272,5 @@ async def load_set(
         document.extractor_version is None
         or document.extractor_version != result.extractor_version
     ):
-        raise ChunkPersistenceError()
+        raise StoredChunkCorruptionError()
     return result

@@ -6,15 +6,17 @@ from uuid import uuid4
 
 import pytest
 
-from nexus.documents.application.document_processor import (
-    ProcessDocumentPipeline,
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
+from nexus.documents.application.document_processing_pipeline import (
+    DocumentProcessingPipeline,
     _transform,
 )
 from nexus.documents.application.normalize_document import (
     DocumentNormalizationError,
     DocumentNormalizationFailure,
 )
-from nexus.documents.application.process_document import ProcessDocument
 from nexus.documents.application.processing_failures import (
     ProcessingVersionConflict,
     classify_processing_failure,
@@ -28,6 +30,7 @@ from nexus.documents.domain.extracted_document import (
 from nexus.documents.ports.chunk_persistence import (
     ChunkConflictError,
     ChunkPersistenceError,
+    StoredChunkCorruptionError,
 )
 from nexus.documents.ports.extraction import (
     DocumentExtractionError,
@@ -64,11 +67,10 @@ def context(*, version="v1"):
     documents.get_document.return_value = doc
     chunks.get_chunk_set.return_value = None
     finalizer.finalize.return_value = ProcessingResult(ProcessingOutcome.SUCCESS)
-    handler = ProcessDocument(
+    handler = DocumentProcessingHandler(
         requests=requests,
         documents=documents,
         processor=processor,
-        chunks=chunks,
         finalizer=finalizer,
         processing_version="v1",
     )
@@ -191,10 +193,12 @@ def test_terminal_failure_only_after_durable_finalization(error, final_attempt, 
 @pytest.mark.parametrize("committed", [False, True])
 def test_changed_recipe_only_completes_committed_output(committed):
     async def run():
-        _, message, handler, _, processor, chunks, finalizer = context(version="old")
+        _, message, handler, documents, _, chunks, finalizer = context(version="old")
         chunks.get_chunk_set.return_value = object() if committed else None
+        processor, extraction, *_ = pipeline(documents, chunks, finalizer)
+        handler._processor = processor
         await handler.execute(message)
-        processor.process.assert_not_awaited()
+        extraction.execute.assert_not_awaited()
         kwargs = finalizer.finalize.await_args.kwargs
         assert (
             ("failure" not in kwargs)
@@ -222,7 +226,7 @@ def test_dlq_never_runs_pipeline_and_rejects_foreign_context():
 def pipeline(documents, chunks, finalizer, *, version="v1"):
     extraction, artifacts = AsyncMock(), AsyncMock()
     normalization, segmentation = Mock(), Mock()
-    value = ProcessDocumentPipeline(
+    value = DocumentProcessingPipeline(
         documents=documents,
         chunks=chunks,
         finalizer=finalizer,
@@ -397,3 +401,43 @@ def test_attempt_deadline_retries_then_exhausts_without_detached_processor():
 def test_outcome_validation(outcome, failure):
     with pytest.raises((TypeError, ValueError)):
         ProcessingResult(outcome, failure)
+
+
+def test_corrupt_output_is_a_fixed_non_retryable_failure():
+    result = classify_processing_failure(StoredChunkCorruptionError())
+    assert not result.retryable
+    assert result.failure.code == "PROCESSING_OUTPUT_CORRUPT"
+    assert result.failure.safe_message == "The persisted processing output is invalid."
+
+
+@pytest.mark.parametrize(
+    "error,level",
+    [
+        (RuntimeError("private"), "error"),
+        (ChunkPersistenceError(), "warning"),
+        (TimeoutError(), "warning"),
+    ],
+)
+def test_unexpected_errors_are_observable_without_sensitive_details(
+    error, level, monkeypatch
+):
+    from nexus.documents.application import document_processing_handler
+
+    logger = Mock()
+    monkeypatch.setattr(document_processing_handler, "logger", logger)
+
+    async def run():
+        _, message, handler, _, processor, _, _ = context()
+        processor.process.side_effect = error
+        assert (await handler.execute(message)).outcome is ProcessingOutcome.RETRYABLE
+        logged = getattr(logger, level)
+        logged.assert_called_once()
+        assert set(logged.call_args.kwargs) == {
+            "error_type",
+            "failure_code",
+            "correlation",
+        }
+        assert "private" not in str(logged.call_args)
+        getattr(logger, "warning" if level == "error" else "error").assert_not_called()
+
+    asyncio.run(run())

@@ -30,6 +30,7 @@ from nexus.documents.domain.segmented_document import DocumentChunkKind
 from nexus.documents.ports.chunk_persistence import (
     ChunkConflictError,
     ChunkPersistenceError,
+    StoredChunkCorruptionError,
 )
 from nexus.infrastructure.persistence import _document_chunk_queries as queries
 from nexus.infrastructure.persistence import _document_queries
@@ -505,7 +506,8 @@ def test_corrupt_stored_set_fails_safely_for_read_and_duplicate(context, corrupt
         lambda: write(persistence, document, result),
     ):
         with pytest.raises(
-            ChunkPersistenceError, match="^Document chunk persistence failed$"
+            StoredChunkCorruptionError,
+            match=r"^The persisted processing output is invalid\.$",
         ):
             asyncio.run(operation())
 

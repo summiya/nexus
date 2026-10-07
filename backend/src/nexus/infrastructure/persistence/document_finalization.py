@@ -7,7 +7,9 @@ from uuid import UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from nexus.documents.application.processing_failures import PROCESSING_OUTPUT_CORRUPT
 from nexus.documents.domain import DocumentFailure, DocumentStatus
+from nexus.documents.ports.chunk_persistence import StoredChunkCorruptionError
 from nexus.documents.ports.persistence import (
     DocumentConflictError,
     DocumentPersistenceError,
@@ -18,7 +20,7 @@ from nexus.documents.ports.processing import (
     ProcessingResult,
 )
 from nexus.infrastructure.persistence import _document_chunk_queries, _document_queries
-from nexus.infrastructure.persistence.document import _settle_cancelled_transaction
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 
 
 class SqlAlchemyDocumentFinalization(DocumentFinalization):
@@ -71,10 +73,21 @@ class SqlAlchemyDocumentFinalization(DocumentFinalization):
                     current.processing_started_at or current.created_at,
                 )
                 if metadata is not None:
-                    await _document_chunk_queries.load_set(session, current, metadata)
-                    settled = current.complete(at=at)
-                    result = ProcessingResult(ProcessingOutcome.SUCCESS)
-                elif failure is not None:
+                    try:
+                        await _document_chunk_queries.load_set(
+                            session, current, metadata
+                        )
+                    except StoredChunkCorruptionError:
+                        if failure is None:
+                            raise
+                        failure = PROCESSING_OUTPUT_CORRUPT.failure
+                    else:
+                        settled = current.complete(at=at)
+                        await _document_queries.replace_document_snapshot(
+                            session, model=model, document=settled
+                        )
+                        return ProcessingResult(ProcessingOutcome.SUCCESS)
+                if failure is not None:
                     settled = current.fail(
                         at=at, code=failure.code, safe_message=failure.safe_message
                     )

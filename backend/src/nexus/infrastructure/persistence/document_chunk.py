@@ -18,6 +18,7 @@ from nexus.documents.ports.chunk_persistence import (
 from nexus.documents.ports.persistence import DocumentPersistenceError
 from nexus.infrastructure.persistence import _document_chunk_queries as queries
 from nexus.infrastructure.persistence import _document_queries
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.infrastructure.persistence.models.document_chunk import DocumentChunkSet
 
 
@@ -122,7 +123,7 @@ class SqlAlchemyDocumentChunkPersistence(DocumentChunkPersistence):
         try:
             await asyncio.shield(transaction)
         except asyncio.CancelledError:
-            await _settle_transaction(transaction)
+            await _settle_cancelled_transaction(transaction)
             raise
 
     async def _persist(
@@ -213,16 +214,3 @@ class SqlAlchemyDocumentChunkPersistence(DocumentChunkPersistence):
             raise ChunkPersistenceError() from exc
         except DocumentPersistenceError as exc:
             raise ChunkPersistenceError() from exc
-
-
-async def _settle_transaction(transaction: asyncio.Task[None]) -> None:
-    """Consume completion before propagating cancellation; never detach DB work."""
-    while not transaction.done():
-        try:
-            await asyncio.shield(transaction)
-        except asyncio.CancelledError:
-            continue
-        except BaseException:  # noqa: BLE001 - caller cancellation remains authoritative
-            return
-    if not transaction.cancelled():
-        transaction.exception()

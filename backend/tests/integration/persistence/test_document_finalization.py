@@ -18,7 +18,7 @@ from tests.integration.persistence.test_document_persistence import (
 from nexus.documents.domain import DocumentFailure, DocumentStatus
 from nexus.documents.ports.chunk_persistence import (
     ChunkConflictError,
-    ChunkPersistenceError,
+    StoredChunkCorruptionError,
 )
 from nexus.documents.ports.persistence import DocumentConflictError
 from nexus.documents.ports.processing import ProcessingOutcome
@@ -30,7 +30,10 @@ from nexus.infrastructure.persistence.document_chunk import (
 from nexus.infrastructure.persistence.document_finalization import (
     SqlAlchemyDocumentFinalization,
 )
-from nexus.infrastructure.persistence.models.document_chunk import DocumentChunkSet
+from nexus.infrastructure.persistence.models.document_chunk import (
+    DocumentChunk,
+    DocumentChunkSet,
+)
 
 
 @pytest.fixture
@@ -152,9 +155,18 @@ def test_corrupt_chunk_set_cannot_be_claimed_as_success(context):
     with Session(engine) as session:
         session.execute(update(DocumentChunkSet).values(chunk_count=999))
         session.commit()
-    with pytest.raises(ChunkPersistenceError):
-        asyncio.run(finish(SqlAlchemyDocumentFinalization(sessions), document, FAILURE))
+    finalizer = SqlAlchemyDocumentFinalization(sessions)
+    with pytest.raises(StoredChunkCorruptionError):
+        asyncio.run(finish(finalizer, document))
     assert asyncio.run(current(sessions, document)) == document
+    outcome = asyncio.run(finish(finalizer, document, FAILURE))
+    assert outcome.outcome is ProcessingOutcome.TERMINAL_FINALIZED
+    assert outcome.failure.code == "PROCESSING_OUTPUT_CORRUPT"
+    stored = asyncio.run(current(sessions, document))
+    assert stored.status is DocumentStatus.FAILED
+    assert stored.failure == outcome.failure
+    with Session(engine) as session:
+        assert session.query(DocumentChunkSet).count() == 1
 
 
 def test_finalization_cancellation_settles_transaction_before_return(
@@ -195,7 +207,9 @@ def test_real_pipeline_concurrent_resume_and_restart_with_committed_chunks(conte
 
     from nexus.composition.document_worker import _processor
     from nexus.config.document_worker_settings import DocumentWorkerSettings
-    from nexus.documents.application.process_document import ProcessDocument
+    from nexus.documents.application.document_processing_handler import (
+        DocumentProcessingHandler,
+    )
     from nexus.documents.ports.processing import DocumentProcessingRequested
     from nexus.files.ports import (
         ObjectStorageAlreadyExistsError,
@@ -276,10 +290,9 @@ def test_real_pipeline_concurrent_resume_and_restart_with_committed_chunks(conte
             storage,
             AsyncMock(),
         )
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=requests,
             documents=documents,
-            chunks=chunks,
             finalizer=finalizer,
             processor=processor,
             processing_version="pipeline-v1",
@@ -334,10 +347,9 @@ def test_real_pipeline_concurrent_resume_and_restart_with_committed_chunks(conte
             storage,
             AsyncMock(),
         )
-        next_handler = ProcessDocument(
+        next_handler = DocumentProcessingHandler(
             requests=requests,
             documents=documents,
-            chunks=chunks,
             finalizer=finalizer,
             processor=next_processor,
             processing_version="next-recipe",
@@ -360,5 +372,123 @@ def test_real_pipeline_concurrent_resume_and_restart_with_committed_chunks(conte
             == result
         )
         assert len(storage.objects) == 2
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "discovery", ["chunk_read", "successful_finalization", "exhaustion"]
+)
+@pytest.mark.parametrize("corruption", ["metadata", "provenance"])
+def test_corruption_is_terminal_and_never_successful_processing(
+    context, discovery, corruption
+):
+    from unittest.mock import AsyncMock, Mock
+
+    from nexus.documents.application.document_processing_handler import (
+        DocumentProcessingHandler,
+    )
+    from nexus.documents.application.document_processing_pipeline import (
+        DocumentProcessingPipeline,
+    )
+    from nexus.documents.ports.processing import DocumentProcessingRequested
+
+    engine, sessions, document, result = context
+    asyncio.run(write(SqlAlchemyDocumentChunkPersistence(sessions), document, result))
+    with Session(engine) as session:
+        if corruption == "metadata":
+            session.execute(update(DocumentChunkSet).values(chunk_count=999))
+        else:
+            session.execute(
+                update(DocumentChunk).values(contributions=[{"invalid": "private"}])
+            )
+        session.commit()
+
+    async def run():
+        finalizer = SqlAlchemyDocumentFinalization(sessions)
+        chunks = SqlAlchemyDocumentChunkPersistence(sessions)
+        if discovery == "successful_finalization":
+            chunks = AsyncMock(get_chunk_set=AsyncMock(return_value=result))
+        extraction = AsyncMock()
+        documents = SqlAlchemyDocumentPersistence(sessions)
+        processor = DocumentProcessingPipeline(
+            documents=documents,
+            chunks=chunks,
+            finalizer=finalizer,
+            extraction=extraction,
+            normalization=Mock(),
+            artifacts=AsyncMock(),
+            segmentation=Mock(),
+            processing_version=document.processing_version,
+        )
+        handler = DocumentProcessingHandler(
+            requests=AsyncMock(matches=AsyncMock(return_value=True)),
+            documents=documents,
+            processor=processor,
+            finalizer=finalizer,
+            processing_version=document.processing_version,
+        )
+        request = DocumentProcessingRequested(
+            uuid4(), document.organization_public_id, document.public_id
+        )
+        outcome = await (
+            handler.settle_exhausted(request)
+            if discovery == "exhaustion"
+            else handler.execute(request)
+        )
+        assert outcome.outcome is ProcessingOutcome.TERMINAL_FINALIZED
+        assert outcome.failure.code == "PROCESSING_OUTPUT_CORRUPT"
+        stored = await current(sessions, document)
+        assert stored.status is DocumentStatus.FAILED
+        assert stored.failure == outcome.failure
+        extraction.execute.assert_not_awaited()
+        assert (await handler.execute(request)).outcome is ProcessingOutcome.SUCCESS
+
+    asyncio.run(run())
+
+
+def test_database_failure_reading_chunks_remains_retryable(context, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.exc import OperationalError
+
+    from nexus.documents.application.document_processing_handler import (
+        DocumentProcessingHandler,
+    )
+    from nexus.documents.ports.processing import DocumentProcessingRequested
+    from nexus.infrastructure.persistence import _document_chunk_queries
+
+    _, sessions, document, result = context
+    asyncio.run(write(SqlAlchemyDocumentChunkPersistence(sessions), document, result))
+
+    async def unavailable(*args, **kwargs):
+        raise OperationalError("private query", {}, Exception("private provider"))
+
+    monkeypatch.setattr(_document_chunk_queries, "stored_sizes", unavailable)
+
+    async def run():
+        chunks = SqlAlchemyDocumentChunkPersistence(sessions)
+
+        async def process(**kwargs):
+            await chunks.get_chunk_set(
+                organization_public_id=document.organization_public_id,
+                document_public_id=document.public_id,
+            )
+
+        handler = DocumentProcessingHandler(
+            requests=AsyncMock(matches=AsyncMock(return_value=True)),
+            documents=SqlAlchemyDocumentPersistence(sessions),
+            processor=AsyncMock(process=AsyncMock(side_effect=process)),
+            finalizer=SqlAlchemyDocumentFinalization(sessions),
+            processing_version=document.processing_version,
+        )
+        request = DocumentProcessingRequested(
+            uuid4(), document.organization_public_id, document.public_id
+        )
+        for final_attempt in (False, True):
+            assert (
+                await handler.execute(request, final_attempt=final_attempt)
+            ).outcome is ProcessingOutcome.RETRYABLE
+            assert await current(sessions, document) == document
 
     asyncio.run(run())

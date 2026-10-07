@@ -10,6 +10,7 @@ from nexus.documents.domain import DocumentFailure
 from nexus.documents.ports.chunk_persistence import (
     ChunkConflictError,
     ChunkPersistenceError,
+    StoredChunkCorruptionError,
 )
 from nexus.documents.ports.dispatch import DocumentDispatchError
 from nexus.documents.ports.extraction import (
@@ -30,6 +31,7 @@ from nexus.files.ports.persistence import FilePersistenceError
 class ProcessingFailure:
     retryable: bool
     failure: DocumentFailure
+    unexpected: bool = False
 
 
 class ProcessingVersionConflict(Exception):
@@ -56,7 +58,14 @@ RETRY_EXHAUSTED = policy(
 )
 
 
+PROCESSING_OUTPUT_CORRUPT = policy(
+    "PROCESSING_OUTPUT_CORRUPT", "The persisted processing output is invalid."
+)
+
+
 def classify_processing_failure(error: Exception) -> ProcessingFailure:
+    if isinstance(error, StoredChunkCorruptionError):
+        return PROCESSING_OUTPUT_CORRUPT
     if isinstance(error, DocumentSourceError):
         return {
             DocumentSourceFailure.INVALID_REQUEST: policy(
@@ -136,8 +145,11 @@ def classify_processing_failure(error: Exception) -> ProcessingFailure:
             if error.reason is ObjectStorageFailure.CHANGED
             else STORAGE_UNAVAILABLE
         )
-    return policy(
-        "PROCESSING_UNAVAILABLE",
-        "Document processing could not finish this attempt.",
-        retryable=True,
+    return ProcessingFailure(
+        True,
+        DocumentFailure(
+            "PROCESSING_UNAVAILABLE",
+            "Document processing could not finish this attempt.",
+        ),
+        unexpected=not isinstance(error, TimeoutError),
     )

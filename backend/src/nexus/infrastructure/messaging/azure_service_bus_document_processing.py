@@ -2,18 +2,13 @@
 
 import asyncio
 import hashlib
-import json
-from dataclasses import asdict
 from typing import Any
-from uuid import UUID
 
 from azure.servicebus import (
     ServiceBusReceivedMessage,
     ServiceBusReceiveMode,
-    ServiceBusSubQueue,
 )
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
-from azure.servicebus.amqp import AmqpMessageBodyType
 from azure.servicebus.exceptions import (
     MessageAlreadySettled,
     MessageLockLostError,
@@ -28,9 +23,18 @@ from nexus.documents.ports.dispatch import DocumentPublicationError
 from nexus.documents.ports.processing import (
     DocumentMessageHandler,
     DocumentProcessingRequested,
+    DocumentRequestReader,
     ProcessingOutcome,
     ProcessingRequestRejected,
     ProcessingResult,
+)
+from nexus.infrastructure.messaging._document_processing_message import (
+    MAX_DOCUMENT_MESSAGE_BYTES,
+    decode_document_message,
+    encode_document_message,
+)
+from nexus.infrastructure.messaging.azure_service_bus_document_dlq import (
+    AzureServiceBusDocumentDlqReconciler,
 )
 from nexus.infrastructure.messaging.azure_service_bus_publisher import (
     AzureServiceBusPublicationError,
@@ -38,7 +42,14 @@ from nexus.infrastructure.messaging.azure_service_bus_publisher import (
 )
 from nexus.logging import get_logger
 
-MAX_DOCUMENT_MESSAGE_BYTES = 65_536
+__all__ = [
+    "MAX_DOCUMENT_MESSAGE_BYTES",
+    "AzureServiceBusDocumentPublisher",
+    "AzureServiceBusDocumentWorker",
+    "decode_document_message",
+    "encode_document_message",
+]
+
 logger = get_logger(__name__)
 _FATAL_ERRORS = (
     ServiceBusAuthenticationError,
@@ -46,65 +57,6 @@ _FATAL_ERRORS = (
     MessagingEntityNotFoundError,
     MessagingEntityDisabledError,
 )
-
-
-def encode_document_message(message: DocumentProcessingRequested) -> bytes:
-    return json.dumps(
-        asdict(message), default=str, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-
-
-def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate message field")
-        result[key] = value
-    return result
-
-
-def decode_document_message(
-    message: ServiceBusReceivedMessage,
-) -> DocumentProcessingRequested:
-    if message.body_type is not AmqpMessageBodyType.DATA:
-        raise ValueError("Invalid document message")
-    body = message.body
-    data = bytearray()
-    for section in (body,) if isinstance(body, bytes) else body:
-        if (
-            not isinstance(section, bytes)
-            or len(data) + len(section) > MAX_DOCUMENT_MESSAGE_BYTES
-        ):
-            raise ValueError("Invalid document message")
-        data.extend(section)
-    try:
-        payload = json.loads(
-            data.decode("utf-8", errors="strict"), object_pairs_hook=_unique_object
-        )
-        if not isinstance(payload, dict) or set(payload) != {
-            "schema_version",
-            "request_public_id",
-            "organization_public_id",
-            "document_public_id",
-        }:
-            raise ValueError("Invalid document message")
-        if not all(
-            isinstance(payload[key], str)
-            for key in (
-                "request_public_id",
-                "organization_public_id",
-                "document_public_id",
-            )
-        ):
-            raise ValueError("Invalid document identity")
-        return DocumentProcessingRequested(
-            request_public_id=UUID(payload["request_public_id"]),
-            organization_public_id=UUID(payload["organization_public_id"]),
-            document_public_id=UUID(payload["document_public_id"]),
-            schema_version=payload["schema_version"],
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, RecursionError) as exc:
-        raise ValueError("Invalid document message") from exc
 
 
 class AzureServiceBusDocumentPublisher:
@@ -135,6 +87,7 @@ class AzureServiceBusDocumentWorker:
         client: ServiceBusClient,
         queue_name: str,
         handler: DocumentMessageHandler,
+        requests: DocumentRequestReader,
         auto_lock_renewer: AutoLockRenewer,
         concurrency: int = 2,
         max_delivery_count: int = 10,
@@ -145,17 +98,15 @@ class AzureServiceBusDocumentWorker:
             raise ValueError("Invalid document worker concurrency")
         if type(max_delivery_count) is not int or not 1 <= max_delivery_count <= 100:
             raise ValueError("Invalid document delivery count")
-        if (
-            type(dlq_pass_limit) is not int
-            or not 1 <= dlq_pass_limit <= 1000
-            or type(dlq_pass_seconds) not in (int, float)
-            or not 0 < dlq_pass_seconds <= 60
-        ):
-            raise ValueError("Invalid document DLQ bounds")
         self._max_deliveries = max_delivery_count
-        self._dlq_limit = dlq_pass_limit
-        self._dlq_seconds = dlq_pass_seconds
-        self._dlq_sequence = 0
+        self._dlq = AzureServiceBusDocumentDlqReconciler(
+            client=client,
+            queue_name=queue_name,
+            handler=handler,
+            requests=requests,
+            pass_limit=dlq_pass_limit,
+            pass_seconds=dlq_pass_seconds,
+        )
         self._client = client
         self._queue = queue_name
         self._handler = handler
@@ -166,7 +117,7 @@ class AzureServiceBusDocumentWorker:
         async with asyncio.TaskGroup() as workers:
             for _ in range(self._concurrency):
                 workers.create_task(self._receive_slot(stop))
-            workers.create_task(self._reconcile_dlq(stop))
+            workers.create_task(self._dlq.run(stop))
 
     async def _receive_slot(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
@@ -274,61 +225,6 @@ class AzureServiceBusDocumentWorker:
             stopped.cancel()
             lost_lock.cancel()
             await asyncio.gather(stopped, lost_lock, return_exceptions=True)
-
-    async def _reconcile_dlq(self, stop: asyncio.Event) -> None:
-        while not stop.is_set():
-            try:
-                await self.browse_dlq_once(stop)
-            except _FATAL_ERRORS:
-                raise
-            except Exception as exc:  # noqa: BLE001 - safe bounded recovery pass
-                logger.warning(
-                    "document_dlq_browse_retry", error_type=type(exc).__name__
-                )
-            await _wait_for_stop(stop, 10)
-
-    async def browse_dlq_once(self, stop: asyncio.Event) -> int:
-        """Bounded non-destructive browse; no replay, checkpoint, or administration."""
-        inspected = 0
-        sequence = self._dlq_sequence
-        receiver = self._client.get_queue_receiver(
-            queue_name=self._queue,
-            sub_queue=ServiceBusSubQueue.DEAD_LETTER,
-            prefetch_count=0,
-            max_wait_time=5,
-        )
-        async with asyncio.timeout(self._dlq_seconds), receiver:
-            while inspected < self._dlq_limit and not stop.is_set():
-                messages = await receiver.peek_messages(
-                    max_message_count=min(20, self._dlq_limit - inspected),
-                    sequence_number=sequence,
-                )
-                if not messages:
-                    self._dlq_sequence = 0
-                    break
-                for message in messages:
-                    if stop.is_set():
-                        break
-                    inspected += 1
-                    number = message.sequence_number
-                    if type(number) is not int or number < sequence:
-                        raise ValueError("Invalid DLQ sequence")
-                    sequence = number + 1
-                    if message.dead_letter_reason not in (
-                        "MaxDeliveryCountExceeded",
-                        "TTLExpiredException",
-                    ):
-                        self._dlq_sequence = sequence
-                        continue
-                    try:
-                        request = decode_document_message(message)
-                        # Retained messages are revisited on the next cursor cycle,
-                        # including retries; one unresolved record must not block others.
-                        await self._handler.settle_exhausted(request)
-                    except (ValueError, TypeError, ProcessingRequestRejected):
-                        logger.warning("document_dlq_request_invalid")
-                    self._dlq_sequence = sequence
-        return inspected
 
     async def _settle(
         self,

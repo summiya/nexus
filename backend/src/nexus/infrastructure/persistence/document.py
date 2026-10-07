@@ -18,6 +18,7 @@ from nexus.documents.ports import (
     DocumentPersistenceError,
 )
 from nexus.infrastructure.persistence import _document_queries as queries
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 
 T = TypeVar("T")
 
@@ -144,18 +145,3 @@ def _constraint_name(exc: IntegrityError) -> str | None:
     diagnostic = getattr(exc.orig, "diag", None)
     name = getattr(diagnostic, "constraint_name", None)
     return name if isinstance(name, str) else None
-
-
-async def _settle_cancelled_transaction(transaction: asyncio.Task[object]) -> None:
-    """Wait until a shielded transaction has committed or rolled back."""
-    while not transaction.done():
-        try:
-            await asyncio.shield(transaction)
-        except asyncio.CancelledError:
-            continue
-        except BaseException:  # noqa: BLE001 - cancellation remains authoritative
-            return
-
-    if transaction.cancelled():
-        return
-    transaction.exception()

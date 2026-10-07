@@ -6,11 +6,9 @@ from datetime import UTC, datetime
 
 from nexus.documents.application.processing_failures import (
     RETRY_EXHAUSTED,
-    ProcessingVersionConflict,
     classify_processing_failure,
 )
 from nexus.documents.domain import Document, DocumentStatus
-from nexus.documents.ports.chunk_persistence import DocumentChunkPersistence
 from nexus.documents.ports.persistence import DocumentConflictError, DocumentPersistence
 from nexus.documents.ports.processing import (
     DocumentFinalization,
@@ -26,14 +24,13 @@ from nexus.logging import get_logger
 logger = get_logger(__name__)
 
 
-class ProcessDocument:
+class DocumentProcessingHandler:
     def __init__(
         self,
         *,
         requests: DocumentRequestReader,
         documents: DocumentPersistence,
         processor: DocumentProcessor,
-        chunks: DocumentChunkPersistence,
         finalizer: DocumentFinalization,
         processing_version: str,
         attempt_timeout_seconds: float = 240,
@@ -53,7 +50,6 @@ class ProcessDocument:
         self._requests = requests
         self._documents = documents
         self._processor = processor
-        self._chunks = chunks
         self._finalizer = finalizer
         self._version = processing_version
         self._timeout = attempt_timeout_seconds
@@ -69,17 +65,6 @@ class ProcessDocument:
             document = await self._admit(message)
             if document.status in (DocumentStatus.COMPLETED, DocumentStatus.FAILED):
                 return ProcessingResult(ProcessingOutcome.SUCCESS)
-            if document.processing_version != self._version:
-                # A committed original-generation result needs no new recipe execution.
-                if (
-                    await self._chunks.get_chunk_set(
-                        organization_public_id=document.organization_public_id,
-                        document_public_id=document.public_id,
-                    )
-                    is not None
-                ):
-                    return await self._finalize(document)
-                raise ProcessingVersionConflict()
             async with asyncio.timeout(self._timeout):
                 await self._processor.process(document=document, request=message)
             return ProcessingResult(ProcessingOutcome.SUCCESS)
@@ -87,6 +72,13 @@ class ProcessDocument:
             raise
         except Exception as exc:  # noqa: BLE001 - classify only safe provider-neutral policy
             if document is None:
+                classified = classify_processing_failure(exc)
+                log = logger.error if classified.unexpected else logger.warning
+                log(
+                    "document_admission_retry",
+                    error_type=type(exc).__name__,
+                    failure_code=classified.failure.code,
+                )
                 return ProcessingResult(ProcessingOutcome.RETRYABLE)
             return await self._failed(document, message, exc, final_attempt)
 
@@ -125,7 +117,8 @@ class ProcessDocument:
         final_attempt: bool,
     ) -> ProcessingResult:
         classified = classify_processing_failure(error)
-        logger.warning(
+        log = logger.error if classified.unexpected else logger.warning
+        log(
             "document_processing_attempt_failed",
             error_type=type(error).__name__,
             failure_code=classified.failure.code,
@@ -155,14 +148,14 @@ class ProcessDocument:
                 failure=failure,
             )
         except Exception as exc:  # noqa: BLE001 - no DLQ before lifecycle durability
-            logger.warning("document_finalization_retry", error_type=type(exc).__name__)
+            classified = classify_processing_failure(exc)
+            log = logger.error if classified.unexpected else logger.warning
+            log(
+                "document_finalization_retry",
+                error_type=type(exc).__name__,
+                failure_code=classified.failure.code,
+            )
             return ProcessingResult(ProcessingOutcome.RETRYABLE)
-
-    async def _finalize(self, document: Document) -> ProcessingResult:
-        return await self._finalizer.finalize(
-            organization_public_id=document.organization_public_id,
-            document_public_id=document.public_id,
-        )
 
     async def settle_exhausted(
         self, message: DocumentProcessingRequested
@@ -180,5 +173,11 @@ class ProcessDocument:
         except ProcessingRequestRejected:
             raise
         except Exception as exc:  # noqa: BLE001 - retry browsing after infrastructure recovery
-            logger.warning("document_exhaustion_retry", error_type=type(exc).__name__)
+            classified = classify_processing_failure(exc)
+            log = logger.error if classified.unexpected else logger.warning
+            log(
+                "document_exhaustion_retry",
+                error_type=type(exc).__name__,
+                failure_code=classified.failure.code,
+            )
             return ProcessingResult(ProcessingOutcome.RETRYABLE)

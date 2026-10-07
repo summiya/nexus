@@ -7,7 +7,9 @@ from uuid import uuid4
 import pytest
 
 from nexus.documents.application.dispatch_processing import DispatchDocumentProcessing
-from nexus.documents.application.process_document import ProcessDocument
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
 from nexus.documents.domain import Document
 from nexus.documents.ports.dispatch import DispatchLease
 from nexus.documents.ports.persistence import DocumentConflictError
@@ -139,11 +141,10 @@ def test_claim_failure_paths(outcome):
         persistence = AsyncMock()
         persistence.get_document.return_value = None if outcome == "missing" else doc
         processor = AsyncMock()
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=requests,
             documents=persistence,
             processor=processor,
-            chunks=AsyncMock(),
             finalizer=AsyncMock(),
             processing_version="v1",
         )
@@ -208,11 +209,10 @@ def test_processing_resumes_and_terminal_documents_drain(status):
         requests, persistence, processor = AsyncMock(), AsyncMock(), AsyncMock()
         requests.matches.return_value = True
         persistence.get_document.return_value = doc
-        await ProcessDocument(
+        await DocumentProcessingHandler(
             requests=requests,
             documents=persistence,
             processor=processor,
-            chunks=AsyncMock(),
             finalizer=AsyncMock(),
             processing_version="v1",
         ).execute(event)
