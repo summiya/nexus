@@ -83,11 +83,13 @@ class AzureBlobObjectStorage:
         """Create an immutable Block Blob without replacing an existing object."""
         tracked_content = _TrackedUploadContent(content)
         try:
-            await self._container_client.upload_blob(
-                name=storage_key,
-                data=tracked_content,
-                blob_type=BlobType.BLOCKBLOB,
-                overwrite=False,
+            await _await_provider_operation(
+                self._container_client.upload_blob(
+                    name=storage_key,
+                    data=tracked_content,
+                    blob_type=BlobType.BLOCKBLOB,
+                    overwrite=False,
+                )
             )
         except AzureError as exc:
             if tracked_content._source_failure is exc:

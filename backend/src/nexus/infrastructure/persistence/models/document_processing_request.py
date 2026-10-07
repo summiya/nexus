@@ -32,7 +32,7 @@ class DocumentProcessingRequest(Base):
             ondelete="RESTRICT",
         ),
         UniqueConstraint("public_id", name="uq_document_requests_public_id"),
-        UniqueConstraint("source_file_id", name="uq_document_requests_initial_file"),
+        Index("ix_document_requests_source_file_id", "source_file_id", "id"),
         UniqueConstraint("document_id", name="uq_document_requests_document"),
         CheckConstraint(
             "public_id <> '00000000-0000-0000-0000-000000000000'::uuid",

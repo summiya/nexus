@@ -991,9 +991,15 @@ future dispatch time. It does not duplicate the storage key: File remains the
 storage identity. The ETag identifies the object verified at initiation; it does
 not promise the object cannot change later. DP-05 owns exact-source verification.
 
-One initial request per source File is enforced even after its Document becomes
-terminal or its request is dispatched. A composite foreign key binds the request
-to the exact Document, organization, and source File; the additional Document
+DP-11 retains one request per Document generation, with unique request and
+Document identities. An ordinary `(source_file_id, id)` index supports resolving
+the earliest initial-ingestion marker. Explicit reprocessing creates a new
+Document/request under a tenant-owned File lock and copies source facts from the
+exact latest terminal generation; history is preserved. The active-Document
+partial unique index still permits at most one active generation per File.
+Migration 0019 refuses downgrade when multiple-generation history exists.
+A composite foreign key binds the request to the exact Document, organization,
+and source File; the additional Document
 unique key supports that relationship without changing lifecycle behavior.
 Requests contain no content or parser/retrieval payloads.
 
@@ -1001,8 +1007,9 @@ Requests contain no content or parser/retrieval payloads.
 or size conflicts; the original request is never replaced. `available` without
 an initial request is not backfilled. Existing Documents without a compatible
 initial request are not adopted on the pending initiation path. Initial-ingestion
-markers must be retained after eventual dispatch. Historical backfill,
-reprocessing, dispatch/claim leases, and processing itself remain later work.
+markers must be retained after eventual dispatch. Automatic reprocessing and
+historical backfill remain deferred. DP-04 adds
+dispatch leases; DP-11 adds explicit generations and truthful terminal processing.
 
 File deletion rejects Document-referenced Files before marking deleting or
 removing their source object. The existing restrictive foreign keys remain intact.

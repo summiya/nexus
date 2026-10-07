@@ -32,6 +32,8 @@ async def request_for_file(
             FileModel.public_id == file.public_id,
             Organization.public_id == file.organization_public_id,
         )
+        .order_by(DocumentProcessingRequest.id)
+        .limit(1)
     )
 
 
@@ -55,7 +57,7 @@ async def has_document(session: AsyncSession, file: File) -> bool:
     )
 
 
-async def insert_initial_request(
+async def insert_document_and_request(
     session: AsyncSession,
     *,
     document: Document,

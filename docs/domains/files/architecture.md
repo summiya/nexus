@@ -1478,10 +1478,10 @@ Different Documents can run concurrently. Same-Document competing claims are
 serialized by the existing PostgreSQL snapshot boundary, not by a global worker lock.
 
 Production `python -m nexus.workers.document_processing` runs dispatch using
-Managed Identity. `python -m nexus.workers.document_consumer` deliberately fails
-closed before creating resources: no real downstream processor is wired yet.
-Tests may inject a processor through composition, but no placeholder exists in
-production. DP-05 streaming/extraction and later processing/recovery are excluded.
+Managed Identity. DP-11 now wires the real pipeline for explicit
+`python -m nexus.workers.document_consumer` startup; dispatcher startup does not
+activate consumption. Missing Blob/OCR settings fail before resources or claims.
+The historical DP-04 boundary alone did not process content.
 
 ## DP-05 exact source access
 
@@ -1910,3 +1910,68 @@ global lock, external network call, or content logging is introduced.
 DP-10 adds no runtime worker wiring or production consumption, completion, retry
 policy, token counts, embeddings, vector/lexical indexing, search API, retrieval,
 RAG, or further processing changes.
+
+
+## DP-11 durable processing outcomes and explicit generations
+
+`ProcessDocument` owns request validation, start/resume/drain admission, recipe
+compatibility, one safe failure classifier, delivery exhaustion, and failure
+finalization. QUEUED starts through the existing snapshot CAS. A lost CAS re-reads
+PROCESSING to resume or a terminal state to drain. PROCESSING deliveries resume
+the same generation; COMPLETED/FAILED duplicates complete without work. No state
+is reset to QUEUED.
+
+`ProcessDocumentPipeline` reads committed chunks first. Existing valid output
+completes even under an older processing recipe. Otherwise it checks the stored
+recipe, extracts through DP-05/06/07/07B, CAS-records the immutable extractor
+version, normalizes, creates the immutable artifact, segments, commits the full
+chunk set, and completes. Normalization/segmentation run in bounded threads that
+settle on cancellation. The intentional recipe is `dp-11-v1`: material changes
+to extraction, OCR routing, normalization, segmentation or output-affecting
+configuration require version review. No component-version registry exists.
+
+The finalizer locks the tenant-owned Document and validates chunks in the same
+short transaction, sharing DP-10's private bounded loader. Committed valid chunks
+win over requested failure. If FAILED commits first, later chunk persistence
+cannot establish output. Completion without chunks conflicts; corrupt sets fail
+safely. No database transaction spans provider I/O.
+
+Known permanent input/resource/version/semantic conflicts get fixed safe failure
+codes/messages. Generic PARSER_FAILURE, provider/storage/persistence failures,
+unknown runtime errors and deadlines retry. Retryable metadata is not written to
+Document. On the final attempt, RETRY_EXHAUSTED is committed before dead-lettering.
+A failed terminal write returns retryable. Cancellation does not mark FAILED;
+commit-sensitive database/storage operations and parser/thread cleanup settle
+before it propagates. Create-only Blob uploads keep their producer alive until
+settlement. Immutable orphan artifacts remain for future GC.
+
+The transport handles only success, retryable and terminal-finalized outcomes.
+Attempt is SDK `delivery_count + 1`; invalid/missing metadata is abandoned. The
+Document worker and queue default to ten deliveries (File queues are unchanged).
+Shutdown or lock-renewal loss cancels, settles and abandons the handler. A bounded
+DLQ peek pass on the explicit dead-letter subqueue reconciles broker exhaustion
+or expiry through durable ownership admission and the same finalizer, without
+running the pipeline or removing evidence. Each pass inspects at most 100 messages
+for ten seconds in batches of at most twenty; an in-memory sequence cursor moves
+across passes, resets at the end and may rescan after restart. Unresolved finalization is
+revisited on the next cycle without blocking later records. There is no persistent checkpoint or replay.
+
+Explicit trusted reprocessing uses `DocumentReprocessing.create_generation()`.
+The caller must authorize the tenant/File operation; no public API/UI is added.
+Under a tenant-owned File lock it requires AVAILABLE, the exact expected latest
+terminal generation, no active generation, and the request belonging to that
+Document. It copies its verified ETag/size without fresh Blob admission and
+atomically creates new Document/request UUIDs. Terminal history and chunks stay
+unchanged. The active-Document partial unique index remains defense in depth.
+Migration 0019 replaces permanent request-per-File uniqueness with an ordinary
+(source_file_id, id) index; request/Document identities and composite ownership
+FK stay unique. Initial scan duplicates use the earliest retained request and
+never create a later generation. Downgrade refuses multi-generation data.
+
+Composition owns shared clients/credentials through AsyncExitStack; Blob/OCR
+adapters borrow them. Consumption requires Managed Identity Blob and Azure
+Document Intelligence (`prebuilt-read`, API `2024-11-30`), and container-scoped Blob
+Data Contributor for source reads and create-only normalized artifacts. The File
+worker's read-only grant is unchanged. Explicit consumer activation is operational;
+no embeddings, retrieval, reprocessing UI, automatic scheduler, GC or DP-12 metrics
+are introduced.

@@ -232,3 +232,45 @@ async def stored_sizes(
         )
     ).one()
     return tuple(row)
+
+
+async def load_set(
+    session: AsyncSession,
+    document: Document,
+    metadata: DocumentChunkSet,
+    *,
+    max_chunks: int = 10_000,
+    max_text_bytes: int = 16 * 1024 * 1024,
+    max_contributions_per_chunk: int = 128,
+    max_total_contributions: int = 60_000,
+    max_provenance_bytes: int = 16 * 1024 * 1024,
+) -> SegmentedDocument:
+    """One bounded reconstruction path; caller owns the session/transaction."""
+    if metadata.chunk_count > max_chunks:
+        raise ChunkPersistenceError()
+    count, text, per_chunk, total, provenance = await stored_sizes(
+        session,
+        document_id=metadata.document_id,
+        organization_id=metadata.organization_id,
+    )
+    if (
+        count > max_chunks
+        or text > max_text_bytes
+        or per_chunk > max_contributions_per_chunk
+        or total > max_total_contributions
+        or provenance > max_provenance_bytes
+    ):
+        raise ChunkPersistenceError()
+    rows = await get_chunks(
+        session,
+        document_id=metadata.document_id,
+        organization_id=metadata.organization_id,
+        limit=max_chunks + 1,
+    )
+    result = to_segmented(document, metadata, rows)
+    if (
+        document.extractor_version is None
+        or document.extractor_version != result.extractor_version
+    ):
+        raise ChunkPersistenceError()
+    return result

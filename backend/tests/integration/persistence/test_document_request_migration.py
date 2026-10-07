@@ -46,7 +46,6 @@ def test_document_request_migration_upgrade_and_downgrade(
         for item in inspector.get_unique_constraints("document_processing_requests")
     } == {
         "uq_document_requests_public_id",
-        "uq_document_requests_initial_file",
         "uq_document_requests_document",
     }
     with engine.connect() as connection:

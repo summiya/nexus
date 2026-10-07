@@ -46,7 +46,7 @@ class _AzureBlobClientOptions(TypedDict):
     retry_total: int
 
 
-_AZURE_BLOB_CLIENT_OPTIONS: _AzureBlobClientOptions = {
+AZURE_BLOB_CLIENT_OPTIONS: _AzureBlobClientOptions = {
     "max_single_get_size": 4 * 1024 * 1024,
     "max_chunk_get_size": 4 * 1024 * 1024,
     "connection_timeout": 5,
@@ -252,7 +252,7 @@ async def build_storage_composition(
         if connection_string is not None:
             service_client = BlobServiceClient.from_connection_string(
                 connection_string,
-                **_AZURE_BLOB_CLIENT_OPTIONS,
+                **AZURE_BLOB_CLIENT_OPTIONS,
             )
         else:
             assert account_url is not None
@@ -265,7 +265,7 @@ async def build_storage_composition(
             service_client = BlobServiceClient(
                 account_url=account_url,
                 credential=credential,
-                **_AZURE_BLOB_CLIENT_OPTIONS,
+                **AZURE_BLOB_CLIENT_OPTIONS,
             )
         container_client = service_client.get_container_client(container_name)
         local_emulator_enabled = (

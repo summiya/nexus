@@ -1,4 +1,4 @@
-"""Run the dispatcher. Consumption deliberately fails closed in DP-04."""
+"""Run dispatch by default; the real consumer requires explicit activation."""
 
 import asyncio
 import signal

@@ -134,7 +134,7 @@ class SqlAlchemyDocumentInitiationPersistence(DocumentInitiationPersistence):
         )
         if document is None:
             return "ineligible"
-        await queries.insert_initial_request(
+        await queries.insert_document_and_request(
             session,
             document=document,
             source_entity_tag=source_entity_tag,

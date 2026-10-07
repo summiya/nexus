@@ -229,14 +229,14 @@ def test_request_failure_rolls_back_file_and_document_then_retry_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     file = _seed_file(migrated_engine)
-    original = queries.insert_initial_request
+    original = queries.insert_document_and_request
 
     async def fail_after_insert(session: AsyncSession, **kwargs) -> None:
         await original(session, **kwargs)
         raise RuntimeError("injected crash before commit")
 
     with monkeypatch.context() as patch:
-        patch.setattr(queries, "insert_initial_request", fail_after_insert)
+        patch.setattr(queries, "insert_document_and_request", fail_after_insert)
         with pytest.raises(RuntimeError):
             asyncio.run(_scan(persistence_async_session_factory, file))
     assert _rows(migrated_engine)[0][0].storage_status == "pending"
@@ -318,14 +318,14 @@ def test_cancellation_waits_for_atomic_commit(
 ) -> None:
     file = _seed_file(migrated_engine)
     ready, release = asyncio.Event(), asyncio.Event()
-    original = queries.insert_initial_request
+    original = queries.insert_document_and_request
 
     async def delayed(session: AsyncSession, **kwargs) -> None:
         await original(session, **kwargs)
         ready.set()
         await release.wait()
 
-    monkeypatch.setattr(queries, "insert_initial_request", delayed)
+    monkeypatch.setattr(queries, "insert_document_and_request", delayed)
 
     async def scenario() -> None:
         task = asyncio.create_task(_scan(persistence_async_session_factory, file))
@@ -392,14 +392,14 @@ def test_delete_waits_for_initiation_and_conflicts_before_source_removal(
 ) -> None:
     file = _seed_file(migrated_engine)
     ready, release = asyncio.Event(), asyncio.Event()
-    original = queries.insert_initial_request
+    original = queries.insert_document_and_request
 
     async def delayed(session: AsyncSession, **kwargs) -> None:
         await original(session, **kwargs)
         ready.set()
         await release.wait()
 
-    monkeypatch.setattr(queries, "insert_initial_request", delayed)
+    monkeypatch.setattr(queries, "insert_document_and_request", delayed)
     persistence = SqlAlchemyFilePersistence(persistence_async_session_factory)
 
     async def scenario() -> None:
@@ -517,7 +517,7 @@ def test_independent_files_can_hold_initiation_transactions_concurrently(
     first, second = _seed_file(migrated_engine), _seed_file(migrated_engine)
     both_ready = asyncio.Event()
     inserts = 0
-    original = queries.insert_initial_request
+    original = queries.insert_document_and_request
 
     async def simultaneous_insert(session: AsyncSession, **kwargs) -> None:
         nonlocal inserts
@@ -527,7 +527,7 @@ def test_independent_files_can_hold_initiation_transactions_concurrently(
             both_ready.set()
         await asyncio.wait_for(both_ready.wait(), timeout=5)
 
-    monkeypatch.setattr(queries, "insert_initial_request", simultaneous_insert)
+    monkeypatch.setattr(queries, "insert_document_and_request", simultaneous_insert)
 
     async def scenario() -> None:
         await asyncio.gather(
@@ -540,7 +540,7 @@ def test_independent_files_can_hold_initiation_transactions_concurrently(
     assert len(_rows(migrated_engine)[2]) == 2
 
 
-def test_initial_file_uniqueness_survives_terminal_document(
+def test_request_history_allows_generations_but_is_unique_per_document(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -587,11 +587,22 @@ def test_initial_file_uniqueness_survives_terminal_document(
                 created_at=NOW,
             )
         )
+        session.commit()
+        session.add(
+            DocumentProcessingRequest(
+                public_id=uuid4(),
+                document_id=model.id,
+                organization_id=model.organization_id,
+                source_file_id=model.source_file_id,
+                source_entity_tag="verified-v1",
+                expected_size_bytes=42,
+                created_at=NOW,
+            )
+        )
         with pytest.raises(IntegrityError) as captured:
             session.commit()
         assert (
-            captured.value.orig.diag.constraint_name
-            == "uq_document_requests_initial_file"
+            captured.value.orig.diag.constraint_name == "uq_document_requests_document"
         )
 
 
