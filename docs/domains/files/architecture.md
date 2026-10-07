@@ -1866,3 +1866,47 @@ Document completion, recovery/reprocessing, OCR or normalization changes, or
 production Document consumer activation. Later integration must preserve the
 already-authorized tenant/source context; segmentation itself performs no lookup
 or authorization and its source metadata is not proof of tenant ownership.
+
+
+## DP-10 authoritative chunk persistence
+
+`DocumentChunkPersistence` is a separate provider-neutral port accepting an
+already constructed `SegmentedDocument` and a trusted expected Document snapshot.
+`SqlAlchemyDocumentChunkPersistence` owns a fresh, short PostgreSQL transaction;
+it never reads storage or runs processing inside that transaction.
+
+Before locking, bounded preflight checks chunk count, UTF-8 text bytes,
+contribution counts, and explicit serialized provenance size. Constructor defaults
+are 10,000 chunks, 16 MiB total text, 128 contributions per chunk, 60,000 total
+contributions, 16 MiB provenance, and 200 rows per insert batch. These operational
+limits do not change segmentation metadata. Encoding is explicit and bounded;
+reads check stored aggregate sizes before loading content/provenance.
+
+The existing tenant-scoped Document `FOR UPDATE` query serializes writers for one
+Document while allowing different Documents to proceed concurrently. Writes require
+PROCESSING, a recorded matching extractor version, matching source File identity,
+and exact equality with the stored snapshot. Missing and foreign-tenant Documents
+produce the same fixed conflict. The Document remains unchanged.
+
+One `document_chunk_sets` header stores shared immutable source/version/settings
+metadata. Its Document primary key identifies the processing generation. Ordered
+`document_chunks` store text, kind, section paths, and explicit ordered contribution
+JSON. Composite tenant foreign keys and unique Document/chunk indexes protect
+ownership and structural integrity. Migration `20261007_0018` creates only these
+tables and is reversible; no existing Document lifecycle schema changes.
+
+All batches commit together. Concurrent identical requests converge by reconstructing
+and comparing the complete stored `SegmentedDocument`; different results conflict
+without replacement. Corruption maps to a fixed persistence error. Decoder
+constructors validate contribution types, source provenance, slices, contiguous
+indexes, settings, and page count. Read values are detached and remain readable
+for terminal Documents; a chunk set alone does not signify completion.
+
+Cancellation waits for the shielded transaction to commit or roll back and release
+its resources before propagating. Retrying a committed result verifies exact
+identity; retrying a rolled-back result inserts normally. No detached transaction,
+global lock, external network call, or content logging is introduced.
+
+DP-10 adds no runtime worker wiring or production consumption, completion, retry
+policy, token counts, embeddings, vector/lexical indexing, search API, retrieval,
+RAG, or further processing changes.
