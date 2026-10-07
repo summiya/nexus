@@ -1959,11 +1959,12 @@ Document worker and queue default to ten deliveries (File queues are unchanged).
 Shutdown or lock-renewal loss cancels, settles and abandons the handler. A bounded
 DLQ reconciler consumes the explicit dead-letter subqueue in PEEK_LOCK mode.
 Each pass receives at most 100 messages for ten seconds in batches of at most
-twenty, with no prefetch and one reconciliation slot. Broker exhaustion/expiry
-calls durable exhaustion settlement without running the pipeline: settled records
+twenty, with no prefetch and one reconciliation slot. Every decoded, tenant-owned
+request calls durable exhaustion settlement regardless of dead-letter reason,
+without running the pipeline: settled records
 are completed; retryable records are held until pass cleanup and then abandoned,
-allowing later records to be reconciled. Application-terminal records are decoded
-and tenant-validated before removal. Invalid/foreign records are removed with safe
+allowing later records to be reconciled. Already-terminal Documents drain through
+the same settlement path. Invalid/foreign records are removed with safe
 metadata-only logging. Deadline/cancellation abandons unsettled records before
 closing the receiver. There is no cursor, persistent checkpoint, or replay.
 

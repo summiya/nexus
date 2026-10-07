@@ -106,8 +106,10 @@ def test_record_settlement(mode):
         else:
             receiver.complete_message.assert_awaited_once_with(record)
             receiver.abandon_message.assert_not_awaited()
-        if mode in ("terminal", "invalid", "foreign"):
+        if mode in ("invalid", "foreign"):
             handler.settle_exhausted.assert_not_awaited()
+        else:
+            handler.settle_exhausted.assert_awaited_once()
         handler.execute.assert_not_awaited()
 
     asyncio.run(run())
@@ -195,5 +197,46 @@ def test_reconciler_retries_transient_transport_but_stops_on_fatal(fatal, monkey
         else:
             await value.run(stop)
         value.reconcile_once.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        ProcessingOutcome.SUCCESS,
+        ProcessingOutcome.TERMINAL_FINALIZED,
+        ProcessingOutcome.RETRYABLE,
+    ],
+)
+def test_unknown_reason_reconciles_durable_request_before_settlement(outcome):
+    from nexus.documents.domain import DocumentFailure
+    from nexus.infrastructure.messaging._document_processing_message import (
+        decode_document_message,
+    )
+
+    async def run():
+        value, _, receiver, handler, _ = context()
+        record = message("FutureOrManualReason")
+        failure = (
+            DocumentFailure(
+                "RETRY_EXHAUSTED", "Document processing exhausted its delivery budget."
+            )
+            if outcome is ProcessingOutcome.TERMINAL_FINALIZED
+            else None
+        )
+        handler.settle_exhausted.return_value = ProcessingResult(outcome, failure)
+        receiver.receive_messages.side_effect = [[record], []]
+        assert await value.reconcile_once(asyncio.Event()) == 1
+        handler.settle_exhausted.assert_awaited_once_with(
+            decode_document_message(record)
+        )
+        handler.execute.assert_not_awaited()
+        if outcome is ProcessingOutcome.RETRYABLE:
+            receiver.complete_message.assert_not_awaited()
+            receiver.abandon_message.assert_awaited_once_with(record)
+        else:
+            receiver.complete_message.assert_awaited_once_with(record)
+            receiver.abandon_message.assert_not_awaited()
 
     asyncio.run(run())

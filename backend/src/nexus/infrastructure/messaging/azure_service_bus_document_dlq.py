@@ -127,17 +127,12 @@ class AzureServiceBusDocumentDlqReconciler:
             logger.warning("document_dlq_request_invalid")
             await receiver.complete_message(message)
             return True
-        if message.dead_letter_reason in (
-            "MaxDeliveryCountExceeded",
-            "TTLExpiredException",
-        ):
-            try:
-                result = await self._handler.settle_exhausted(request)
-            except ProcessingRequestRejected:
-                logger.warning("document_dlq_request_invalid")
-            else:
-                if result.outcome is ProcessingOutcome.RETRYABLE:
-                    return False
-        # Application-terminal records already have durable lifecycle settlement.
+        try:
+            result = await self._handler.settle_exhausted(request)
+        except ProcessingRequestRejected:
+            logger.warning("document_dlq_request_invalid")
+        else:
+            if result.outcome is ProcessingOutcome.RETRYABLE:
+                return False
         await receiver.complete_message(message)
         return True
