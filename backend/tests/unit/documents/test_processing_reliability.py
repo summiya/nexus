@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import threading
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
@@ -439,8 +440,12 @@ def test_unexpected_errors_are_observable_without_sensitive_details(
         assert set(logged.call_args.kwargs) == {
             "error_type",
             "failure_code",
-            "correlation",
+            "request_correlation",
         }
+        assert (
+            logged.call_args.kwargs["request_correlation"]
+            == hashlib.sha256(str(message.request_public_id).encode()).hexdigest()[:16]
+        )
         assert "private" not in str(logged.call_args)
         getattr(logger, "warning" if level == "error" else "error").assert_not_called()
 

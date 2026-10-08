@@ -135,7 +135,7 @@ class DocumentProcessingHandler:
             "document_processing_attempt_failed",
             error_type=type(error).__name__,
             failure_code=classified.failure.code,
-            correlation=hashlib.sha256(
+            request_correlation=hashlib.sha256(
                 str(message.request_public_id).encode()
             ).hexdigest()[:16],
         )

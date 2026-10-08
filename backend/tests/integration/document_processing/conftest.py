@@ -10,15 +10,11 @@ from alembic import command
 from azure.servicebus.amqp import AmqpMessageBodyType
 from sqlalchemy import update
 from sqlalchemy.orm import Session
+from tests.integration.helpers import NOW, byte_stream, seed_file, with_isolated_storage
 from tests.integration.persistence.conftest import (  # noqa: F401
     migrated_database,
     persistence_async_engine,
     persistence_async_session_factory,
-)
-from tests.integration.persistence.test_document_initiation import NOW, _seed_file
-from tests.integration.storage.test_azure_blob_storage import (
-    _with_isolated_storage,
-    byte_stream,
 )
 
 from nexus.documents.application.dispatch_processing import DispatchDocumentProcessing
@@ -111,7 +107,7 @@ def run_case(migrated_database, persistence_async_session_factory, monkeypatch):
         async def with_storage(storage, client):
             await scenario(engine, persistence_async_session_factory, storage, client)
 
-        asyncio.run(_with_isolated_storage(with_storage))
+        asyncio.run(with_isolated_storage(with_storage))
 
     return run
 
@@ -135,7 +131,7 @@ async def dispatch(sessions):
 
 
 async def admit(engine, sessions, storage, data, name="quality.txt", mime="text/plain"):
-    file = _seed_file(engine, name=name)
+    file = seed_file(engine, name=name)
     with Session(engine) as session:
         session.execute(
             update(FileModel)
