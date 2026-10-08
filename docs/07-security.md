@@ -1925,11 +1925,36 @@ generation and preserves history without fresh Blob admission.
 Document failure/DLQ metadata uses fixed codes/messages; logs contain only safe
 categories, exception types and hashed correlation, never original exceptions,
 content, keys, SQL or provider bodies. Retryable failures do not overwrite domain
-metadata. Cancellation never means malformed content or FAILED. Broker exhaustion
-reconciliation is bounded, non-destructive and never replays heavy processing.
+metadata. Cancellation never means malformed content or FAILED. DLQ lifecycle
+reconciliation is bounded and never replays heavy processing; durably settled
+records are removed and retryable records are abandoned.
 
 Only explicit consumer startup wires Managed Identity Blob/OCR dependencies.
 Adapters borrow composition-owned clients. The optional Document container grant
 is Blob Data Contributor for source reads/create-only artifacts; the File worker
 retains read-only access. No account-wide role, OCR API key or automatic consumer
 activation is introduced.
+
+## DP-12 proof and safe observability
+
+Cross-component tests validate real PostgreSQL tenant scoping and admitted Blob
+ETag/size against Azurite. Foreign and missing request/Document combinations reject
+before source access with indistinguishable safe errors, no lifecycle mutation and
+no chunk writes. OCR tests use synthetic deterministic provider-boundary responses;
+CI requires no live cloud credentials. Existing Managed Identity/RBAC and explicit
+consumer startup remain unchanged.
+
+New processing events use hashed trusted public request correlations; generation
+creation hashes File/Document public identities. No raw organization, Document,
+File or request UUID is logged. Correlations are diagnostic values, not authorization
+proof or metric dimensions. No content, filenames/keys, provenance JSON, Blob/SAS
+URLs, credentials, SQL, provider response bodies or exception messages are emitted.
+Counts, fixed stage/outcome/failure categories and monotonic durations are safe;
+component/version dimensions must stay controlled if metrics are introduced later.
+Existing persisted status remains authoritative; concurrent/retried stage events
+must not be counted as unique processed generations.
+
+Every valid tenant-owned DLQ request undergoes lifecycle reconciliation regardless
+of dead-letter reason. Settled or terminal records are removed; retryable records
+are abandoned at pass cleanup. Invalid/foreign records are safely removed. This
+bounded operation performs no processing replay, checkpointing or state reset.

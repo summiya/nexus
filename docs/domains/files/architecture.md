@@ -1987,3 +1987,69 @@ Data Contributor for source reads and create-only normalized artifacts. The File
 worker's read-only grant is unchanged. Explicit consumer activation is operational;
 no embeddings, retrieval, reprocessing UI, automatic scheduler, GC or DP-12 metrics
 are introduced.
+
+## DP-12 processing proof and observability
+
+The processing handoff is a verified File, not arbitrary queue content. A trusted
+clean result atomically makes a PENDING File AVAILABLE and creates its initial
+QUEUED Document/request when the format is eligible. Historical AVAILABLE Files
+without requests are not backfilled. File owns storage identity; Document owns a
+processing generation. Tenant-owned durable request ETag/size facts constrain the
+source read through ObjectStorage before extraction. No database transaction spans
+Blob/provider I/O.
+
+The implemented path is initiation → durable dispatch → reliability handler →
+processing pipeline → structured TXT/CommonMark/PDF extraction → normalization →
+create-only canonical artifact → deterministic structure-aware segmentation →
+atomic authoritative chunks → finalization. PDF OCR is native-first, page-selective
+`prebuilt-read`; it preserves conservative paragraph/text kinds, original page
+numbers and blank-page gaps. PDF font sizes do not imply headings or logical tables.
+Markdown section paths reference observed source heading-block indexes. Line
+ranges are one-based/end-exclusive; split offsets address normalized text code
+points, with UTF-8 byte bounds. Chunk provenance preserves these distinct meanings.
+
+Cross-component tests under `backend/tests/integration/document_processing/` use
+real migrations, PostgreSQL, Azurite and the Azure Blob adapter. The dispatcher
+publishes through a small test capture using the real message encoder/decoder,
+then the real handler/pipeline runs. Deterministic PdfPageOcr responses replace only
+the cloud OCR boundary. Service Bus lock/settlement/DLQ tests remain transport
+proofs; this suite does not claim a broker round trip or require cloud credentials.
+Tests cover formats, provenance, exact-source failures, tenant rejection,
+deterministic generations, duplicates, concurrency, retry and committed-output
+restart. Shared fixtures and barriers avoid sleep-based concurrency assertions.
+
+Existing initiation/failure/transport outcome events remain. Missing success
+boundaries use `document_dispatch_acknowledged`, `document_processing_admitted`,
+`document_processing_resumed`, `document_processing_committed_output_resumed`,
+`document_reprocessing_created`, and `document_dlq_reconciled`. The single
+`document_processing_stage_completed` event names extraction, normalization,
+artifact, segmentation or chunks, with monotonic `duration_ms` and useful bounded
+counts/component versions. Persistence events follow settled successful operations.
+Stages can repeat during retries/concurrent work; they are not unique completion
+counters. Persisted Document status is authoritative. No per-block/chunk events,
+metrics backend, observer port, timing persistence or monitoring lifecycle states
+are introduced.
+
+New correlations hash trusted public request identities (SHA-256, first 16 hex
+characters); generation creation hashes Document/File identities. The existing
+initiation event retains its hashed storage correlation. Correlations are for
+logs only. Events exclude text, keys, filenames, provenance, URLs, credentials,
+SQL, provider bodies and exception messages. Future metrics may aggregate fixed
+stage/outcome/failure-code/format or controlled component-version values, never
+identities or hashed correlations.
+
+Component extractor/normalizer/segmenter identities and versions describe the
+transforms actually used; `processing_version` is generation recipe compatibility.
+Material changes to extraction, OCR routing, normalization, segmentation or
+output-affecting settings require component/recipe version review. Explicit
+reprocessing creates new Document/request identities from trusted prior source
+facts; history remains immutable. Equal inputs/versions/settings yield equal
+canonical artifacts and semantic chunks; generation UUIDs/timestamps differ.
+Committed valid chunks win finalization races; corrupt stored output is safely
+classified `PROCESSING_OUTPUT_CORRUPT`. Retry/restart and DLQ settlement never
+silently reset generations or replay terminal processing.
+
+The handoff to future Retrieval & Evaluation is DocumentChunk content/order,
+source/page/section provenance, component/recipe versions and segmentation
+configuration. DP-12 adds no embeddings, retrieval, ranking/evaluation, RAG,
+automatic reprocessing, garbage collection or production consumer activation.

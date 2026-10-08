@@ -350,3 +350,32 @@ parameters `storageAccountName`, `fileContainerName` and `storagePrincipalId`
 role covers verified source reads and immutable artifact creation. OCR retains
 its existing Cognitive Services User assignment. No API keys or deployment
 activation are added.
+
+## DP-12 local cross-component validation
+
+The mandatory suite uses PostgreSQL and Azurite, with isolated databases/containers
+and real migrations. Start the existing infrastructure and run:
+
+```bash
+docker compose up -d postgres redis azurite
+docker compose build backend
+docker compose run --rm -e NEXUS_REQUIRE_POSTGRES_TESTS=true \
+  -e NEXUS_REQUIRE_AZURITE_TESTS=true backend \
+  pytest tests/integration/document_processing -q
+```
+
+The suite selects the existing development `AZURE_STORAGE_CONNECTION_STRING` in
+Docker. Direct CI execution can use `NEXUS_TEST_AZURITE_CONNECTION_STRING`; otherwise
+it uses the existing localhost Azurite default. Never supply production credentials.
+CI already requires PostgreSQL/Azurite and discovers this suite with integration
+tests. No Service Bus emulator or live Azure OCR account is needed; publication
+uses a capturing publisher and OCR uses the existing provider-neutral boundary.
+The optional emulator profile remains separate transport infrastructure.
+
+Use `make backend-check`, then `make check`, pre-commit and `git diff --check` for
+final validation. Reduced test constructor limits exercise resource bounds without
+changing application/deployment configuration. Runtime monitoring currently uses
+structured logs and persisted Document statuses; no metrics SDK/settings were added.
+Stage durations are monotonic and execution-specific. Future aggregation should use
+bounded stage/format/outcome/failure/component dimensions, never public IDs or
+correlations. Consumption stays explicitly activated through existing configuration.

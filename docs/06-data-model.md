@@ -3441,3 +3441,22 @@ The existing DP-02 expected-snapshot update performs the single-winner
 QUEUED → PROCESSING transition. Only its winner invokes the injected processor.
 PROCESSING and terminal duplicates never invoke it again. A crash/cancellation
 after claim may leave PROCESSING; interrupted-processing recovery belongs to DP-11.
+
+### DP-12 output and generation contract
+
+DP-12 adds proof and observability, not schema or lifecycle states. File remains
+the authoritative binary identity. Durable requests carry tenant/Document identity
+and admitted source version/size; queue messages contain only bounded identities.
+Each explicit generation has independent Document/request identity and one atomic,
+authoritative chunk set; previous terminal generations remain readable unchanged.
+
+Chunk output retains ordered text/kinds, source contributions, observed heading
+indexes, line or page provenance, and normalized split offsets. Line provenance
+is one-based/end-exclusive; PDF pages are positive original page numbers, including
+gaps. Offsets are code-point slices of normalized blocks, not PDF coordinates or
+precise sub-line source spans. Component versions and segmentation settings
+identify semantic output; processing_version identifies recipe compatibility.
+Canonical normalized artifacts are create-only/content-addressed by their existing
+SHA-256 checksum and trusted source metadata. Equal-generation-input comparisons
+exclude generated identities/timestamps; statuses remain QUEUED, PROCESSING,
+COMPLETED or FAILED. No durations, telemetry tables or retrieval columns are added.

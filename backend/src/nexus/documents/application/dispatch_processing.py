@@ -1,6 +1,7 @@
 """Bounded outbox publication without a transaction around network I/O."""
 
 import asyncio
+import hashlib
 
 from nexus.documents.ports.dispatch import (
     DispatchLease,
@@ -59,6 +60,12 @@ class DispatchDocumentProcessing:
             )
             return
         await self._persistence.acknowledge(lease)
+        logger.info(
+            "document_dispatch_acknowledged",
+            request_correlation=hashlib.sha256(
+                str(lease.message.request_public_id).encode()
+            ).hexdigest()[:16],
+        )
 
     async def run(self, stop: asyncio.Event) -> None:
         while not stop.is_set():

@@ -225,7 +225,11 @@ def test_dlq_never_runs_pipeline_and_rejects_foreign_context():
 
 def pipeline(documents, chunks, finalizer, *, version="v1"):
     extraction, artifacts = AsyncMock(), AsyncMock()
-    normalization, segmentation = Mock(), Mock()
+    from nexus.documents.application.normalize_document import NormalizeDocument
+    from nexus.documents.application.segment_document import SegmentDocument
+
+    normalization = Mock(execute=Mock(side_effect=NormalizeDocument().execute))
+    segmentation = Mock(execute=Mock(side_effect=SegmentDocument().execute))
     value = DocumentProcessingPipeline(
         documents=documents,
         chunks=chunks,
@@ -439,5 +443,67 @@ def test_unexpected_errors_are_observable_without_sensitive_details(
         }
         assert "private" not in str(logged.call_args)
         getattr(logger, "warning" if level == "error" else "error").assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_stage_logs_are_safe_ordered_and_after_success(monkeypatch):
+    import structlog
+    from structlog.testing import LogCapture, ReturnLogger
+
+    from nexus.documents.application import document_processing_pipeline as module
+
+    capture = LogCapture()
+    monkeypatch.setattr(
+        module, "logger", structlog.wrap_logger(ReturnLogger(), processors=[capture])
+    )
+
+    async def run():
+        doc, message, _, documents, _, chunks, finalizer = context()
+        value, extraction, _, _, _ = pipeline(documents, chunks, finalizer)
+        extraction.execute.return_value = ExtractedDocument(
+            doc.source_file_public_id,
+            "private-etag",
+            "nexus.txt",
+            "1",
+            (
+                ExtractedBlock(
+                    0, ExtractedBlockKind.TEXT, "private document text", 1, 2
+                ),
+            ),
+        )
+        ticks = iter(range(10))
+        monkeypatch.setattr(module, "monotonic", lambda: next(ticks))
+        await value.process(document=doc, request=message)
+        logs = capture.entries
+        events = [
+            e for e in logs if e["event"] == "document_processing_stage_completed"
+        ]
+        assert [e["stage"] for e in events] == [
+            "extraction",
+            "normalization",
+            "artifact",
+            "segmentation",
+            "chunks",
+        ]
+        assert all(e["duration_ms"] == 1000 for e in events)
+        assert all(len(e["request_correlation"]) == 16 for e in events)
+        serialized = str(logs)
+        for sensitive in (
+            "private",
+            str(doc.public_id),
+            str(doc.source_file_public_id),
+            str(doc.organization_public_id),
+            str(message.request_public_id),
+        ):
+            assert sensitive not in serialized
+        chunks.persist_chunk_set.side_effect = ChunkPersistenceError()
+        monkeypatch.setattr(module, "monotonic", lambda: 1)
+        capture.entries.clear()
+        with pytest.raises(ChunkPersistenceError):
+            await value.process(
+                document=doc.record_extractor_version("1"), request=message
+            )
+        assert not any(e.get("stage") == "chunks" for e in capture.entries)
 
     asyncio.run(run())

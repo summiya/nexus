@@ -1,7 +1,9 @@
 """Successful processing only; delivery policy belongs to DocumentProcessingHandler."""
 
 import asyncio
+import hashlib
 from collections.abc import Callable
+from time import monotonic
 
 from nexus.documents.application.extract_document import ExtractDocument
 from nexus.documents.application.normalize_document import NormalizeDocument
@@ -17,6 +19,9 @@ from nexus.documents.ports.processing import (
     DocumentProcessingRequested,
 )
 from nexus.documents.ports.segmentation import DocumentSegmenter
+from nexus.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentProcessingPipeline:
@@ -44,26 +49,67 @@ class DocumentProcessingPipeline:
     async def process(
         self, *, document: Document, request: DocumentProcessingRequested
     ) -> None:
+        correlation = hashlib.sha256(
+            str(request.request_public_id).encode()
+        ).hexdigest()[:16]
         existing = await self._chunks.get_chunk_set(
             organization_public_id=document.organization_public_id,
             document_public_id=document.public_id,
         )
         if existing is not None:
             await self._complete(document)
+            logger.info(
+                "document_processing_committed_output_resumed",
+                request_correlation=correlation,
+            )
             return
         if document.processing_version != self._version:
             raise ProcessingVersionConflict()
+        started = monotonic()
         extracted = await self._extraction.execute(document=document, request=request)
+        _stage_completed(
+            "extraction",
+            started,
+            correlation,
+            block_count=len(extracted.blocks),
+            page_count=extracted.page_count,
+            extractor_id=extracted.extractor_id,
+            extractor_version=extracted.extractor_version,
+        )
         document = await self._record_extractor(document, extracted.extractor_version)
         if document.status is not DocumentStatus.PROCESSING:
             return
+        started = monotonic()
         normalized = await _transform(lambda: self._normalization.execute(extracted))
+        _stage_completed(
+            "normalization",
+            started,
+            correlation,
+            block_count=len(normalized.blocks),
+            normalizer_id=normalized.normalizer_id,
+            normalizer_version=normalized.normalizer_version,
+        )
+        started = monotonic()
         await self._artifacts.execute(
             normalized, organization_public_id=document.organization_public_id
         )
+        _stage_completed("artifact", started, correlation)
+        started = monotonic()
         segmented = await _transform(lambda: self._segmentation.execute(normalized))
+        _stage_completed(
+            "segmentation",
+            started,
+            correlation,
+            chunk_count=len(segmented.chunks),
+            segmenter_id=segmented.segmenter_id,
+            segmenter_version=segmented.segmenter_version,
+        )
+        started = monotonic()
         await self._chunks.persist_chunk_set(
             expected=document, segmented_document=segmented
+        )
+        _stage_completed(
+            "chunks", started, correlation, chunk_count=len(segmented.chunks)
         )
         await self._complete(document)
 
@@ -116,3 +162,15 @@ async def _transform[T](operation: Callable[[], T]) -> T:
         if not task.cancelled():
             task.exception()
         raise
+
+
+def _stage_completed(
+    stage: str, started: float, correlation: str, **counts: object
+) -> None:
+    logger.info(
+        "document_processing_stage_completed",
+        stage=stage,
+        duration_ms=round((monotonic() - started) * 1000, 3),
+        request_correlation=correlation,
+        **counts,
+    )
