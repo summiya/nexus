@@ -18,6 +18,7 @@ from nexus.documents.ports.chunk_persistence import (
 from nexus.documents.ports.persistence import DocumentPersistenceError
 from nexus.infrastructure.persistence import _document_chunk_queries as queries
 from nexus.infrastructure.persistence import _document_queries
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.infrastructure.persistence.models.document_chunk import DocumentChunkSet
 
 
@@ -122,7 +123,7 @@ class SqlAlchemyDocumentChunkPersistence(DocumentChunkPersistence):
         try:
             await asyncio.shield(transaction)
         except asyncio.CancelledError:
-            await _settle_transaction(transaction)
+            await _settle_cancelled_transaction(transaction)
             raise
 
     async def _persist(
@@ -176,26 +177,16 @@ class SqlAlchemyDocumentChunkPersistence(DocumentChunkPersistence):
     async def _load(
         self, session: AsyncSession, document: Document, metadata: DocumentChunkSet
     ) -> SegmentedDocument:
-        self._check_sizes(metadata.chunk_count, 0, 0, 0, 0)
-        sizes = await queries.stored_sizes(
+        return await queries.load_set(
             session,
-            document_id=metadata.document_id,
-            organization_id=metadata.organization_id,
+            document,
+            metadata,
+            max_chunks=self._max_chunks,
+            max_text_bytes=self._max_text,
+            max_contributions_per_chunk=self._max_per_chunk,
+            max_total_contributions=self._max_total,
+            max_provenance_bytes=self._max_provenance,
         )
-        self._check_sizes(*sizes)
-        rows = await queries.get_chunks(
-            session,
-            document_id=metadata.document_id,
-            organization_id=metadata.organization_id,
-            limit=self._max_chunks + 1,
-        )
-        result = queries.to_segmented(document, metadata, rows)
-        if (
-            document.extractor_version is None
-            or document.extractor_version != result.extractor_version
-        ):
-            raise ChunkPersistenceError()
-        return result
 
     async def get_chunk_set(
         self, *, organization_public_id: UUID, document_public_id: UUID
@@ -223,16 +214,3 @@ class SqlAlchemyDocumentChunkPersistence(DocumentChunkPersistence):
             raise ChunkPersistenceError() from exc
         except DocumentPersistenceError as exc:
             raise ChunkPersistenceError() from exc
-
-
-async def _settle_transaction(transaction: asyncio.Task[None]) -> None:
-    """Consume completion before propagating cancellation; never detach DB work."""
-    while not transaction.done():
-        try:
-            await asyncio.shield(transaction)
-        except asyncio.CancelledError:
-            continue
-        except BaseException:  # noqa: BLE001 - caller cancellation remains authoritative
-            return
-    if not transaction.cancelled():
-        transaction.exception()

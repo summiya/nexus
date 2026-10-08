@@ -12,12 +12,17 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from tests.integration.persistence.test_document_initiation import _scan, _seed_file
 
-from nexus.documents.application.process_document import ProcessDocument
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
 from nexus.documents.domain import DocumentStatus
 from nexus.documents.ports.processing import ProcessingRequestRejected
 from nexus.infrastructure.persistence.document import SqlAlchemyDocumentPersistence
 from nexus.infrastructure.persistence.document_dispatch import (
     SqlAlchemyDocumentDispatchPersistence,
+)
+from nexus.infrastructure.persistence.document_finalization import (
+    SqlAlchemyDocumentFinalization,
 )
 from nexus.infrastructure.persistence.models import DocumentProcessingRequest
 
@@ -98,7 +103,7 @@ def test_retry_preserves_identity_and_delay(
     asyncio.run(run())
 
 
-def test_single_winner_and_tenant_safe_rejection(
+def test_single_start_snapshot_and_tenant_safe_resume(
     prepared, persistence_async_session_factory
 ):
     async def run():
@@ -112,8 +117,9 @@ def test_single_winner_and_tenant_safe_rejection(
                 await asyncio.sleep(0.02)
 
         documents = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
+            finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=documents,
             processor=Processor(),
             processing_version="test-v1",
@@ -134,13 +140,14 @@ def test_single_winner_and_tenant_safe_rejection(
         # The request has not been marked dispatched: receive-before-ack must work.
         await asyncio.gather(*(handler.execute(message) for _ in range(8)))
         await handler.execute(message)
-        assert len(calls) == 1
+        assert len(calls) == 9
+        assert all(document == calls[0] for document in calls)
         assert calls[0].status == DocumentStatus.PROCESSING
 
     asyncio.run(run())
 
 
-def test_different_documents_run_concurrently_and_interrupted_claim_is_not_replayed(
+def test_different_documents_run_concurrently_and_interrupted_processing_resumes(
     prepared, persistence_async_session_factory
 ):
     async def run():
@@ -156,10 +163,12 @@ def test_different_documents_run_concurrently_and_interrupted_claim_is_not_repla
                 calls.append(document)
                 if len(calls) == 2:
                     started.set()
-                await asyncio.Event().wait()
+                if len(calls) <= 2:
+                    await asyncio.Event().wait()
 
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
+            finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=SqlAlchemyDocumentPersistence(persistence_async_session_factory),
             processor=Processor(),
             processing_version="test-v1",
@@ -171,7 +180,10 @@ def test_different_documents_run_concurrently_and_interrupted_claim_is_not_repla
         await asyncio.gather(*tasks, return_exceptions=True)
         for message in messages:
             await handler.execute(message)
-        assert len(calls) == 2
+        assert len(calls) == 4
+        assert {d.public_id: d for d in calls[:2]} == {
+            d.public_id: d for d in calls[2:]
+        }
 
     asyncio.run(run())
 
@@ -186,8 +198,9 @@ def test_foreign_request_document_pair_is_rejected_without_mutation(
         ]
         processor = AsyncMock()
         documents = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=store,
+            finalizer=SqlAlchemyDocumentFinalization(persistence_async_session_factory),
             documents=documents,
             processor=processor,
             processing_version="v1",

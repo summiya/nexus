@@ -2,17 +2,13 @@
 
 import asyncio
 import hashlib
-import json
-from dataclasses import asdict
-from typing import Any, cast
-from uuid import UUID
+from typing import Any
 
 from azure.servicebus import (
     ServiceBusReceivedMessage,
     ServiceBusReceiveMode,
 )
 from azure.servicebus.aio import AutoLockRenewer, ServiceBusClient, ServiceBusReceiver
-from azure.servicebus.amqp import AmqpMessageBodyType
 from azure.servicebus.exceptions import (
     MessageAlreadySettled,
     MessageLockLostError,
@@ -27,7 +23,18 @@ from nexus.documents.ports.dispatch import DocumentPublicationError
 from nexus.documents.ports.processing import (
     DocumentMessageHandler,
     DocumentProcessingRequested,
+    DocumentRequestReader,
+    ProcessingOutcome,
     ProcessingRequestRejected,
+    ProcessingResult,
+)
+from nexus.infrastructure.messaging._document_processing_message import (
+    MAX_DOCUMENT_MESSAGE_BYTES,
+    decode_document_message,
+    encode_document_message,
+)
+from nexus.infrastructure.messaging.azure_service_bus_document_dlq import (
+    AzureServiceBusDocumentDlqReconciler,
 )
 from nexus.infrastructure.messaging.azure_service_bus_publisher import (
     AzureServiceBusPublicationError,
@@ -35,7 +42,14 @@ from nexus.infrastructure.messaging.azure_service_bus_publisher import (
 )
 from nexus.logging import get_logger
 
-MAX_DOCUMENT_MESSAGE_BYTES = 65_536
+__all__ = [
+    "MAX_DOCUMENT_MESSAGE_BYTES",
+    "AzureServiceBusDocumentPublisher",
+    "AzureServiceBusDocumentWorker",
+    "decode_document_message",
+    "encode_document_message",
+]
+
 logger = get_logger(__name__)
 _FATAL_ERRORS = (
     ServiceBusAuthenticationError,
@@ -43,65 +57,6 @@ _FATAL_ERRORS = (
     MessagingEntityNotFoundError,
     MessagingEntityDisabledError,
 )
-
-
-def encode_document_message(message: DocumentProcessingRequested) -> bytes:
-    return json.dumps(
-        asdict(message), default=str, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-
-
-def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate message field")
-        result[key] = value
-    return result
-
-
-def decode_document_message(
-    message: ServiceBusReceivedMessage,
-) -> DocumentProcessingRequested:
-    if message.body_type is not AmqpMessageBodyType.DATA:
-        raise ValueError("Invalid document message")
-    body = message.body
-    data = bytearray()
-    for section in (body,) if isinstance(body, bytes) else body:
-        if (
-            not isinstance(section, bytes)
-            or len(data) + len(section) > MAX_DOCUMENT_MESSAGE_BYTES
-        ):
-            raise ValueError("Invalid document message")
-        data.extend(section)
-    try:
-        payload = json.loads(
-            data.decode("utf-8", errors="strict"), object_pairs_hook=_unique_object
-        )
-        if not isinstance(payload, dict) or set(payload) != {
-            "schema_version",
-            "request_public_id",
-            "organization_public_id",
-            "document_public_id",
-        }:
-            raise ValueError("Invalid document message")
-        if not all(
-            isinstance(payload[key], str)
-            for key in (
-                "request_public_id",
-                "organization_public_id",
-                "document_public_id",
-            )
-        ):
-            raise ValueError("Invalid document identity")
-        return DocumentProcessingRequested(
-            request_public_id=UUID(payload["request_public_id"]),
-            organization_public_id=UUID(payload["organization_public_id"]),
-            document_public_id=UUID(payload["document_public_id"]),
-            schema_version=payload["schema_version"],
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, RecursionError) as exc:
-        raise ValueError("Invalid document message") from exc
 
 
 class AzureServiceBusDocumentPublisher:
@@ -132,11 +87,26 @@ class AzureServiceBusDocumentWorker:
         client: ServiceBusClient,
         queue_name: str,
         handler: DocumentMessageHandler,
+        requests: DocumentRequestReader,
         auto_lock_renewer: AutoLockRenewer,
         concurrency: int = 2,
+        max_delivery_count: int = 10,
+        dlq_pass_limit: int = 100,
+        dlq_pass_seconds: float = 10,
     ) -> None:
         if not 1 <= concurrency <= 20:
             raise ValueError("Invalid document worker concurrency")
+        if type(max_delivery_count) is not int or not 1 <= max_delivery_count <= 100:
+            raise ValueError("Invalid document delivery count")
+        self._max_deliveries = max_delivery_count
+        self._dlq = AzureServiceBusDocumentDlqReconciler(
+            client=client,
+            queue_name=queue_name,
+            handler=handler,
+            requests=requests,
+            pass_limit=dlq_pass_limit,
+            pass_seconds=dlq_pass_seconds,
+        )
         self._client = client
         self._queue = queue_name
         self._handler = handler
@@ -147,6 +117,7 @@ class AzureServiceBusDocumentWorker:
         async with asyncio.TaskGroup() as workers:
             for _ in range(self._concurrency):
                 workers.create_task(self._receive_slot(stop))
+            workers.create_task(self._dlq.run(stop))
 
     async def _receive_slot(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
@@ -156,7 +127,6 @@ class AzureServiceBusDocumentWorker:
                     receive_mode=ServiceBusReceiveMode.PEEK_LOCK,
                     prefetch_count=0,
                     max_wait_time=5,
-                    auto_lock_renewer=cast(Any, self._renewer),
                 )
                 async with receiver:
                     while not stop.is_set():
@@ -190,16 +160,38 @@ class AzureServiceBusDocumentWorker:
         if stop.is_set():
             await self._settle(receiver, message, "abandon")
             return False
-        handler = asyncio.create_task(self._handler.execute(request))
+        count = getattr(message, "delivery_count", None)
+        if type(count) is not int or count < 0:
+            logger.warning(
+                "document_delivery_metadata_invalid", correlation=correlation
+            )
+            await self._settle(receiver, message, "abandon")
+            return True
+        attempt = count + 1
+        renewal_failed = asyncio.Event()
+
+        async def renewal_failure(renewable: Any, error: Exception | None) -> None:
+            del renewable, error
+            renewal_failed.set()
+
+        self._renewer.register(receiver, message, on_lock_renew_failure=renewal_failure)
+        handler = asyncio.create_task(
+            self._handler.execute(
+                request, final_attempt=attempt >= self._max_deliveries
+            )
+        )
         stopped = asyncio.create_task(stop.wait())
+        lost_lock = asyncio.create_task(renewal_failed.wait())
         try:
-            await asyncio.wait((handler, stopped), return_when=asyncio.FIRST_COMPLETED)
-            if stop.is_set():
+            await asyncio.wait(
+                (handler, stopped, lost_lock), return_when=asyncio.FIRST_COMPLETED
+            )
+            if stop.is_set() or renewal_failed.is_set():
                 await _cancel_handler(handler)
                 await self._settle(receiver, message, "abandon")
                 return False
             try:
-                await handler
+                result = await handler
             except ProcessingRequestRejected:
                 await self._settle(receiver, message, "reject")
                 return False
@@ -211,7 +203,19 @@ class AzureServiceBusDocumentWorker:
                 )
                 await self._settle(receiver, message, "abandon")
                 return True
-            await self._settle(receiver, message, "complete")
+            logger.info(
+                "document_processing_outcome",
+                outcome=result.outcome.value,
+                attempt=attempt,
+                correlation=correlation,
+            )
+            if result.outcome is ProcessingOutcome.RETRYABLE:
+                await self._settle(receiver, message, "abandon")
+                return True
+            if result.outcome is ProcessingOutcome.TERMINAL_FINALIZED:
+                await self._settle(receiver, message, "terminal", result)
+            else:
+                await self._settle(receiver, message, "complete")
             return False
         except asyncio.CancelledError:
             await _cancel_handler(handler)
@@ -219,13 +223,15 @@ class AzureServiceBusDocumentWorker:
             raise
         finally:
             stopped.cancel()
-            await asyncio.gather(stopped, return_exceptions=True)
+            lost_lock.cancel()
+            await asyncio.gather(stopped, lost_lock, return_exceptions=True)
 
     async def _settle(
         self,
         receiver: ServiceBusReceiver,
         message: ServiceBusReceivedMessage,
         action: str,
+        result: ProcessingResult | None = None,
     ) -> None:
         try:
             if action == "reject":
@@ -233,6 +239,16 @@ class AzureServiceBusDocumentWorker:
                     message,
                     reason="INVALID_DOCUMENT_PROCESSING_REQUEST",
                     error_description="The document processing request is invalid.",
+                )
+            elif (
+                action == "terminal"
+                and result is not None
+                and result.failure is not None
+            ):
+                await receiver.dead_letter_message(
+                    message,
+                    reason=result.failure.code,
+                    error_description=result.failure.safe_message,
                 )
             elif action == "complete":
                 await receiver.complete_message(message)
@@ -242,7 +258,7 @@ class AzureServiceBusDocumentWorker:
             logger.warning("document_settlement_failed", error_type=type(exc).__name__)
 
 
-async def _cancel_handler(task: asyncio.Task[None]) -> None:
+async def _cancel_handler(task: asyncio.Task[ProcessingResult]) -> None:
     task.cancel()
     # Persistence may shield its commit: settle that boundary before abandonment.
     while not task.done():

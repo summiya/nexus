@@ -41,7 +41,7 @@
               "ForwardDeadLetteredMessagesTo": "",
               "ForwardTo": "",
               "LockDuration": "PT1M",
-              "MaxDeliveryCount": 5,
+              "MaxDeliveryCount": 10,
               "RequiresDuplicateDetection": false,
               "RequiresSession": false
             }

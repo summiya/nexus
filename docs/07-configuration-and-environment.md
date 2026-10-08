@@ -321,3 +321,32 @@ Before merging configuration or composition changes, verify:
 - [ ] Tests create fresh app instances.
 - [ ] No secrets are exposed to logs or frontend code.
 - [ ] No duplicate configuration or DI framework was introduced.
+
+
+## DP-11 explicit Document consumer configuration
+
+Dispatcher-only startup remains the default. `nexus.workers.document_consumer`
+explicitly composes the real pipeline and requires `AZURE_STORAGE_ACCOUNT_URL`,
+`AZURE_STORAGE_CONTAINER`, and `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` before any
+claim. Provider endpoints must be credential-free HTTPS service roots. Production
+uses Managed Identity only. Optional Blob/OCR Managed Identity client IDs select
+separately owned credentials; omitted IDs reuse the Service Bus credential.
+Composition closes clients before their credentials. Local connection-string
+Document dispatch remains development/test only and does not enable consumption.
+
+`DOCUMENT_PROCESSING_VERSION=dp-11-v1` identifies the output recipe. Material
+output-affecting changes require version review. `DOCUMENT_WORKER_MAX_DELIVERY_COUNT`
+defaults to 10 (bounded 1–100) and must match the Document queue's Bicep
+`maxDeliveryCount`; the emulator uses 10. File queue counts remain unchanged.
+`DOCUMENT_ATTEMPT_TIMEOUT_SECONDS` defaults to 240 (bounded 1–540) and must leave
+at least sixty seconds within `DOCUMENT_WORKER_MAX_LOCK_RENEWAL_SECONDS` (300 by
+default). DP-05 reuses `FILE_UPLOAD_MAX_SIZE_BYTES`; existing extractor,
+normalizer and segmenter bounds remain authoritative. Worker receive slots and
+OCR concurrency use `DOCUMENT_WORKER_CONCURRENCY`; database pool overflow is zero.
+
+Production container access may be granted through `document-processing.bicep`
+parameters `storageAccountName`, `fileContainerName` and `storagePrincipalId`
+(default worker principal). This optional container-scoped Blob Data Contributor
+role covers verified source reads and immutable artifact creation. OCR retains
+its existing Cognitive Services User assignment. No API keys or deployment
+activation are added.

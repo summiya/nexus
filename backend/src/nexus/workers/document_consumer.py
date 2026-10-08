@@ -1,4 +1,4 @@
-"""Reserved production consumer entrypoint, unactivated until DP-05 integration."""
+"""Explicit production consumer entrypoint for the real Document pipeline."""
 
 from nexus.workers.document_processing import main
 

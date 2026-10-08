@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from nexus.documents.ports.dispatch import DispatchLease, DocumentDispatchError
 from nexus.documents.ports.processing import DocumentProcessingRequested
 from nexus.documents.ports.source import DocumentSourceFacts
-from nexus.infrastructure.persistence.document import _settle_cancelled_transaction
+from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.infrastructure.persistence.models import Document, File, Organization
 from nexus.infrastructure.persistence.models import DocumentProcessingRequest as Request
 

@@ -1909,3 +1909,27 @@ AUTHORIZED DESTINATION
 ```
 
 No model response, prompt, file, MCP message, tool result, or external service should be capable of bypassing this boundary.
+
+
+## DP-11 Document reliability boundary
+
+Every delivery/DLQ reconciliation validates the durable tenant/request/Document
+relationship before lifecycle writes. Missing and foreign identities cannot
+mutate another tenant. Terminal finalization holds the tenant-owned Document lock
+and validates authoritative chunks in the same short PostgreSQL transaction;
+no provider I/O runs under this lock. Explicit reprocessing requires caller
+authorization and the tenant-owned File lock, exact latest terminal identity,
+AVAILABLE File and its prior request's admitted ETag/size. It creates a fresh
+generation and preserves history without fresh Blob admission.
+
+Document failure/DLQ metadata uses fixed codes/messages; logs contain only safe
+categories, exception types and hashed correlation, never original exceptions,
+content, keys, SQL or provider bodies. Retryable failures do not overwrite domain
+metadata. Cancellation never means malformed content or FAILED. Broker exhaustion
+reconciliation is bounded, non-destructive and never replays heavy processing.
+
+Only explicit consumer startup wires Managed Identity Blob/OCR dependencies.
+Adapters borrow composition-owned clients. The optional Document container grant
+is Blob Data Contributor for source reads/create-only artifacts; the File worker
+retains read-only access. No account-wide role, OCR API key or automatic consumer
+activation is introduced.

@@ -1,8 +1,8 @@
-"""Bounded resources for the Document dispatcher and future consumer."""
+"""Bounded resources for the Document dispatcher and explicit consumer."""
 
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, HttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,8 +24,51 @@ class DocumentWorkerSettings(BaseSettings):
     document_worker_concurrency: int = Field(default=2, ge=1, le=20)
     document_worker_max_lock_renewal_seconds: int = Field(default=300, ge=60, le=600)
     document_processing_version: str = Field(
-        default="dp-04", min_length=1, max_length=128
+        default="dp-11-v1", min_length=1, max_length=128
     )
+    document_worker_max_delivery_count: int = Field(default=10, ge=1, le=100)
+    document_attempt_timeout_seconds: int = Field(default=240, ge=1, le=540)
+    azure_storage_account_url: HttpUrl | None = None
+    azure_storage_container: str | None = Field(
+        default=None, min_length=1, max_length=63
+    )
+    azure_storage_managed_identity_client_id: UUID | None = None
+    azure_document_intelligence_endpoint: HttpUrl | None = None
+    azure_document_intelligence_managed_identity_client_id: UUID | None = None
+    file_upload_max_size_bytes: int = Field(default=536_870_912, ge=1)
+
+    @field_validator(
+        "azure_storage_account_url", "azure_document_intelligence_endpoint"
+    )
+    @classmethod
+    def validate_provider_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is not None and (
+            value.scheme != "https"
+            or value.username is not None
+            or value.password is not None
+            or value.path != "/"
+            or value.query is not None
+            or value.fragment is not None
+        ):
+            raise ValueError(
+                "Provider endpoint must be a credential-free HTTPS service root"
+            )
+        return value
+
+    def validate_consumer(self) -> None:
+        if (
+            self.azure_storage_account_url is None
+            or self.azure_storage_container is None
+            or self.azure_document_intelligence_endpoint is None
+        ):
+            raise ValueError("Document consumption requires Blob and OCR configuration")
+        if self.azure_storage_container != self.azure_storage_container.strip():
+            raise ValueError("Invalid Document storage container")
+        if (
+            self.document_attempt_timeout_seconds + 60
+            > self.document_worker_max_lock_renewal_seconds
+        ):
+            raise ValueError("Document attempt deadline requires lock-renewal headroom")
 
     @model_validator(mode="after")
     def validate_bounds(self) -> "DocumentWorkerSettings":

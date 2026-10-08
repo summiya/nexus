@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from azure.core.exceptions import AzureError, ResourceExistsError, ResourceNotFoundError
@@ -589,5 +590,40 @@ def test_cancellation_settles_inflight_operation_and_remains_cancellation(where,
         with pytest.raises(asyncio.CancelledError):
             await task
         assert settled and fake.close_calls == 0
+
+    asyncio.run(run())
+
+
+def test_create_cancellation_keeps_producer_alive_until_upload_settles():
+    async def run():
+        client = Mock()
+        entered, release, settled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        produced = []
+
+        async def content():
+            yield b"first"
+            await release.wait()
+            yield b"last"
+
+        async def upload(**kwargs):
+            entered.set()
+            async for chunk in kwargs["data"]:
+                produced.append(chunk)
+            settled.set()
+
+        client.upload_blob = AsyncMock(side_effect=upload)
+        storage = AzureBlobObjectStorage(client)
+        task = asyncio.create_task(
+            storage.create_object(storage_key="artifact", content=content())
+        )
+        await entered.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert settled.is_set()
+        assert produced == [b"first", b"last"]
 
     asyncio.run(run())

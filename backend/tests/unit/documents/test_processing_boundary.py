@@ -7,12 +7,15 @@ from uuid import uuid4
 import pytest
 
 from nexus.documents.application.dispatch_processing import DispatchDocumentProcessing
-from nexus.documents.application.process_document import ProcessDocument
+from nexus.documents.application.document_processing_handler import (
+    DocumentProcessingHandler,
+)
 from nexus.documents.domain import Document
 from nexus.documents.ports.dispatch import DispatchLease
 from nexus.documents.ports.persistence import DocumentConflictError
 from nexus.documents.ports.processing import (
     DocumentProcessingRequested,
+    ProcessingOutcome,
     ProcessingRequestRejected,
 )
 
@@ -138,10 +141,11 @@ def test_claim_failure_paths(outcome):
         persistence = AsyncMock()
         persistence.get_document.return_value = None if outcome == "missing" else doc
         processor = AsyncMock()
-        handler = ProcessDocument(
+        handler = DocumentProcessingHandler(
             requests=requests,
             documents=persistence,
             processor=processor,
+            finalizer=AsyncMock(),
             processing_version="v1",
         )
         if outcome.startswith("conflict"):
@@ -152,20 +156,18 @@ def test_claim_failure_paths(outcome):
             ]
         if outcome == "processor_failure":
             processor.process.side_effect = RuntimeError()
-        error = (
-            ProcessingRequestRejected
-            if outcome in {"missing", "mismatch"}
-            else DocumentConflictError
-            if outcome == "conflict_queued"
-            else RuntimeError
-        )
-        if outcome == "conflict_processing":
-            await handler.execute(event)
-        else:
-            with pytest.raises(error):
+        if outcome in {"missing", "mismatch"}:
+            with pytest.raises(ProcessingRequestRejected):
                 await handler.execute(event)
+        else:
+            result = await handler.execute(event)
+            assert result.outcome is (
+                ProcessingOutcome.SUCCESS
+                if outcome == "conflict_processing"
+                else ProcessingOutcome.RETRYABLE
+            )
         assert processor.process.await_count == (
-            1 if outcome == "processor_failure" else 0
+            1 if outcome in {"processor_failure", "conflict_processing"} else 0
         )
 
     asyncio.run(run())
@@ -189,7 +191,7 @@ def test_fatal_publication_stops_poll_without_retry():
 
 
 @pytest.mark.parametrize("status", ["processing", "completed", "failed"])
-def test_nonqueued_documents_never_invoke_processor(status):
+def test_processing_resumes_and_terminal_documents_drain(status):
 
     async def run():
         event = message()
@@ -207,13 +209,14 @@ def test_nonqueued_documents_never_invoke_processor(status):
         requests, persistence, processor = AsyncMock(), AsyncMock(), AsyncMock()
         requests.matches.return_value = True
         persistence.get_document.return_value = doc
-        await ProcessDocument(
+        await DocumentProcessingHandler(
             requests=requests,
             documents=persistence,
             processor=processor,
+            finalizer=AsyncMock(),
             processing_version="v1",
         ).execute(event)
         persistence.update_document.assert_not_awaited()
-        processor.process.assert_not_awaited()
+        assert processor.process.await_count == (1 if status == "processing" else 0)
 
     asyncio.run(run())

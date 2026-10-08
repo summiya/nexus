@@ -12,6 +12,13 @@ class ChunkPersistenceError(Exception):
         super().__init__("Document chunk persistence failed")
 
 
+class StoredChunkCorruptionError(ChunkPersistenceError):
+    """Stored output was read successfully but violates reconstruction invariants."""
+
+    def __init__(self) -> None:
+        Exception.__init__(self, "The persisted processing output is invalid.")
+
+
 class ChunkConflictError(ChunkPersistenceError):
     def __init__(self) -> None:
         Exception.__init__(self, "Document chunk persistence conflict")
