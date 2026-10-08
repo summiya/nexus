@@ -240,3 +240,27 @@ def test_unknown_reason_reconciles_durable_request_before_settlement(outcome):
             receiver.abandon_message.assert_not_awaited()
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("retryable", [False, True])
+def test_reconciliation_logs_safe_outcome(retryable):
+    from structlog.testing import capture_logs
+
+    async def run():
+        value, _, receiver, handler, _ = context()
+        record = message("private provider reason")
+        receiver.receive_messages.side_effect = [[record], []]
+        if retryable:
+            handler.settle_exhausted.return_value = ProcessingResult(
+                ProcessingOutcome.RETRYABLE
+            )
+        with capture_logs() as logs:
+            await value.reconcile_once(asyncio.Event())
+        events = [e for e in logs if e["event"] == "document_dlq_reconciled"]
+        assert len(events) == 1
+        assert events[0]["outcome"] == ("retryable" if retryable else "removed")
+        assert len(events[0]["request_correlation"]) == 16
+        assert "private" not in str(logs)
+        assert str(record.body) not in str(logs)
+
+    asyncio.run(run())

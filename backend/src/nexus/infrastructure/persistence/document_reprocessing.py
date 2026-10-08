@@ -1,6 +1,7 @@
 """Create an explicit generation under a short tenant-owned File lock."""
 
 import asyncio
+import hashlib
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -15,6 +16,9 @@ from nexus.documents.ports.reprocessing import (
     DocumentReprocessingError,
 )
 from nexus.files.domain import FileStorageStatus
+from nexus.logging import get_logger
+
+logger = get_logger(__name__)
 from nexus.infrastructure.persistence import _document_initiation_queries as queries
 from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.infrastructure.persistence.models.document import Document as DocumentModel
@@ -48,10 +52,20 @@ class SqlAlchemyDocumentReprocessing(DocumentReprocessing):
             )
         )
         try:
-            return await asyncio.shield(transaction)
+            document = await asyncio.shield(transaction)
         except asyncio.CancelledError:
             await _settle_cancelled_transaction(transaction)
             raise
+        logger.info(
+            "document_reprocessing_created",
+            document_correlation=hashlib.sha256(
+                str(document.public_id).encode()
+            ).hexdigest()[:16],
+            file_correlation=hashlib.sha256(
+                str(document.source_file_public_id).encode()
+            ).hexdigest()[:16],
+        )
+        return document
 
     async def _create(
         self,

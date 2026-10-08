@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,13 +12,14 @@ from sqlalchemy import Engine, select
 from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
+from tests.integration.helpers import NOW, seed_file
 
 from nexus.documents.domain import Document
 from nexus.documents.ports.initiation import (
     DocumentInitiationConflictError,
     DocumentInitiationError,
 )
-from nexus.files.domain import File, FileStorageStatus
+from nexus.files.domain import File
 from nexus.files.ports import FileReferencedError
 from nexus.infrastructure.persistence import _document_initiation_queries as queries
 from nexus.infrastructure.persistence.document import SqlAlchemyDocumentPersistence
@@ -29,12 +30,8 @@ from nexus.infrastructure.persistence.file import SqlAlchemyFilePersistence
 from nexus.infrastructure.persistence.models import Document as DocumentModel
 from nexus.infrastructure.persistence.models import (
     DocumentProcessingRequest,
-    Organization,
-    User,
 )
 from nexus.infrastructure.persistence.models import File as FileModel
-
-NOW = datetime(2026, 10, 5, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -42,52 +39,6 @@ def migrated_engine(migrated_database: tuple[Config, Engine]) -> Engine:
     config, engine = migrated_database
     command.upgrade(config, "head")
     return engine
-
-
-def _seed_file(
-    engine: Engine, *, status: str = "pending", name: str = "report.pdf"
-) -> File:
-    with Session(engine) as session:
-        org = Organization(
-            public_id=uuid4(), name="Initiation", slug=uuid4().hex, status="active"
-        )
-        user = User(
-            public_id=uuid4(),
-            organization=org,
-            email=f"{uuid4().hex}@example.com",
-            status="active",
-        )
-        session.add(user)
-        session.flush()
-        model = FileModel(
-            public_id=uuid4(),
-            organization_id=org.id,
-            created_by_user_id=user.id,
-            original_name=name,
-            mime_type="application/pdf",
-            size_bytes=42,
-            storage_key=f"files/{uuid4().hex}",
-            storage_status=status,
-            created_at=NOW,
-            updated_at=NOW,
-        )
-        session.add(model)
-        session.flush()
-        file = File(
-            public_id=model.public_id,
-            organization_public_id=org.public_id,
-            created_by_user_public_id=user.public_id,
-            original_name=name,
-            mime_type=model.mime_type,
-            size_bytes=42,
-            storage_key=model.storage_key,
-            storage_status=FileStorageStatus(status),
-            checksum_sha256=None,
-            created_at=NOW,
-            updated_at=NOW,
-        )
-        session.commit()
-        return file
 
 
 def _scan(
@@ -118,7 +69,7 @@ def test_clean_scan_commits_available_document_and_request_once(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
     first = _rows(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
@@ -149,7 +100,7 @@ def test_historical_available_and_deleting_do_not_initiate(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     status: str,
 ) -> None:
-    file = _seed_file(migrated_engine, status=status)
+    file = seed_file(migrated_engine, status=status)
     asyncio.run(_scan(persistence_async_session_factory, file))
     files, docs, requests = _rows(migrated_engine)
     assert files[0].storage_status == status
@@ -160,7 +111,7 @@ def test_failed_file_rejects_clean_scan(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine, status="failed")
+    file = seed_file(migrated_engine, status="failed")
     with pytest.raises(DocumentInitiationConflictError):
         asyncio.run(_scan(persistence_async_session_factory, file))
     assert _rows(migrated_engine)[0][0].storage_status == "failed"
@@ -171,7 +122,7 @@ def test_missing_file_is_retryable_without_disclosing_identity(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     with pytest.raises(DocumentInitiationError) as captured:
         asyncio.run(
             _scan(
@@ -187,7 +138,7 @@ def test_unsupported_file_becomes_available_without_ingestion(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine, name="report.xlsx")
+    file = seed_file(migrated_engine, name="report.xlsx")
     asyncio.run(_scan(persistence_async_session_factory, file))
     asyncio.run(_scan(persistence_async_session_factory, file))
     assert _rows(migrated_engine)[0][0].storage_status == "available"
@@ -200,7 +151,7 @@ def test_source_size_conflict_leaves_state_unchanged(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     duplicate: bool,
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     if duplicate:
         asyncio.run(_scan(persistence_async_session_factory, file))
     with pytest.raises(DocumentInitiationConflictError):
@@ -216,7 +167,7 @@ def test_duplicate_changed_version_does_not_replace_request(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
     with pytest.raises(DocumentInitiationConflictError):
         asyncio.run(_scan(persistence_async_session_factory, file, tag="different-v2"))
@@ -228,7 +179,7 @@ def test_request_failure_rolls_back_file_and_document_then_retry_succeeds(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     original = queries.insert_document_and_request
 
     async def fail_after_insert(session: AsyncSession, **kwargs) -> None:
@@ -249,7 +200,7 @@ def test_concurrent_clean_scans_create_one_initial_request(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
 
     async def scenario() -> None:
         await asyncio.gather(
@@ -264,7 +215,7 @@ def test_terminal_document_redelivery_does_not_reprocess(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
     docs = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
 
@@ -293,7 +244,7 @@ def test_pending_file_with_existing_document_is_not_adopted(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     document = Document(
         public_id=uuid4(),
         organization_public_id=file.organization_public_id,
@@ -316,7 +267,7 @@ def test_cancellation_waits_for_atomic_commit(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     ready, release = asyncio.Event(), asyncio.Event()
     original = queries.insert_document_and_request
 
@@ -346,7 +297,7 @@ def test_tenant_owned_files_initiate_independently(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    first, second = _seed_file(migrated_engine), _seed_file(migrated_engine)
+    first, second = seed_file(migrated_engine), seed_file(migrated_engine)
 
     async def scenario() -> None:
         await asyncio.gather(
@@ -369,7 +320,7 @@ def test_database_rejects_request_ownership_or_source_mismatch(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     mismatch: str,
 ) -> None:
-    first, second = _seed_file(migrated_engine), _seed_file(migrated_engine)
+    first, second = seed_file(migrated_engine), seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, first))
     with Session(migrated_engine) as session:
         request = session.scalar(select(DocumentProcessingRequest))
@@ -390,7 +341,7 @@ def test_delete_waits_for_initiation_and_conflicts_before_source_removal(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     ready, release = asyncio.Event(), asyncio.Event()
     original = queries.insert_document_and_request
 
@@ -426,7 +377,7 @@ def test_deletion_first_prevents_initiation_and_foreign_delete_stays_hidden(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     persistence = SqlAlchemyFilePersistence(persistence_async_session_factory)
 
     async def scenario() -> None:
@@ -466,7 +417,7 @@ def test_database_rejects_invalid_request_facts(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     changes: dict[str, object],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
     with Session(migrated_engine) as session:
         request = session.scalar(select(DocumentProcessingRequest))
@@ -485,7 +436,7 @@ def test_request_lookup_hides_foreign_tenant_like_missing_file(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
 
     async def scenario() -> None:
@@ -514,7 +465,7 @@ def test_independent_files_can_hold_initiation_transactions_concurrently(
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first, second = _seed_file(migrated_engine), _seed_file(migrated_engine)
+    first, second = seed_file(migrated_engine), seed_file(migrated_engine)
     both_ready = asyncio.Event()
     inserts = 0
     original = queries.insert_document_and_request
@@ -544,7 +495,7 @@ def test_request_history_allows_generations_but_is_unique_per_document(
     migrated_engine: Engine,
     persistence_async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     asyncio.run(_scan(persistence_async_session_factory, file))
     persistence = SqlAlchemyDocumentPersistence(persistence_async_session_factory)
 
@@ -620,7 +571,7 @@ def test_clean_malware_application_uses_atomic_initiation_handoff(
         StoredObjectProperties,
     )
 
-    file = _seed_file(migrated_engine)
+    file = seed_file(migrated_engine)
     storage = Mock(spec=ObjectStorage)
     storage.get_object_properties = AsyncMock(
         return_value=StoredObjectProperties(

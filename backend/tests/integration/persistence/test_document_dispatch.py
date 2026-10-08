@@ -10,7 +10,8 @@ import pytest
 from alembic import command
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from tests.integration.persistence.test_document_initiation import _scan, _seed_file
+from tests.integration.helpers import seed_file
+from tests.integration.persistence.test_document_initiation import _scan
 
 from nexus.documents.application.document_processing_handler import (
     DocumentProcessingHandler,
@@ -36,7 +37,7 @@ def prepared(migrated_database):
 
 async def _seed(engine, factory, count=1):
     for _ in range(count):
-        await _scan(factory, _seed_file(engine))
+        await _scan(factory, seed_file(engine))
     return SqlAlchemyDocumentDispatchPersistence(factory)
 
 

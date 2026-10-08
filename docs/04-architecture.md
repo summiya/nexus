@@ -640,7 +640,10 @@ Agents and workflows consume retrieval capabilities through the Retrieval contra
 
 ## 6.1 Document Ingestion
 
-Document ingestion is normally asynchronous because it can involve parsing, chunking, embedding, and indexing.
+Document processing is asynchronous and currently ends at provenance-preserving
+persisted chunks. Embedding, indexing and retrieval belong to the subsequent
+Retrieval & Evaluation scope; see the implemented flow in
+`docs/domains/files/architecture.md`.
 
 Conceptually:
 

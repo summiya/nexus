@@ -92,6 +92,13 @@ class DocumentProcessingHandler:
         if document is None:
             raise ProcessingRequestRejected("Document processing request rejected")
         if document.status is not DocumentStatus.QUEUED:
+            if document.status is DocumentStatus.PROCESSING:
+                logger.info(
+                    "document_processing_resumed",
+                    request_correlation=hashlib.sha256(
+                        str(message.request_public_id).encode()
+                    ).hexdigest()[:16],
+                )
             return document
         started = document.start_processing(
             at=max(datetime.now(UTC), document.created_at),
@@ -99,6 +106,12 @@ class DocumentProcessingHandler:
         )
         try:
             await self._documents.update_document(expected=document, document=started)
+            logger.info(
+                "document_processing_admitted",
+                request_correlation=hashlib.sha256(
+                    str(message.request_public_id).encode()
+                ).hexdigest()[:16],
+            )
             return started
         except DocumentConflictError:
             current = await self._documents.get_document(
@@ -122,7 +135,7 @@ class DocumentProcessingHandler:
             "document_processing_attempt_failed",
             error_type=type(error).__name__,
             failure_code=classified.failure.code,
-            correlation=hashlib.sha256(
+            request_correlation=hashlib.sha256(
                 str(message.request_public_id).encode()
             ).hexdigest()[:16],
         )

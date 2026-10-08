@@ -1,6 +1,7 @@
 """Bounded Document DLQ reconciliation; never replay the processing pipeline."""
 
 import asyncio
+import hashlib
 
 from azure.servicebus import (
     ServiceBusReceivedMessage,
@@ -133,6 +134,20 @@ class AzureServiceBusDocumentDlqReconciler:
             logger.warning("document_dlq_request_invalid")
         else:
             if result.outcome is ProcessingOutcome.RETRYABLE:
+                logger.info(
+                    "document_dlq_reconciled",
+                    outcome=result.outcome.value,
+                    request_correlation=hashlib.sha256(
+                        str(request.request_public_id).encode()
+                    ).hexdigest()[:16],
+                )
                 return False
         await receiver.complete_message(message)
+        logger.info(
+            "document_dlq_reconciled",
+            outcome="removed",
+            request_correlation=hashlib.sha256(
+                str(request.request_public_id).encode()
+            ).hexdigest()[:16],
+        )
         return True

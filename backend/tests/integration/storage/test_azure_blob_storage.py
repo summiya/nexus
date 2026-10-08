@@ -1,36 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import suppress
-from urllib.parse import urlparse
+from collections.abc import AsyncIterator
 
 import pytest
-from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import ContainerClient
+from tests.integration.helpers import byte_stream, with_isolated_storage
 
 from nexus.files.ports import (
     ObjectStorageAlreadyExistsError,
     ObjectStorageNotFoundError,
 )
 from nexus.infrastructure.storage import AzureBlobObjectStorage
-
-_DEFAULT_AZURITE_CONNECTION_STRING = (
-    "DefaultEndpointsProtocol=http;"
-    "AccountName=devstoreaccount1;"
-    "AccountKey="
-    "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
-    "K1SZFPTOtr/KBHBeksoGMGw==;"
-    "BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
-)
-
-
-async def byte_stream(*chunks: bytes) -> AsyncIterator[bytes]:
-    for chunk in chunks:
-        yield chunk
 
 
 async def empty_stream() -> AsyncIterator[bytes]:
@@ -40,60 +22,6 @@ async def empty_stream() -> AsyncIterator[bytes]:
 
 async def collect(stream: AsyncIterator[bytes]) -> bytes:
     return b"".join([chunk async for chunk in stream])
-
-
-def _azurite_connection_string() -> str:
-    return os.environ.get(
-        "NEXUS_TEST_AZURITE_CONNECTION_STRING",
-        _DEFAULT_AZURITE_CONNECTION_STRING,
-    )
-
-
-def _azurite_endpoint(connection_string: str) -> tuple[str, int]:
-    endpoint = next(
-        value.split("=", 1)[1]
-        for value in connection_string.split(";")
-        if value.startswith("BlobEndpoint=")
-    )
-    parsed = urlparse(endpoint)
-    if parsed.hostname is None:
-        raise ValueError("Azurite BlobEndpoint must contain a hostname")
-    return parsed.hostname, parsed.port or 10000
-
-
-def _require_azurite(connection_string: str) -> None:
-    host, port = _azurite_endpoint(connection_string)
-    try:
-        with socket.create_connection((host, port), timeout=0.5):
-            pass
-    except OSError as exc:
-        if os.environ.get("NEXUS_REQUIRE_AZURITE_TESTS") == "true":
-            pytest.fail(f"Azurite is required but unavailable at {host}:{port}: {exc}")
-        pytest.skip("Azurite is not available for object storage integration tests")
-
-
-async def _with_isolated_storage(
-    scenario: Callable[
-        [AzureBlobObjectStorage, ContainerClient],
-        Awaitable[None],
-    ],
-) -> None:
-    connection_string = _azurite_connection_string()
-    _require_azurite(connection_string)
-    container_name = f"nexus-{uuid.uuid4().hex}"
-    client = ContainerClient.from_connection_string(
-        connection_string,
-        container_name=container_name,
-        max_single_get_size=4,
-        max_chunk_get_size=4,
-    )
-    try:
-        await client.create_container()
-        await scenario(AzureBlobObjectStorage(client), client)
-    finally:
-        with suppress(ResourceNotFoundError):
-            await client.delete_container()
-        await client.close()
 
 
 def test_multichunk_round_trip_preserves_exact_byte_order() -> None:
@@ -111,7 +39,7 @@ def test_multichunk_round_trip_preserves_exact_byte_order() -> None:
             == b"alpha-beta-omega"
         )
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_zero_byte_object_round_trip() -> None:
@@ -123,7 +51,7 @@ def test_zero_byte_object_round_trip() -> None:
 
         assert await collect(storage.stream_object(storage_key="empty")) == b""
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_duplicate_create_preserves_original_bytes() -> None:
@@ -146,7 +74,7 @@ def test_duplicate_create_preserves_original_bytes() -> None:
             await collect(storage.stream_object(storage_key="immutable")) == b"original"
         )
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_missing_download_fails_during_iteration() -> None:
@@ -159,7 +87,7 @@ def test_missing_download_fails_during_iteration() -> None:
         with pytest.raises(ObjectStorageNotFoundError):
             await collect(stream)
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_delete_existing_object_and_missing_delete_are_idempotent() -> None:
@@ -178,7 +106,7 @@ def test_delete_existing_object_and_missing_delete_are_idempotent() -> None:
         with pytest.raises(ObjectStorageNotFoundError):
             await collect(storage.stream_object(storage_key="delete-me"))
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_early_stream_close_leaves_shared_client_usable() -> None:
@@ -204,7 +132,7 @@ def test_early_stream_close_leaves_shared_client_usable() -> None:
             == b"still-usable"
         )
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_normal_completion_leaves_shared_client_usable() -> None:
@@ -224,7 +152,7 @@ def test_normal_completion_leaves_shared_client_usable() -> None:
         )
         assert await collect(storage.stream_object(storage_key="second")) == b"second"
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_upload_context_metadata_round_trips_through_object_properties() -> None:
@@ -247,7 +175,7 @@ def test_upload_context_metadata_round_trips_through_object_properties() -> None
         assert properties.metadata["nexus_upload_context"] == protected_context
         assert properties.entity_tag
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_conditional_multichunk_read_matches_admitted_etag():
@@ -265,7 +193,7 @@ def test_conditional_multichunk_read_matches_admitted_etag():
         assert b"".join(chunks) == b"0123456789abcdef"
         assert max(map(len, chunks)) <= 4
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_replacement_between_properties_and_download_is_rejected():
@@ -285,7 +213,7 @@ def test_replacement_between_properties_and_download_is_rejected():
             )
         assert caught.value.reason == ObjectStorageFailure.CHANGED
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_replacement_during_multichunk_download_is_rejected():
@@ -310,7 +238,7 @@ def test_replacement_during_multichunk_download_is_rejected():
         finally:
             await stream.aclose()
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))
 
 
 def test_normalized_artifact_create_and_verified_duplicate_round_trip() -> None:
@@ -350,4 +278,4 @@ def test_normalized_artifact_create_and_verified_duplicate_round_trip() -> None:
         assert hashlib.sha256(body).hexdigest() == reference.checksum_sha256
         assert len(body) == reference.size_bytes
 
-    asyncio.run(_with_isolated_storage(scenario))
+    asyncio.run(with_isolated_storage(scenario))

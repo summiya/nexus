@@ -1,0 +1,68 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 3 /Kids [5 0 R 7 0 R 9 0 R] >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 417 >>
+stream
+BT /F1 12 Tf 50 740 Td (Nexus synthetic report) Tj ET
+BT /F1 12 Tf 50 705 Td (Page 1 section label) Tj ET
+BT /F1 12 Tf 50 670 Td (Ordinary paragraph with useful content.) Tj ET
+BT /F1 12 Tf 50 635 Td (- First item) Tj ET
+BT /F1 12 Tf 50 600 Td (- Second item) Tj ET
+BT /F1 12 Tf 50 565 Td (Column A    Column B) Tj ET
+BT /F1 12 Tf 50 530 Td (Value one   Value two) Tj ET
+BT /F1 12 Tf 50 495 Td (Repeated footer) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 0 >>
+stream
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 417 >>
+stream
+BT /F1 12 Tf 50 740 Td (Nexus synthetic report) Tj ET
+BT /F1 12 Tf 50 705 Td (Page 3 section label) Tj ET
+BT /F1 12 Tf 50 670 Td (Ordinary paragraph with useful content.) Tj ET
+BT /F1 12 Tf 50 635 Td (- First item) Tj ET
+BT /F1 12 Tf 50 600 Td (- Second item) Tj ET
+BT /F1 12 Tf 50 565 Td (Column A    Column B) Tj ET
+BT /F1 12 Tf 50 530 Td (Value one   Value two) Tj ET
+BT /F1 12 Tf 50 495 Td (Repeated footer) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000665 00000 n 
+0000000791 00000 n 
+0000000840 00000 n 
+0000000966 00000 n 
+0000001434 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1560
+%%EOF

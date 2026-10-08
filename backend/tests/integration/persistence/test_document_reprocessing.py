@@ -6,11 +6,8 @@ import pytest
 from alembic import command
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from tests.integration.persistence.test_document_initiation import (
-    NOW,
-    _scan,
-    _seed_file,
-)
+from tests.integration.helpers import NOW, seed_file
+from tests.integration.persistence.test_document_initiation import _scan
 
 from nexus.documents.domain import DocumentStatus
 from nexus.documents.ports.reprocessing import DocumentReprocessingConflictError
@@ -32,7 +29,7 @@ def migrated_engine(migrated_database):
 
 
 async def seed_terminal(engine, sessions):
-    file = _seed_file(engine)
+    file = seed_file(engine)
     await _scan(sessions, file)
     with Session(engine) as session:
         identity = session.scalar(select(DocumentModel.public_id))

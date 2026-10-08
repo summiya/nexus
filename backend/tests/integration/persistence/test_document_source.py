@@ -6,7 +6,8 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from sqlalchemy import event
-from tests.integration.persistence.test_document_initiation import _scan, _seed_file
+from tests.integration.helpers import seed_file
+from tests.integration.persistence.test_document_initiation import _scan
 
 from nexus.documents.application.open_source import OpenDocumentSource
 from nexus.documents.ports.source import DocumentSourceError
@@ -36,7 +37,7 @@ def test_tenant_source_facts_and_stream_do_not_hold_database_connections(
         checked_out -= 1
 
     async def run():
-        files = [_seed_file(engine), _seed_file(engine)]
+        files = [seed_file(engine), seed_file(engine)]
         for file in files:
             await _scan(persistence_async_session_factory, file)
         requests = SqlAlchemyDocumentDispatchPersistence(
