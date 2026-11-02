@@ -42,6 +42,7 @@ from nexus.infrastructure.persistence.session import Database, build_database
 from nexus.model_providers.application import ResolveChatModel
 from nexus.model_providers.ports import (
     CredentialStore,
+    EmbeddingGateway,
     ProviderConfigurationValidator,
     ProviderModelCatalog,
     RuntimeChatGateway,
@@ -54,6 +55,7 @@ class LLMComposition:
     """Application-scoped LLM dependencies composed at startup."""
 
     runtime_gateway: RuntimeChatGateway
+    embedding_gateway: EmbeddingGateway
 
 
 @dataclass(frozen=True)
@@ -67,8 +69,9 @@ class ConversationComposition:
 def build_llm_composition(
     app_settings: Settings,
     runtime_gateway: RuntimeChatGateway | None = None,
+    embedding_gateway: EmbeddingGateway | None = None,
 ) -> LLMComposition:
-    """Build the application-scoped runtime chat gateway."""
+    """Build application-scoped chat and embedding gateways without provider I/O."""
 
     if runtime_gateway is None:
         # LiteLLM reads its local-metadata setting during import. Keep this
@@ -81,7 +84,17 @@ def build_llm_composition(
         runtime_gateway = LiteLLMRuntimeAdapter(
             timeout_seconds=app_settings.model_provider_runtime_timeout_seconds
         )
-    return LLMComposition(runtime_gateway=runtime_gateway)
+    if embedding_gateway is None:
+        from nexus.llm.infrastructure.adapters.openai_embedding import (
+            OpenAIEmbeddingAdapter,
+        )
+
+        embedding_gateway = OpenAIEmbeddingAdapter(
+            timeout_seconds=app_settings.model_provider_runtime_timeout_seconds
+        )
+    return LLMComposition(
+        runtime_gateway=runtime_gateway, embedding_gateway=embedding_gateway
+    )
 
 
 def build_conversation_composition(

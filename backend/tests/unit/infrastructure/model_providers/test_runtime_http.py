@@ -226,3 +226,57 @@ def test_dns_resolution_is_covered_by_runtime_deadline() -> None:
             )
 
     asyncio.run(exercise())
+
+
+def test_factory_reuses_existing_deadline_without_restarting_its_budget() -> None:
+    now = [0.0]
+    deadline = RuntimeDeadline.start(10, clock=lambda: now[0])
+    now[0] = 7.0
+    resolver = StubResolver((ResolvedAddress("8.8.8.8", socket.AF_INET),))
+
+    async def exercise():
+        resource = await create_secure_runtime_http_client(
+            endpoint="https://provider.example/v1",
+            resolver=resolver,
+            timeout_seconds=120,
+            deadline=deadline,
+        )
+        try:
+            assert resource.deadline is deadline
+            assert resource.deadline.remaining_seconds() == 3.0
+            now[0] = 11.0
+            with pytest.raises(LLMTimeoutError):
+                resource.deadline.remaining_seconds()
+        finally:
+            await resource.aclose()
+
+    asyncio.run(exercise())
+
+
+def test_expired_inherited_deadline_does_not_start_dns_or_leave_unawaited_work():
+    deadline = RuntimeDeadline(expires_at=0, _clock=lambda: 1)
+    resolver = StubResolver()
+
+    async def exercise():
+        with pytest.raises(LLMTimeoutError):
+            await create_secure_runtime_http_client(
+                endpoint="https://provider.example",
+                resolver=resolver,
+                timeout_seconds=120,
+                deadline=deadline,
+            )
+
+        async def work():
+            pytest.fail("Expired work must not execute")
+
+        operation = work()
+        with pytest.raises(LLMTimeoutError):
+            await deadline.run(operation)
+        assert operation.cr_frame is None
+        future = asyncio.get_running_loop().create_future()
+        with pytest.raises(LLMTimeoutError):
+            await deadline.run(future)
+        assert future.cancelled()
+
+    asyncio.run(exercise())
+    assert resolver.calls == []

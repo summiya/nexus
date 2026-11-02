@@ -4,9 +4,17 @@ from collections.abc import AsyncIterator
 
 from nexus.composition.root import build_llm_composition
 from nexus.config.settings import Settings
-from nexus.llm.domain import LLMEvent, LLMRequest, LLMResponse, LLMStartedEvent
+from nexus.llm.domain import (
+    EmbeddingRequest,
+    EmbeddingResult,
+    LLMEvent,
+    LLMRequest,
+    LLMResponse,
+    LLMStartedEvent,
+)
 from nexus.llm.infrastructure.adapters.litellm import LiteLLMRuntimeAdapter
-from nexus.model_providers.domain import ResolvedChatModel
+from nexus.llm.infrastructure.adapters.openai_embedding import OpenAIEmbeddingAdapter
+from nexus.model_providers.domain import ResolvedChatModel, ResolvedEmbeddingModel
 
 
 class FakeRuntimeGateway:
@@ -68,4 +76,24 @@ def test_composition_uses_injected_runtime_gateway_without_provider_access() -> 
 def test_composition_does_not_store_tenant_credentials() -> None:
     composition = build_llm_composition(build_settings())
 
-    assert set(vars(composition)) == {"runtime_gateway"}
+    assert set(vars(composition)) == {"runtime_gateway", "embedding_gateway"}
+
+
+def test_composition_builds_embedding_gateway_with_existing_configured_timeout():
+    composition = build_llm_composition(
+        build_settings(model_provider_runtime_timeout_seconds=17)
+    )
+    assert isinstance(composition.embedding_gateway, OpenAIEmbeddingAdapter)
+    assert composition.embedding_gateway.timeout_seconds == 17
+
+
+def test_composition_accepts_embedding_gateway_without_provider_or_tokenizer_access():
+    class FakeEmbeddingGateway:
+        async def embed(
+            self, *, request: EmbeddingRequest, target: ResolvedEmbeddingModel
+        ) -> EmbeddingResult:
+            raise AssertionError("Composition must not invoke providers")
+
+    fake = FakeEmbeddingGateway()
+    composition = build_llm_composition(build_settings(), embedding_gateway=fake)
+    assert composition.embedding_gateway is fake

@@ -514,7 +514,7 @@ already-authorized tenant context; resolution grants no resource permission.
 `ResolvedEmbeddingModel` is an immutable snapshot of configured model/provider
 identity, invocation name, embedding dimension, validated provider settings and
 protected credential. Existing configuration contracts own settings validation;
-the target introduces no provider configuration schema. Only a future adapter
+the target introduces no provider configuration schema. Only an execution adapter
 reveals credential plaintext. Provider configuration eligibility does not prove
 that a particular execution adapter supports that provider or remote model.
 
@@ -530,10 +530,31 @@ derived from the vectors. Before returning, an adapter must call
 to enforce output count and configured width. Results retain neither source text
 nor credentials; request/result representations omit payloads.
 
-RF-03 will implement execution behind this gateway with existing secure transport
-protections, adapter support checks and Nexus `LLMError` translation; cancellation
-must propagate. RF-02 implements no provider calls/adapters, batch orchestration,
-vector persistence, indexing or retrieval, and does not change RF-01 contracts.
+RF-03 supplies `OpenAIEmbeddingAdapter` through the composition root. It calls
+only OpenAI's embeddings endpoint through the existing DNS-pinned HTTPX transport,
+without an SDK, redirects, proxies or automatic retries. Supported models are
+`text-embedding-3-small` and `text-embedding-3-large`, with configured dimensions
+bounded by 1536 and 3072 respectively. Each invocation owns its client and
+credential header; neither credentials nor provider payloads enter error messages.
+
+The pinned `tiktoken==0.14.0` tokenizer uses ordinary-text `cl100k_base` encoding,
+allowing special-token-looking document text. Docker copies the official vocabulary
+from the pinned LiteLLM distribution into `TIKTOKEN_CACHE_DIR`, checks its SHA-256,
+and initializes the standard tokenizer with networking disabled. Runtime verifies
+that asset before initialization and fails closed if it is absent or corrupt;
+deployments must preserve the packaged cache rather than downloading assets.
+Inputs are limited to 8192 tokens each and 300000 tokens per request, in addition
+to the gateway's text count and byte limits. The adapter sends explicit dimensions
+and float encoding, rejects compressed responses, and caps streamed bytes at
+16 MiB before JSON parsing. It validates model/object identity, unique indexes,
+ordered output count, dimensions and finite numeric values before returning.
+
+One invocation deadline covers tokenization, DNS, HTTP, response reading,
+validation and cleanup. CPU work runs outside the event loop. Deadline expiry
+cannot return success; cancellation and timeout settle owned work/resources before
+propagating, even when safe settlement outlasts the budget. Provider failures map
+to Nexus `LLMError` types. RF-03 adds no batch orchestration, vector persistence,
+indexing or retrieval, and leaves the chat adapter and RF-01/RF-02 contracts intact.
 
 The Conversation UI obtains safe choices from the authenticated,
 organization-scoped `GET /api/v1/chat-models` runtime-selection API. That API is

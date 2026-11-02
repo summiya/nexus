@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Self, TypeVar, cast
 from urllib.parse import SplitResult
@@ -59,7 +59,17 @@ class RuntimeDeadline:
         """Run one stage under the invocation's remaining deadline."""
 
         try:
-            async with asyncio.timeout(self.remaining_seconds()):
+            remaining = self.remaining_seconds()
+        except LLMTimeoutError:
+            # An inherited deadline can already be exhausted. Dispose of work
+            # that has not been awaited, including shields around owned tasks.
+            if isinstance(operation, Coroutine):
+                operation.close()
+            elif isinstance(operation, asyncio.Future):
+                operation.cancel()
+            raise
+        try:
+            async with asyncio.timeout(remaining):
                 return await operation
         except TimeoutError:
             raise LLMTimeoutError(_TIMEOUT_MESSAGE) from None
@@ -193,10 +203,13 @@ async def create_secure_runtime_http_client(
     endpoint: str,
     resolver: HostResolver,
     timeout_seconds: float,
+    deadline: RuntimeDeadline | None = None,
 ) -> SecureRuntimeHTTPClient:
     """Resolve once, validate every answer, and construct a pinned client."""
 
-    deadline = RuntimeDeadline.start(timeout_seconds)
+    if deadline is None:
+        deadline = RuntimeDeadline.start(timeout_seconds)
+    deadline.remaining_seconds()
     try:
         parsed = parse_https_endpoint(endpoint)
         addresses = await deadline.run(
