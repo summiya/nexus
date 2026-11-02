@@ -24,7 +24,7 @@ from nexus.model_providers.ports.persistence import (
     ModelProviderReferenceError,
     ProviderUpdateResult,
 )
-from nexus.model_providers.ports.runtime import RuntimeChatGateway
+from nexus.model_providers.ports.runtime import EmbeddingGateway, RuntimeChatGateway
 from nexus.model_providers.ports.validation import ProviderConfigurationValidator
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "CredentialStore",
     "CredentialStoreConflictError",
     "CredentialStoreError",
+    "EmbeddingGateway",
     "ModelProviderConflictError",
     "ModelProviderDeleteRestrictedError",
     "ModelProviderPersistence",

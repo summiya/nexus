@@ -36,6 +36,9 @@ from nexus.model_providers.application.list_selectable_chat_models import (
 from nexus.model_providers.application.resolve_chat_model import (
     ResolveChatModel,
 )
+from nexus.model_providers.application.resolve_embedding_model import (
+    ResolveEmbeddingModel,
+)
 from nexus.model_providers.application.set_provider_credential import (
     SetModelProviderCredential,
 )
@@ -47,7 +50,7 @@ from nexus.model_providers.application.validate_provider import (
     ProviderValidationPolicy,
     ValidateModelProvider,
 )
-from nexus.model_providers.domain import ResolvedChatModel
+from nexus.model_providers.domain import ResolvedChatModel, ResolvedEmbeddingModel
 
 __all__ = [
     "ClearDefaultModel",
@@ -69,7 +72,9 @@ __all__ = [
     "ProviderValidationPolicy",
     "RegisterConfiguredModels",
     "ResolveChatModel",
+    "ResolveEmbeddingModel",
     "ResolvedChatModel",
+    "ResolvedEmbeddingModel",
     "SelectableChatModel",
     "SelectableChatModels",
     "SetConfiguredModelEnabled",
