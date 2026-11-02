@@ -1,5 +1,11 @@
 """Provider-independent LLM domain contracts."""
 
+from nexus.llm.domain.embeddings import (
+    MAX_EMBEDDING_BATCH_SIZE,
+    MAX_EMBEDDING_INPUT_BYTES,
+    EmbeddingRequest,
+    EmbeddingResult,
+)
 from nexus.llm.domain.errors import (
     LLMAuthenticationError,
     LLMContentRejectedError,
@@ -30,6 +36,10 @@ from nexus.llm.domain.tools import LLMToolCall, LLMToolDefinition
 from nexus.llm.domain.usage import LLMUsage
 
 __all__ = [
+    "MAX_EMBEDDING_BATCH_SIZE",
+    "MAX_EMBEDDING_INPUT_BYTES",
+    "EmbeddingRequest",
+    "EmbeddingResult",
     "LLMAuthenticationError",
     "LLMCompletedEvent",
     "LLMContentRejectedError",

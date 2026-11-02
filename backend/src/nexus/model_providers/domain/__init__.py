@@ -34,7 +34,10 @@ from nexus.model_providers.domain.provider_validation import (
     TERMINAL_PROVIDER_VALIDATION_STATUSES,
     ProviderValidationStatus,
 )
-from nexus.model_providers.domain.runtime import ResolvedChatModel
+from nexus.model_providers.domain.runtime import (
+    ResolvedChatModel,
+    ResolvedEmbeddingModel,
+)
 
 __all__ = [
     "MAX_PROVIDER_CREDENTIAL_SECRET_BYTES",
@@ -60,6 +63,7 @@ __all__ = [
     "ProviderType",
     "ProviderValidationStatus",
     "ResolvedChatModel",
+    "ResolvedEmbeddingModel",
     "provider_endpoint_url",
     "provider_required_setting_names",
     "provider_settings_from_mapping",

@@ -502,6 +502,39 @@ Conversation use case. Conversation authorization precedes model and credential
 resolution, and one immutable resolved target is used for the full request.
 Any later bounded credential caching belongs to future runtime work.
 
+RF-02 adds `ResolveEmbeddingModel` using the same configuration and credential
+ports. It selects an explicit tenant-owned model or the organization's embedding
+default, requires an enabled embedding model with a positive exact-integer
+dimension, and checks provider runtime eligibility and its credential reference
+before resolving a secret. Missing and foreign explicit IDs have the same safe
+not-found response. Configuration reads complete before credential-store I/O;
+the resolver neither invokes models nor caches targets. The caller supplies an
+already-authorized tenant context; resolution grants no resource permission.
+
+`ResolvedEmbeddingModel` is an immutable snapshot of configured model/provider
+identity, invocation name, embedding dimension, validated provider settings and
+protected credential. Existing configuration contracts own settings validation;
+the target introduces no provider configuration schema. Only a future adapter
+reveals credential plaintext. Provider configuration eligibility does not prove
+that a particular execution adapter supports that provider or remote model.
+
+The provider-neutral `EmbeddingRequest` and `EmbeddingResult` live in
+`nexus.llm.domain`; the async `EmbeddingGateway` protocol lives beside
+`RuntimeChatGateway`. A request contains 1–128 immutable ordered meaningful texts
+and at most 1 MiB of aggregate UTF-8 input, preserving exact text. These are Nexus
+safety limits, not provider token limits. Results contain ordered immutable,
+nonempty, equal-width vectors of finite native floats; bools, integers, NaN and
+infinity are rejected without numeric coercion or normalization. Dimension is
+derived from the vectors. Before returning, an adapter must call
+`result.validate_for(request=..., expected_dimension=target.embedding_dimension)`
+to enforce output count and configured width. Results retain neither source text
+nor credentials; request/result representations omit payloads.
+
+RF-03 will implement execution behind this gateway with existing secure transport
+protections, adapter support checks and Nexus `LLMError` translation; cancellation
+must propagate. RF-02 implements no provider calls/adapters, batch orchestration,
+vector persistence, indexing or retrieval, and does not change RF-01 contracts.
+
 The Conversation UI obtains safe choices from the authenticated,
 organization-scoped `GET /api/v1/chat-models` runtime-selection API. That API is
 separate from model-provider administration and does not require
