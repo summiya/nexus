@@ -528,9 +528,13 @@ permission checks remain authoritative for every read and mutation.
 
 Retrieval provides knowledge-access capabilities and contains the platform-level RAG architecture.
 
-Retrieval is responsible for both ingestion and query-time retrieval.
+Document Processing currently owns extraction, normalization, segmentation and
+authoritative persisted chunks. RF-01 adds immutable provider-neutral retrieval
+contracts under `nexus.retrieval.domain`; search and indexing remain future work.
+See [the retrieval boundary](domains/knowledge/architecture.md) for identities,
+provenance, request/result limits and application authorization responsibilities.
 
-Responsibilities:
+The broader target architecture includes:
 
 - Document ingestion contracts
 - Document parsing
