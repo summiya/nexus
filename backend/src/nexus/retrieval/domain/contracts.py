@@ -61,9 +61,6 @@ class RetrievedChunk:
     normalizer_version: str
     segmenter_id: str
     segmenter_version: str
-    preferred_chunk_bytes: int
-    max_chunk_bytes: int
-    max_source_contributions: int
     page_count: int | None = None
 
     def __post_init__(self) -> None:
@@ -88,20 +85,6 @@ class RetrievedChunk:
             self.segmenter_version,
         ):
             _require_text(value, 1024)
-        if (
-            any(
-                type(value) is not int or value < 1
-                for value in (
-                    self.preferred_chunk_bytes,
-                    self.max_chunk_bytes,
-                    self.max_source_contributions,
-                )
-            )
-            or self.preferred_chunk_bytes > self.max_chunk_bytes
-            or len(self.chunk.text.encode("utf-8")) > self.max_chunk_bytes
-            or len(self.chunk.contributions) > self.max_source_contributions
-        ):
-            raise ValueError("Invalid retrieved chunk bounds")
         if self.page_count is not None and (
             type(self.page_count) is not int
             or self.page_count < 1

@@ -23,9 +23,9 @@ persistence or lifecycle. See [Document Processing](../files/architecture.md).
   original index, text, kind, section path and ordered `SourceContribution`
   values. It also carries organization/Document/source File public UUIDs,
   verified source ETag, processing recipe version, extractor/normalizer/segmenter
-  identities and versions, segmentation settings, and optional total page count.
-  Metadata follows existing Document Processing bounds; selected content must
-  fit its declared segmentation settings.
+  identities and versions, and optional total page count. Segmentation settings
+  and their bounds validation stay on the authoritative Document Processing chunk
+  set; retrieval does not repeat them on each selected chunk.
 - `RetrievalResult` retains its request and an immutable tuple in final ranking
   order. Empty and partial results are valid. More than `top_k` results,
   mismatched tenants, and duplicate chunk identities are rejected, never silently
@@ -35,6 +35,8 @@ Logical chunk identity is `(document_public_id, chunk.index)`. The Document UUID
 already identifies one immutable processing generation. Explicit reprocessing
 creates a new Document UUID and preserves prior generations. Numeric database
 chunk IDs remain internal; retrieval introduces no additional chunk UUID.
+The Document reference retains generation identity even when reprocessing changes
+segmentation settings; component and recipe versions remain available in results.
 
 Contributions remain structured: original block indexes and kinds, one-based
 end-exclusive line ranges or page numbers, list metadata, quote depth and optional
@@ -55,6 +57,9 @@ Content-bearing dataclasses omit their fields from `repr`; callers must still
 avoid logging queries, chunks, source metadata, or provenance explicitly. Domain
 validation errors do not include supplied values. Constructors accept domain
 objects, never ORM rows, transport schemas, or provider SDK objects.
+The dependency-boundary test applies only to `nexus.retrieval.domain`; future
+retrieval application services may use authorized model-provider and infrastructure
+dependencies within their application boundaries.
 
 ## Later phases
 

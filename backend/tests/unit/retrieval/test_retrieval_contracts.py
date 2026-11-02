@@ -67,9 +67,6 @@ def retrieved() -> RetrievedChunk:
         normalizer_version="2",
         segmenter_id="nexus.structure",
         segmenter_version="3",
-        preferred_chunk_bytes=4096,
-        max_chunk_bytes=8192,
-        max_source_contributions=128,
     )
 
 
@@ -159,11 +156,6 @@ def test_source_identity_versions_and_structured_line_provenance_survive(
     assert (value.extractor_id, value.extractor_version) == ("markdown", "1")
     assert (value.normalizer_id, value.normalizer_version) == ("nexus.normalizer", "2")
     assert (value.segmenter_id, value.segmenter_version) == ("nexus.structure", "3")
-    assert (
-        value.preferred_chunk_bytes,
-        value.max_chunk_bytes,
-        value.max_source_contributions,
-    ) == (4096, 8192, 128)
     assert value.chunk.text == "content!"
     assert value.chunk.kind is DocumentChunkKind.LIST
     assert value.chunk.section_path == (0, 2)
@@ -252,29 +244,9 @@ def test_metadata_boundaries_do_not_trim_source_values(retrieved):
     assert value.source_entity_tag == " " + "x" * 1022 + " "
 
 
-@pytest.mark.parametrize(
-    "field", ["preferred_chunk_bytes", "max_chunk_bytes", "max_source_contributions"]
-)
-@pytest.mark.parametrize("value", [None, True, 1.5, "2", 0, -1])
-def test_segmentation_settings_require_positive_exact_integers(retrieved, field, value):
+def test_line_provenance_cannot_claim_a_total_page_count(retrieved):
     with pytest.raises(ValueError):
-        replace(retrieved, **{field: value})
-
-
-def test_selected_chunk_must_fit_its_segmentation_metadata(retrieved):
-    for changes in (
-        {"preferred_chunk_bytes": 8193},
-        {"max_source_contributions": 1},
-        {"page_count": 1},
-    ):
-        with pytest.raises(ValueError):
-            replace(retrieved, **changes)
-    candidate = replace(retrieved.chunk, text="é")
-    value = replace(
-        retrieved, chunk=candidate, preferred_chunk_bytes=1, max_chunk_bytes=2
-    )
-    with pytest.raises(ValueError):
-        replace(value, max_chunk_bytes=1)
+        replace(retrieved, page_count=1)
 
 
 def test_empty_results_and_original_ranking_order(retrieval_request, retrieved):
@@ -350,8 +322,10 @@ def test_representations_exclude_query_content_and_source_metadata(
             assert sensitive not in rendered
 
 
-def test_retrieval_depends_only_on_domain_values_and_standard_library():
-    root = Path(__file__).resolve().parents[3] / "src" / "nexus" / "retrieval"
+def test_retrieval_domain_depends_only_on_domain_values_and_standard_library():
+    root = (
+        Path(__file__).resolve().parents[3] / "src" / "nexus" / "retrieval" / "domain"
+    )
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
