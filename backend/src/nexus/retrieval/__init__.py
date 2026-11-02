@@ -1,0 +1,1 @@
+"""Provider-neutral retrieval capability."""

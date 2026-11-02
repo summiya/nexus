@@ -223,13 +223,13 @@ Each domain entry defines purpose, ownership, tests, documentation, dependencies
 
 ### Knowledge / RAG
 
-- **Purpose:** Own ingestion, indexing, chunking, embeddings, retrieval, ranking, and knowledge-query contracts.
-- **Backend ownership:** knowledge/retrieval-specific application/domain code under `backend/src/nexus/`; vector stores, embedding providers, and external retrieval adapters under `backend/src/nexus/infrastructure/`.
+- **Purpose:** Own retrieval, indexing, embeddings, ranking, and knowledge-query contracts. Document Processing owns authoritative source extraction, normalization, chunking and chunk persistence under `backend/src/nexus/documents/`.
+- **Backend ownership:** implemented retrieval values under `backend/src/nexus/retrieval/domain/`; future vector stores, embedding providers, and external retrieval adapters under `backend/src/nexus/infrastructure/`.
 - **Frontend ownership:** `frontend/src/features/knowledge/`.
-- **Tests:** Knowledge/RAG unit/API/integration tests and frontend knowledge tests.
-- **Documentation:** `docs/domains/knowledge/` when implementation begins; data/API/security docs where contracts require them.
+- **Tests:** Retrieval contract unit tests under `backend/tests/unit/retrieval/`; other Knowledge/RAG tests when their capabilities are implemented.
+- **Documentation:** `docs/domains/knowledge/architecture.md`; data/API/security docs where contracts require them.
 - **Shared dependencies:** Files when file ingestion is used, persistence, infrastructure adapters, configuration, errors, logging.
-- **Allowed dependencies:** Files; Models only for embedding/reranking contracts where explicitly required; Projects/Authorization when knowledge is scoped.
+- **Allowed dependencies:** Document Processing domain values for authoritative chunks and provenance; Files; Models only for embedding/reranking contracts where explicitly required; Projects/Authorization when knowledge is scoped.
 - **Explicitly unrelated domains:** Agents, MCP, Memory, Workflows, Artifacts unless the task explicitly integrates them.
 - **Cross-domain inspection conditions:** Only under the Global Cross-Domain Rule.
 
