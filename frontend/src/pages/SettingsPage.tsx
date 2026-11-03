@@ -19,7 +19,10 @@ export function SettingsPage() {
             <DashboardIcon name="settings" size={15} /> ACCOUNT & WORKSPACE
           </span>
           <h1>Settings</h1>
-          <p>Manage your profile, workspace preferences, usage, and organization integrations.</p>
+          <p>
+            Manage your profile, workspace preferences, usage, and organization
+            integrations.
+          </p>
         </div>
       </header>
       <div className="settings-layout">
@@ -31,7 +34,9 @@ export function SettingsPage() {
               {section.label}
             </NavLink>
           ))}
-          <span className="nx-settings-nav-label nx-settings-nav-group-gap">ORGANIZATION</span>
+          <span className="nx-settings-nav-label nx-settings-nav-group-gap">
+            ORGANIZATION
+          </span>
           {sections.slice(3).map((section) => (
             <NavLink key={section.path} to={section.path}>
               <DashboardIcon name={section.icon} size={18} />

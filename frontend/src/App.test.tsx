@@ -150,10 +150,9 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "AI Models" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Back to AI Providers/i })).toHaveAttribute(
-      "href",
-      "/settings/ai-providers",
-    );
+    expect(
+      screen.getByRole("link", { name: /Back to AI Providers/i }),
+    ).toHaveAttribute("href", "/settings/ai-providers");
   });
 
   it("shows a persistent sidebar and removes the old horizontal navigation", () => {
@@ -161,16 +160,22 @@ describe("App", () => {
     const { container } = render(<App />);
 
     expect(
-      within(screen.getByRole("navigation", { name: "Main navigation" }))
-        .getByRole("link", { name: "Knowledge bases" }),
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("link", { name: "Knowledge bases" }),
     ).toHaveAttribute("href", "/knowledge-bases");
     expect(
-      within(screen.getByRole("navigation", { name: "Main navigation" }))
-        .getByRole("link", { name: "MCP & tools" }),
+      within(
+        screen.getByRole("navigation", { name: "Main navigation" }),
+      ).getByRole("link", { name: "MCP & tools" }),
     ).toHaveAttribute("href", "/tools");
     expect(container.querySelector(".top-bar")).toBeNull();
-    expect(screen.getAllByRole("button", { name: "Jump to anything" }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Open profile menu" })).toHaveTextContent("S");
+    expect(
+      screen.getAllByRole("button", { name: "Jump to anything" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Open profile menu" }),
+    ).toHaveTextContent("S");
   });
 
   it("searches the command palette and opens preview destinations", async () => {
@@ -178,17 +183,27 @@ describe("App", () => {
     window.history.replaceState({}, "", "/workspace");
     render(<App />);
 
-    await user.click(screen.getAllByRole("button", { name: "Jump to anything" })[0]);
+    await user.click(
+      screen.getAllByRole("button", { name: "Jump to anything" })[0],
+    );
     const dialog = screen.getByRole("dialog", { name: "Jump to anything" });
     await user.type(
-      within(dialog).getByRole("textbox", { name: "Search NEXUS destinations" }),
+      within(dialog).getByRole("textbox", {
+        name: "Search NEXUS destinations",
+      }),
       "incident",
     );
-    await user.click(within(dialog).getByRole("option", { name: /Incidents/i }));
+    await user.click(
+      within(dialog).getByRole("option", { name: /Incidents/i }),
+    );
 
     expect(window.location.pathname).toBe("/incidents");
-    expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Jump to anything" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Incidents" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Jump to anything" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens Profile and Usage from the S account menu", async () => {

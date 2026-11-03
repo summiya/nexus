@@ -116,7 +116,10 @@ export function AIModelsSettings() {
           Register provider models and choose organization defaults. Runtime
           requests revalidate model and provider eligibility.
         </p>
-        <Link className="nx-ui-provider-models-link" to="/settings/ai-providers">
+        <Link
+          className="nx-ui-provider-models-link"
+          to="/settings/ai-providers"
+        >
           ← Back to AI Providers
         </Link>
       </header>

@@ -65,7 +65,9 @@ export function FileUploadPanel() {
   return (
     <section className="file-upload-card" aria-labelledby="file-upload-heading">
       <div className="file-upload-copy">
-        <span className="nx-upload-illustration" aria-hidden="true"><DashboardIcon name="files" size={27} /></span>
+        <span className="nx-upload-illustration" aria-hidden="true">
+          <DashboardIcon name="files" size={27} />
+        </span>
         <p className="eyebrow">Files</p>
         <h1 id="file-upload-heading">Upload a file</h1>
         <p>
@@ -80,7 +82,9 @@ export function FileUploadPanel() {
           onDragOver={(event) => event.preventDefault()}
           onDrop={handleFileDrop}
         >
-          <span className="nx-upload-zone-icon" aria-hidden="true"><DashboardIcon name="files" size={24} /></span>
+          <span className="nx-upload-zone-icon" aria-hidden="true">
+            <DashboardIcon name="files" size={24} />
+          </span>
           <div className="form-field">
             <label htmlFor="file-upload-input">Choose a file</label>
             <input
@@ -93,7 +97,9 @@ export function FileUploadPanel() {
               }}
             />
           </div>
-          <p className="nx-upload-zone-caption">Or drop a file into this area to select it.</p>
+          <p className="nx-upload-zone-caption">
+            Or drop a file into this area to select it.
+          </p>
           <p className="file-upload-limit">Maximum file size: 512 MB.</p>
         </div>
 

@@ -13,7 +13,12 @@
   overflow: hidden;
   background: #f7f9fd;
   color: #202d4b;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .nexus-dashboard-shell *,
@@ -49,7 +54,11 @@
   border-right: 1px solid rgba(155, 169, 213, 0.11);
   padding: 26px 12px 13px;
   background:
-    radial-gradient(ellipse at 9% 92%, rgba(82, 69, 168, 0.18), transparent 50%),
+    radial-gradient(
+      ellipse at 9% 92%,
+      rgba(82, 69, 168, 0.18),
+      transparent 50%
+    ),
     #0e172b;
   color: #eaf0fc;
 }
@@ -121,7 +130,7 @@
 
 .nexus-dashboard-shell .nx-dash-sidebar-search button:hover {
   border-color: rgba(157, 153, 252, 0.39);
-  background: rgba(140, 136, 250, 0.10);
+  background: rgba(140, 136, 250, 0.1);
   color: white;
 }
 
@@ -205,7 +214,11 @@
 
 .nexus-dashboard-shell .nx-dash-nav-link.active {
   border-color: rgba(130, 116, 244, 0.35);
-  background: linear-gradient(90deg, rgba(88, 119, 218, 0.27), rgba(111, 87, 224, 0.11));
+  background: linear-gradient(
+    90deg,
+    rgba(88, 119, 218, 0.27),
+    rgba(111, 87, 224, 0.11)
+  );
   box-shadow: inset 2px 0 #8c7cff;
   font-weight: 750;
 }
@@ -485,7 +498,8 @@
 }
 
 .nexus-dashboard-shell .content-panel.nx-dash-content,
-.nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+.nexus-dashboard-shell.app-shell-conversations
+  .content-panel.content-panel-conversations {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -499,13 +513,16 @@
   color: #24334e;
 }
 
-.nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+.nexus-dashboard-shell.app-shell-conversations
+  .content-panel.content-panel-conversations {
   overflow: hidden;
   padding: 0;
   background: #ffffff;
 }
 
-.nexus-dashboard-shell.app-shell-conversations .content-panel-conversations > .conversation-shell {
+.nexus-dashboard-shell.app-shell-conversations
+  .content-panel-conversations
+  > .conversation-shell {
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -776,7 +793,8 @@
     padding: 18px 13px;
   }
 
-  .nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+  .nexus-dashboard-shell.app-shell-conversations
+    .content-panel.content-panel-conversations {
     padding: 0;
   }
 }

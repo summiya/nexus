@@ -1,10 +1,11 @@
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
-  type KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import { env } from "../config/env";
 import { clearSession } from "../features/auth";
@@ -25,19 +26,97 @@ interface Destination {
 }
 
 const destinations: readonly Destination[] = [
-  { label: "Overview", path: "/workspace", icon: "overview", group: "Workspace", terms: "dashboard home" },
-  { label: "Conversations", path: "/conversations", icon: "chat", group: "Workspace", terms: "chat history" },
-  { label: "Projects", path: "/projects", icon: "projects", group: "Workspace", terms: "project folder" },
-  { label: "Knowledge bases", path: "/knowledge-bases", icon: "knowledge", group: "Workspace", terms: "retrieval rag documents" },
-  { label: "Files", path: "/files", icon: "files", group: "Workspace", terms: "uploads documents library" },
-  { label: "Artifacts", path: "/artifacts", icon: "artifacts", group: "Intelligence", terms: "code documents previews" },
-  { label: "Agents", path: "/agents", icon: "agents", group: "Intelligence", terms: "agentic workflows" },
-  { label: "MCP & tools", path: "/tools", icon: "tools", group: "Intelligence", terms: "connectors integration mcp" },
-  { label: "Incidents", path: "/incidents", icon: "incidents", group: "Intelligence", terms: "monitoring incident operations" },
-  { label: "Settings", path: "/settings/profile", icon: "settings", group: "Account", terms: "account profile" },
-  { label: "Usage", path: "/settings/usage", icon: "usage", group: "Account", terms: "token usage billing" },
-  { label: "Appearance", path: "/settings/preferences", icon: "preferences", group: "Account", terms: "theme preferences" },
-  { label: "AI Providers", path: "/settings/ai-providers", icon: "security", group: "Account", terms: "provider api keys byok" },
+  {
+    label: "Overview",
+    path: "/workspace",
+    icon: "overview",
+    group: "Workspace",
+    terms: "dashboard home",
+  },
+  {
+    label: "Conversations",
+    path: "/conversations",
+    icon: "chat",
+    group: "Workspace",
+    terms: "chat history",
+  },
+  {
+    label: "Projects",
+    path: "/projects",
+    icon: "projects",
+    group: "Workspace",
+    terms: "project folder",
+  },
+  {
+    label: "Knowledge bases",
+    path: "/knowledge-bases",
+    icon: "knowledge",
+    group: "Workspace",
+    terms: "retrieval rag documents",
+  },
+  {
+    label: "Files",
+    path: "/files",
+    icon: "files",
+    group: "Workspace",
+    terms: "uploads documents library",
+  },
+  {
+    label: "Artifacts",
+    path: "/artifacts",
+    icon: "artifacts",
+    group: "Intelligence",
+    terms: "code documents previews",
+  },
+  {
+    label: "Agents",
+    path: "/agents",
+    icon: "agents",
+    group: "Intelligence",
+    terms: "agentic workflows",
+  },
+  {
+    label: "MCP & tools",
+    path: "/tools",
+    icon: "tools",
+    group: "Intelligence",
+    terms: "connectors integration mcp",
+  },
+  {
+    label: "Incidents",
+    path: "/incidents",
+    icon: "incidents",
+    group: "Intelligence",
+    terms: "monitoring incident operations",
+  },
+  {
+    label: "Settings",
+    path: "/settings/profile",
+    icon: "settings",
+    group: "Account",
+    terms: "account profile",
+  },
+  {
+    label: "Usage",
+    path: "/settings/usage",
+    icon: "usage",
+    group: "Account",
+    terms: "token usage billing",
+  },
+  {
+    label: "Appearance",
+    path: "/settings/preferences",
+    icon: "preferences",
+    group: "Account",
+    terms: "theme preferences",
+  },
+  {
+    label: "AI Providers",
+    path: "/settings/ai-providers",
+    icon: "security",
+    group: "Account",
+    terms: "provider api keys byok",
+  },
 ];
 
 function currentPage(pathname: string): string {
@@ -47,7 +126,9 @@ function currentPage(pathname: string): string {
   if (pathname.startsWith("/settings/preferences")) return "Appearance";
   if (pathname.startsWith("/settings/usage")) return "Usage";
   if (pathname.startsWith("/settings")) return "Profile";
-  return destinations.find((item) => item.path === pathname)?.label ?? "Workspace";
+  return (
+    destinations.find((item) => item.path === pathname)?.label ?? "Workspace"
+  );
 }
 
 function ActiveNavigation({
@@ -62,35 +143,49 @@ function ActiveNavigation({
       {(["Workspace", "Intelligence", "Account"] as const).map((group) => (
         <div className="nx-dash-nav-group" key={group}>
           <span className="nx-dash-nav-label">{group.toUpperCase()}</span>
-          {destinations.filter((destination) => destination.group === group).filter(
-            (destination) =>
-              group !== "Account" ||
-              destination.label === "Settings" ||
-              destination.label === "Usage",
-          ).map((destination) => (
-            <NavLink
-              key={destination.path}
-              to={destination.path}
-              end={destination.path !== "/conversations"}
-              className={({ isActive }) =>
-                "nx-dash-nav-link" + (isActive ? " active" : "")
-              }
-              onClick={closeSidebar}
-            >
-              <DashboardIcon name={destination.icon} />
-              <span>{destination.label}</span>
-              {destination.label === "Projects" || destination.label === "Knowledge bases" ||
-              destination.label === "Agents" || destination.label === "MCP & tools" ||
-              destination.label === "Artifacts" || destination.label === "Incidents" ? (
-                <span className="nx-dash-nav-preview" aria-label="Design preview">
-                  ·
-                </span>
-              ) : null}
-            </NavLink>
-          ))}
+          {destinations
+            .filter((destination) => destination.group === group)
+            .filter(
+              (destination) =>
+                group !== "Account" ||
+                destination.label === "Settings" ||
+                destination.label === "Usage",
+            )
+            .map((destination) => (
+              <NavLink
+                key={destination.path}
+                to={destination.path}
+                end={destination.path !== "/conversations"}
+                className={({ isActive }) =>
+                  "nx-dash-nav-link" + (isActive ? " active" : "")
+                }
+                onClick={closeSidebar}
+              >
+                <DashboardIcon name={destination.icon} />
+                <span>{destination.label}</span>
+                {destination.label === "Projects" ||
+                destination.label === "Knowledge bases" ||
+                destination.label === "Agents" ||
+                destination.label === "MCP & tools" ||
+                destination.label === "Artifacts" ||
+                destination.label === "Incidents" ? (
+                  <span
+                    className="nx-dash-nav-preview"
+                    aria-label="Design preview"
+                  >
+                    ·
+                  </span>
+                ) : null}
+              </NavLink>
+            ))}
         </div>
       ))}
-      <button className="nx-dash-signout" type="button" onClick={logout} aria-label="Logout">
+      <button
+        className="nx-dash-signout"
+        type="button"
+        onClick={logout}
+        aria-label="Logout"
+      >
         <DashboardIcon name="logout" />
         <span>Sign out</span>
       </button>
@@ -197,8 +292,14 @@ export function AppLayout() {
         className={"nx-dash-sidebar" + (sidebarOpen ? " is-open" : "")}
         aria-label="Workspace sidebar"
       >
-        <Link to="/workspace" className="nx-dash-brand" onClick={() => setSidebarOpen(false)}>
-          <span className="nx-dash-logo" aria-hidden="true">✧</span>
+        <Link
+          to="/workspace"
+          className="nx-dash-brand"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <span className="nx-dash-logo" aria-hidden="true">
+            ✧
+          </span>
           <span className="nx-dash-brand-words">
             <strong>{env.appName}</strong>
             <small>INTELLIGENT WORKSPACE</small>
@@ -211,9 +312,14 @@ export function AppLayout() {
             <kbd>⌘ K</kbd>
           </button>
         </div>
-        <ActiveNavigation closeSidebar={() => setSidebarOpen(false)} logout={logout} />
+        <ActiveNavigation
+          closeSidebar={() => setSidebarOpen(false)}
+          logout={logout}
+        />
         <div className="nx-dash-sidebar-footer">
-          <span className="nx-dash-org-mark" aria-hidden="true">N</span>
+          <span className="nx-dash-org-mark" aria-hidden="true">
+            N
+          </span>
           <span>
             <strong>NEXUS workspace</strong>
             <small>Organization-scoped</small>
@@ -238,7 +344,11 @@ export function AppLayout() {
             <strong>{currentPage(location.pathname)}</strong>
           </div>
           <div className="nx-dash-header-actions">
-            <button className="nx-dash-jump" type="button" onClick={openPalette}>
+            <button
+              className="nx-dash-jump"
+              type="button"
+              onClick={openPalette}
+            >
               <DashboardIcon name="search" size={17} />
               <span>Jump to anything</span>
               <kbd>⌘ K</kbd>
@@ -258,7 +368,11 @@ export function AppLayout() {
                 S
               </button>
               {profileOpen ? (
-                <div className="nx-dash-profile-popover" role="menu" aria-label="Profile actions">
+                <div
+                  className="nx-dash-profile-popover"
+                  role="menu"
+                  aria-label="Profile actions"
+                >
                   <div className="nx-dash-profile-title">
                     <span>S</span>
                     <div>
@@ -266,16 +380,32 @@ export function AppLayout() {
                       <small>Profile and workspace settings</small>
                     </div>
                   </div>
-                  <Link to="/settings/profile" role="menuitem" onClick={() => setProfileOpen(false)}>
+                  <Link
+                    to="/settings/profile"
+                    role="menuitem"
+                    onClick={() => setProfileOpen(false)}
+                  >
                     <DashboardIcon name="profile" size={16} /> Profile
                   </Link>
-                  <Link to="/settings/preferences" role="menuitem" onClick={() => setProfileOpen(false)}>
+                  <Link
+                    to="/settings/preferences"
+                    role="menuitem"
+                    onClick={() => setProfileOpen(false)}
+                  >
                     <DashboardIcon name="preferences" size={16} /> Preferences
                   </Link>
-                  <Link to="/settings/usage" role="menuitem" onClick={() => setProfileOpen(false)}>
+                  <Link
+                    to="/settings/usage"
+                    role="menuitem"
+                    onClick={() => setProfileOpen(false)}
+                  >
                     <DashboardIcon name="usage" size={16} /> Usage
                   </Link>
-                  <Link to="/settings/ai-providers" role="menuitem" onClick={() => setProfileOpen(false)}>
+                  <Link
+                    to="/settings/ai-providers"
+                    role="menuitem"
+                    onClick={() => setProfileOpen(false)}
+                  >
                     <DashboardIcon name="security" size={16} /> AI Providers
                   </Link>
                   <button type="button" role="menuitem" onClick={logout}>
@@ -314,7 +444,12 @@ export function AppLayout() {
             aria-label="Close Jump to anything"
             onClick={closePalette}
           />
-          <section className="nx-dash-command" role="dialog" aria-modal="true" aria-label="Jump to anything">
+          <section
+            className="nx-dash-command"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Jump to anything"
+          >
             <div className="nx-dash-command-search">
               <DashboardIcon name="search" size={21} />
               <input
@@ -328,31 +463,39 @@ export function AppLayout() {
                 onKeyDown={paletteKeyDown}
                 placeholder="Jump to conversations, projects, knowledge bases..."
               />
-              <button type="button" onClick={closePalette}>Esc</button>
+              <button type="button" onClick={closePalette}>
+                Esc
+              </button>
             </div>
-            <div className="nx-dash-command-results" role="listbox" aria-label="Navigation results">
+            <div
+              className="nx-dash-command-results"
+              role="listbox"
+              aria-label="Navigation results"
+            >
               {results.length === 0 ? (
                 <p>No matching destinations.</p>
-              ) : results.map((destination, index) => (
-                <button
-                  type="button"
-                  key={destination.path}
-                  role="option"
-                  aria-selected={activeResult === index}
-                  className={activeResult === index ? "is-current" : ""}
-                  onMouseEnter={() => setActiveResult(index)}
-                  onClick={() => visit(destination.path)}
-                >
-                  <span className="nx-dash-command-icon">
-                    <DashboardIcon name={destination.icon} size={19} />
-                  </span>
-                  <span>
-                    <strong>{destination.label}</strong>
-                    <small>{destination.group}</small>
-                  </span>
-                  <DashboardIcon name="arrow" size={16} />
-                </button>
-              ))}
+              ) : (
+                results.map((destination, index) => (
+                  <button
+                    type="button"
+                    key={destination.path}
+                    role="option"
+                    aria-selected={activeResult === index}
+                    className={activeResult === index ? "is-current" : ""}
+                    onMouseEnter={() => setActiveResult(index)}
+                    onClick={() => visit(destination.path)}
+                  >
+                    <span className="nx-dash-command-icon">
+                      <DashboardIcon name={destination.icon} size={19} />
+                    </span>
+                    <span>
+                      <strong>{destination.label}</strong>
+                      <small>{destination.group}</small>
+                    </span>
+                    <DashboardIcon name="arrow" size={16} />
+                  </button>
+                ))
+              )}
             </div>
             <div className="nx-dash-command-footer">
               <span>↑ ↓ Navigate</span>

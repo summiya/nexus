@@ -82,7 +82,8 @@ export function AIProvidersSettings() {
           are write-only and are never shown again.
         </p>
         <Link className="nx-ui-provider-models-link" to="/settings/ai-models">
-          Manage registered models and defaults <span aria-hidden="true">→</span>
+          Manage registered models and defaults{" "}
+          <span aria-hidden="true">→</span>
         </Link>
       </header>
 
@@ -155,7 +156,11 @@ function ProviderGroup({
             <h3 id={"provider-" + catalogItem.providerType}>
               {catalogItem.displayName}
             </h3>
-            <p>{items.length === 0 ? "Not configured" : items.length + " configured"}</p>
+            <p>
+              {items.length === 0
+                ? "Not configured"
+                : items.length + " configured"}
+            </p>
           </div>
         </div>
         {canManage && !creating ? (

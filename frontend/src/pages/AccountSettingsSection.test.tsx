@@ -13,10 +13,19 @@ describe("NEXUS account settings design", () => {
         <AccountSettingsSection section="profile" />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
-    expect(screen.getByText(/interface placeholder until profile identity is connected/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Profile" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /interface placeholder until profile identity is connected/,
+      ),
+    ).toBeInTheDocument();
 
-    await user.type(screen.getByRole("textbox", { name: "Display name" }), "Sample User");
+    await user.type(
+      screen.getByRole("textbox", { name: "Display name" }),
+      "Sample User",
+    );
     await user.click(screen.getByRole("button", { name: "Save preview" }));
 
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -33,9 +42,14 @@ describe("NEXUS account settings design", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Compact" }));
-    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Compact" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
-    await user.click(screen.getByRole("button", { name: "Preview interface motion" }));
+    await user.click(
+      screen.getByRole("button", { name: "Preview interface motion" }),
+    );
     expect(screen.getByText("PREVIEW / MOTION OFF")).toBeInTheDocument();
   });
 
@@ -48,6 +62,8 @@ describe("NEXUS account settings design", () => {
 
     expect(screen.getByRole("heading", { name: "Usage" })).toBeInTheDocument();
     expect(screen.getByText("No token metering connected")).toBeInTheDocument();
-    expect(screen.getByText(/Values are intentionally not fabricated/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Values are intentionally not fabricated/),
+    ).toBeInTheDocument();
   });
 });

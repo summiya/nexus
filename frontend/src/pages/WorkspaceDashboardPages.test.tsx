@@ -31,15 +31,18 @@ describe("Workspace dashboard design", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Good to have you here." })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Architecture discussion/ })).toHaveAttribute(
+    expect(
+      screen.getByRole("heading", { name: "Good to have you here." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Architecture discussion/ }),
+    ).toHaveAttribute(
       "href",
       "/conversations/11111111-1111-4111-8111-111111111111",
     );
-    expect(screen.getByRole("link", { name: /Knowledge bases/ })).toHaveAttribute(
-      "href",
-      "/knowledge-bases",
-    );
+    expect(
+      screen.getByRole("link", { name: /Knowledge bases/ }),
+    ).toHaveAttribute("href", "/knowledge-bases");
   });
 
   it("filters and inspects project designs without creating server-side resources", async () => {
@@ -50,13 +53,19 @@ describe("Workspace dashboard design", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Projects" }),
+    ).toBeInTheDocument();
     const filter = screen.getByRole("textbox", { name: "Filter projects" });
     await user.type(filter, "engineering");
 
     const list = screen.getByRole("region", { name: "Projects list" });
-    expect(within(list).getByRole("button", { name: /Engineering hub/ })).toBeInTheDocument();
-    expect(within(list).queryByRole("button", { name: /Product launch/ })).toBeNull();
+    expect(
+      within(list).getByRole("button", { name: /Engineering hub/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(list).queryByRole("button", { name: /Product launch/ }),
+    ).toBeNull();
 
     await user.clear(filter);
     await user.click(screen.getByRole("tab", { name: "Overview" }));
@@ -76,7 +85,9 @@ describe("Workspace dashboard design", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Incidents" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Latency investigation")).toBeInTheDocument();
 
     rerender(
@@ -85,8 +96,12 @@ describe("Workspace dashboard design", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: "MCP & tools" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "MCP & tools" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Custom MCP server")).toBeInTheDocument();
-    expect(screen.getByText(/No live tools or records are changed/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/No live tools or records are changed/),
+    ).toBeInTheDocument();
   });
 });
