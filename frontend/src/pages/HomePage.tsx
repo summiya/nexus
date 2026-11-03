@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 
+import { NexusCapabilityExplorer } from "../features/marketing/NexusCapabilityExplorer";
 import { useAuthStore } from "../features/auth/store";
 
 import "../styles/nexus-experience.css";
@@ -461,7 +462,7 @@ export function HomePage({
             <NexusBrand />
           </a>
           <nav aria-label="Site navigation" className="nx-site-nav">
-            <a href="#platform">Platform</a>
+            <a href="#capabilities">Explorer</a>
             <a href="#how-it-works">How it works</a>
             <a href="#knowledge">RAG &amp; agents</a>
             <a href="#security">Security</a>
@@ -514,9 +515,9 @@ export function HomePage({
                 </Link>
                 <a
                   className="nx-button nx-button-secondary nx-button-large"
-                  href="#knowledge"
+                  href="#capabilities"
                 >
-                  Explore RAG &amp; agents <span aria-hidden="true">→</span>
+                  Explore the platform <span aria-hidden="true">→</span>
                 </a>
               </div>
               <div className="nx-hero-proof">
@@ -549,6 +550,7 @@ export function HomePage({
               <strong>✧ Multi-model AI</strong>
               <strong>▣ Private organizations</strong>
               <strong>◈ Bring your own keys</strong>
+              <strong>◇ RBAC &amp; permissions</strong>
             </div>
           </div>
         </div>
@@ -629,6 +631,8 @@ export function HomePage({
             </article>
           </div>
         </section>
+
+        <NexusCapabilityExplorer authenticated={authStatus === "authenticated"} />
 
         <section className="nx-section nx-process-section" id="how-it-works">
           <div className="nx-container">
