@@ -1,42 +1,13 @@
-import { useRef, useState } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 
 import { NexusCapabilityExplorer } from "../features/marketing/NexusCapabilityExplorer";
+import { NexusWorkspacePreview } from "../features/marketing/NexusWorkspacePreview";
 import { useAuthStore } from "../features/auth/store";
 
 import "../styles/nexus-experience.css";
 
-type PreviewView = "chat" | "files" | "models";
 type JourneyView = "conversation" | "knowledge" | "agents";
-
-const SAMPLE_MODELS = [
-  { id: "claude", name: "Claude · example", provider: "Anthropic" },
-  { id: "gpt", name: "GPT · example", provider: "OpenAI" },
-  { id: "gemini", name: "Gemini · example", provider: "Google" },
-] as const;
-
-type SampleModelId = (typeof SAMPLE_MODELS)[number]["id"];
-
-const SUGGESTIONS = [
-  "Summarize this project",
-  "Plan a product launch",
-  "Explain retrieval-augmented generation",
-] as const;
-
-interface PreviewMessage {
-  id: number;
-  role: "assistant" | "user";
-  text: string;
-}
-
-const STARTER_MESSAGES: PreviewMessage[] = [
-  {
-    id: 1,
-    role: "assistant",
-    text: "Welcome to NEXUS. Select a sample model, attach a file, or try a prompt. This is a local interface demo.",
-  },
-];
 
 const JOURNEYS: Record<
   JourneyView,
@@ -100,284 +71,6 @@ function NexusBrand() {
         <small>AI WORKSPACE</small>
       </span>
     </span>
-  );
-}
-
-function PreviewWorkspace() {
-  const [view, setView] = useState<PreviewView>("chat");
-  const [modelId, setModelId] = useState<SampleModelId>("claude");
-  const [prompt, setPrompt] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
-  const [messages, setMessages] = useState<PreviewMessage[]>(STARTER_MESSAGES);
-  const attachmentInput = useRef<HTMLInputElement>(null);
-  const messageId = useRef(2);
-  const selectedModel =
-    SAMPLE_MODELS.find((model) => model.id === modelId) ?? SAMPLE_MODELS[0];
-
-  function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    setAttachment(event.target.files?.[0] ?? null);
-  }
-
-  function clearFile() {
-    setAttachment(null);
-    if (attachmentInput.current) {
-      attachmentInput.current.value = "";
-    }
-  }
-
-  function sendPreview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = prompt.trim();
-    if (!question) {
-      return;
-    }
-
-    const answer = /agent|plan|workflow/i.test(question)
-      ? "NEXUS is designed to grow into tool-enabled, human-approved agent workflows. That execution layer is on the roadmap."
-      : /rag|retriev|document|file|knowledge/i.test(question)
-        ? "The retrieval foundation will connect document chunks, embeddings, authorized search and source-grounded answers. End-to-end RAG is in development."
-        : "NEXUS brings model choice, conversations and files into one workspace. This is a sample response, not a live model completion.";
-
-    const nextId = messageId.current;
-    messageId.current += 2;
-    setMessages((current) => [
-      ...current.slice(-5),
-      { id: nextId, role: "user", text: question },
-      {
-        id: nextId + 1,
-        role: "assistant",
-        text:
-          selectedModel.name +
-          " · simulated\n" +
-          answer +
-          (attachment ? "\nSelected locally: " + attachment.name : ""),
-      },
-    ]);
-    setPrompt("");
-  }
-
-  function choosePrompt(value: string) {
-    setView("chat");
-    setPrompt(value);
-  }
-
-  return (
-    <div
-      className="nx-product-window"
-      aria-label="Interactive NEXUS product preview"
-    >
-      <div className="nx-window-bar">
-        <div className="nx-window-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </div>
-        <span>NEXUS / INTERACTIVE PRODUCT PREVIEW</span>
-        <span aria-hidden="true">•••</span>
-      </div>
-      <div className="nx-preview-layout">
-        <aside className="nx-preview-sidebar" aria-label="Preview navigation">
-          <span className="nx-mini-caption">WORKSPACE</span>
-          {(
-            [
-              ["chat", "✧", "Chat"],
-              ["files", "▤", "Files"],
-              ["models", "◈", "AI models"],
-            ] as const
-          ).map(([item, symbol, label]) => (
-            <button
-              key={item}
-              type="button"
-              className={
-                "nx-preview-nav-item" + (view === item ? " is-selected" : "")
-              }
-              onClick={() => setView(item)}
-              aria-pressed={view === item}
-            >
-              <span aria-hidden="true">{symbol}</span> {label}
-            </button>
-          ))}
-          <span className="nx-mini-caption nx-preview-recent">YOUR SPACE</span>
-          <span className="nx-preview-sidebar-detail">
-            One place for work, knowledge and models.
-          </span>
-        </aside>
-        <div className="nx-preview-main">
-          {view === "chat" ? (
-            <>
-              <div className="nx-preview-title-row">
-                <strong>✧ Ask NEXUS anything</strong>
-                <span className="nx-preview-label">DEMO</span>
-              </div>
-              <p className="nx-preview-hint">Start somewhere inspiring...</p>
-              <div className="nx-suggestion-row">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => choosePrompt(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-              <div
-                className="nx-preview-messages"
-                aria-live="polite"
-                aria-label="Sample messages"
-              >
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={"nx-message nx-message-" + message.role}
-                  >
-                    {message.text}
-                  </div>
-                ))}
-              </div>
-              <form className="nx-demo-composer" onSubmit={sendPreview}>
-                {attachment ? (
-                  <div className="nx-attached-file">
-                    <span>▤ {attachment.name}</span>
-                    <button
-                      type="button"
-                      onClick={clearFile}
-                      aria-label="Remove sample file"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ) : null}
-                <label className="nx-visually-hidden" htmlFor="nx-demo-prompt">
-                  Demo message
-                </label>
-                <textarea
-                  id="nx-demo-prompt"
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Ask anything, attach a file, build an idea..."
-                  rows={2}
-                />
-                <div className="nx-composer-actions">
-                  <select
-                    aria-label="Demo AI model"
-                    value={modelId}
-                    onChange={(event) =>
-                      setModelId(event.target.value as SampleModelId)
-                    }
-                  >
-                    {SAMPLE_MODELS.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="nx-composer-buttons">
-                    <input
-                      ref={attachmentInput}
-                      className="nx-visually-hidden"
-                      type="file"
-                      aria-label="Choose a sample file"
-                      onChange={chooseFile}
-                    />
-                    <button
-                      type="button"
-                      className="nx-icon-button"
-                      aria-label="Attach sample file"
-                      onClick={() => attachmentInput.current?.click()}
-                    >
-                      +
-                    </button>
-                    <button
-                      type="submit"
-                      className="nx-send-button"
-                      aria-label="Send demo message"
-                    >
-                      ↗
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </>
-          ) : view === "files" ? (
-            <div className="nx-preview-subscreen">
-              <span className="nx-preview-label">YOUR FILES</span>
-              <h3>Knowledge starts with your files.</h3>
-              <p>
-                Keep documents together and make them available to future
-                knowledge workflows.
-              </p>
-              <div className="nx-demo-file-row">
-                <span aria-hidden="true">▤</span>
-                <span>
-                  <strong>
-                    {attachment ? attachment.name : "Product-brief.pdf"}
-                  </strong>
-                  <small>
-                    {attachment
-                      ? "Selected locally · not uploaded"
-                      : "Illustrative file"}
-                  </small>
-                </span>
-              </div>
-              <button
-                type="button"
-                className="nx-mini-action"
-                onClick={() => attachmentInput.current?.click()}
-              >
-                Choose a sample file ↗
-              </button>
-              <input
-                ref={attachmentInput}
-                className="nx-visually-hidden"
-                type="file"
-                aria-label="Choose a sample file"
-                onChange={chooseFile}
-              />
-            </div>
-          ) : (
-            <div className="nx-preview-subscreen">
-              <span className="nx-preview-label">MODEL CONTROL</span>
-              <h3>Your models, your choice.</h3>
-              <p>
-                Switch the sample model here and continue in the chat preview.
-              </p>
-              <div className="nx-model-options">
-                {SAMPLE_MODELS.map((model) => (
-                  <button
-                    key={model.id}
-                    type="button"
-                    className={modelId === model.id ? "is-current" : ""}
-                    aria-pressed={modelId === model.id}
-                    onClick={() => setModelId(model.id)}
-                  >
-                    <span className="nx-model-dot" aria-hidden="true" />
-                    <span>
-                      <strong>{model.name}</strong>
-                      <small>{model.provider}</small>
-                    </span>
-                    <span aria-hidden="true">
-                      {modelId === model.id ? "✓" : "↗"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="nx-mini-action"
-                onClick={() => setView("chat")}
-              >
-                Back to chat ↗
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="nx-preview-disclaimer">
-        Interactive UI preview · Model responses are simulated · Files never
-        leave your browser
-      </div>
-    </div>
   );
 }
 
@@ -489,7 +182,7 @@ export function HomePage({
 
       <main id="top">
         <section className="nx-hero">
-          <div className="nx-container nx-hero-grid">
+          <div className="nx-container nx-hero-grid nx-hero-grid-next">
             <div className="nx-hero-copy">
               <div className="nx-eyebrow">
                 <span className="nx-spark" /> A MORE INTELLIGENT WAY TO WORK
@@ -530,15 +223,8 @@ export function HomePage({
                 <span>Built around your control.</span>
               </div>
             </div>
-            <div className="nx-hero-preview">
-              <span className="nx-glow-orbit" aria-hidden="true" />
-              <PreviewWorkspace />
-              <span className="nx-float-label nx-float-top">
-                ✦ Your models, your choice
-              </span>
-              <span className="nx-float-label nx-float-bottom">
-                ◈ Files meet AI
-              </span>
+            <div className="nx-hero-preview nx-hero-preview-next">
+              <NexusWorkspacePreview />
             </div>
           </div>
         </section>
