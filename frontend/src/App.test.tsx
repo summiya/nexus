@@ -170,14 +170,14 @@ describe("App", () => {
       name: "Main navigation",
     });
     expect(
-      within(navigation).getByRole("link", { name: "Knowledge bases" }),
+      within(navigation).getByRole("link", { name: /Knowledge bases/ }),
     ).toHaveAttribute("href", "/knowledge-bases");
     expect(
-      within(navigation).getByRole("link", { name: "MCP & tools" }),
+      within(navigation).getByRole("link", { name: /MCP & tools/ }),
     ).toHaveAttribute("href", "/tools");
     expect(container.querySelector(".top-bar")).toBeNull();
     expect(
-      (await screen.findAllByRole("button", { name: "Jump to anything" }))
+      (await screen.findAllByRole("button", { name: /Jump to anything/ }))
         .length,
     ).toBeGreaterThan(0);
     expect(
@@ -191,9 +191,9 @@ describe("App", () => {
     render(<App />);
 
     await user.click(
-      (await screen.findAllByRole("button", { name: "Jump to anything" }))[0],
+      (await screen.findAllByRole("button", { name: /Jump to anything/ }))[0],
     );
-    const dialog = screen.getByRole("dialog", { name: "Jump to anything" });
+    const dialog = screen.getByRole("dialog", { name: /Jump to anything/ });
     await user.type(
       within(dialog).getByRole("textbox", {
         name: "Search NEXUS destinations",
@@ -209,7 +209,7 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "Incidents" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("dialog", { name: "Jump to anything" }),
+      screen.queryByRole("dialog", { name: /Jump to anything/ }),
     ).not.toBeInTheDocument();
   });
 
