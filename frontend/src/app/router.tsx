@@ -11,6 +11,7 @@ import { AuthGate, LoginPage } from "../features/auth";
 import { AIModelsSettings } from "../features/model-management";
 import { AIProvidersSettings } from "../features/model-providers";
 import { ConversationPage } from "../pages/ConversationPage";
+import { HomePage } from "../pages/HomePage";
 import { FilesPage } from "../pages/FilesPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
@@ -33,13 +34,10 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AuthGate />}>
           <Route element={<AppLayout />}>
-            <Route
-              path="/"
-              element={<Navigate to="/conversations" replace />}
-            />
             <Route path="/conversations" element={<ConversationPage />} />
             <Route
               path="/conversations/:conversationId"

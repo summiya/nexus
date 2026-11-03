@@ -73,6 +73,21 @@ describe("App", () => {
     );
   });
 
+  it("shows the public product homepage when unauthenticated", async () => {
+    authMocks.initializeSession.mockResolvedValue("unauthenticated");
+    setAuthStatus("unauthenticated");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: /Every idea.*Every model/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Try the workspace/i }),
+    ).toHaveAttribute("href", "/login");
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("redirects unknown authenticated routes to conversations", async () => {
     window.history.replaceState({}, "", "/does-not-exist");
 
