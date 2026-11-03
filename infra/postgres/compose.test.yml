@@ -1,0 +1,60 @@
+# Standalone disposable topology. No root .env, host data binds, named/external
+# volumes, published ports or production services. Invoke through Make/the script.
+services:
+  postgres:
+    image: ${NEXUS_RF04_POSTGRES_IMAGE:?Use test-image.sh}
+    build:
+      context: .
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus-test-only
+      POSTGRES_DB: nexus
+    volumes:
+      - type: volume
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U nexus -d nexus"]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 1s
+      timeout: 5s
+      retries: 60
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.37.0
+    environment:
+      AZURITE_SKIP_API_VERSION_CHECK: "true"
+    volumes:
+      - type: volume
+        target: /data
+  backend:
+    image: ${NEXUS_RF04_BACKEND_IMAGE:?Use test-image.sh}
+    build:
+      context: ../../backend
+    env_file: ../../.env.example
+    environment:
+      DATABASE_URL: postgresql://nexus:nexus-test-only@postgres:5432/nexus
+      REDIS_URL: redis://redis:6379/0
+      NEXUS_REQUIRE_POSTGRES_TESTS: "true"
+      NEXUS_REQUIRE_AZURITE_TESTS: "true"
+      AZURE_STORAGE_CONNECTION_STRING: &azurite_connection "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;"
+      NEXUS_TEST_AZURITE_CONNECTION_STRING: *azurite_connection
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+  frontend:
+    image: ${NEXUS_RF04_FRONTEND_IMAGE:?Use test-image.sh}
+    build:
+      context: ../../frontend
+      args:
+        VITE_APP_NAME: NEXUS
+        VITE_APP_ENV: test
+        VITE_API_BASE_URL: http://localhost:8000/api/v1

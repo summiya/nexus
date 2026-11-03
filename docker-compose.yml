@@ -95,7 +95,9 @@ services:
       - nexus-network
 
   postgres:
-    image: postgres:16-alpine
+    image: nexus-postgres:16.15-alpine3.24-pgvector0.8.7
+    build:
+      context: ./infra/postgres
     ports:
     - "5433:5432"
     environment:

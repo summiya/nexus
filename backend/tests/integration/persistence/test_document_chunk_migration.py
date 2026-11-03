@@ -46,7 +46,7 @@ def test_chunk_migration_upgrade_downgrade_and_only_required_indexes(migrated_da
     assert {
         tuple(c["column_names"])
         for c in inspector.get_unique_constraints("document_chunks")
-    } == {("document_id", "chunk_index")}
+    } == {("document_id", "chunk_index"), ("id", "organization_id")}
     assert [
         {**column, "type": str(column["type"])}
         for column in inspect(engine).get_columns("documents")

@@ -1,6 +1,7 @@
 """NEXUS SQLAlchemy persistence models."""
 
 from nexus.infrastructure.persistence.models.auth_session import AuthSession
+from nexus.infrastructure.persistence.models.chunk_embedding import ChunkEmbedding
 from nexus.infrastructure.persistence.models.conversation import Conversation
 from nexus.infrastructure.persistence.models.document import Document
 from nexus.infrastructure.persistence.models.document_chunk import (
@@ -28,6 +29,7 @@ from nexus.infrastructure.persistence.models.user_role import UserRole
 
 __all__ = [
     "AuthSession",
+    "ChunkEmbedding",
     "ConfiguredModel",
     "Conversation",
     "Document",
