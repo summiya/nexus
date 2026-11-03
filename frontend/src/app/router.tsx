@@ -35,6 +35,7 @@ export function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/explore" element={<HomePage showForAuthenticated />} />
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AuthGate />}>
           <Route element={<AppLayout />}>

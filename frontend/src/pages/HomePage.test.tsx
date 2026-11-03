@@ -6,10 +6,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { setAuthStatus } from "../features/auth/store";
 import { HomePage } from "./HomePage";
 
-function renderLanding() {
+function renderLanding(showForAuthenticated = false) {
   return render(
     <MemoryRouter>
-      <HomePage />
+      <HomePage showForAuthenticated={showForAuthenticated} />
     </MemoryRouter>,
   );
 }
@@ -35,18 +35,27 @@ describe("NEXUS public homepage", () => {
     expect(screen.getAllByText("Planned").length).toBeGreaterThan(0);
   });
 
+  it("lets signed-in users revisit the public design through /explore", () => {
+    setAuthStatus("authenticated");
+    renderLanding(true);
+
+    expect(
+      screen.getByRole("link", { name: /Open workspace/i }),
+    ).toHaveAttribute("href", "/conversations");
+  });
+
   it("switches preview views and sample models without calling an API", async () => {
     const user = userEvent.setup();
     renderLanding();
 
     const preview = screen.getByLabelText("Interactive NEXUS product preview");
     await user.click(
-      within(preview).getByRole("button", { name: "AI models" }),
+      within(preview).getByRole("button", { name: /AI models/ }),
     );
     await user.click(
       within(preview).getByRole("button", { name: /GPT · example/i }),
     );
-    await user.click(within(preview).getByRole("button", { name: "Chat" }));
+    await user.click(within(preview).getByRole("button", { name: /Chat/ }));
 
     expect(
       within(preview).getByRole("combobox", { name: "Demo AI model" }),

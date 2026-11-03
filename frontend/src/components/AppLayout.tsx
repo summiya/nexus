@@ -29,7 +29,7 @@ export function AppLayout() {
         </div>
 
         <nav className="main-nav" aria-label="Main navigation">
-          <NavLink to="/" end>
+          <NavLink to="/explore" end>
             Home
           </NavLink>
           <NavLink to="/conversations">Conversations</NavLink>

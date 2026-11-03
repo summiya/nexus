@@ -439,10 +439,16 @@ function JourneyExplorer() {
   );
 }
 
-export function HomePage() {
+export function HomePage({
+  showForAuthenticated = false,
+}: {
+  showForAuthenticated?: boolean;
+}) {
   const authStatus = useAuthStore((state) => state.status);
+  const workspaceDestination =
+    authStatus === "authenticated" ? "/conversations" : "/login";
 
-  if (authStatus === "authenticated") {
+  if (authStatus === "authenticated" && !showForAuthenticated) {
     return <Navigate to="/conversations" replace />;
   }
 
@@ -461,10 +467,16 @@ export function HomePage() {
             <a href="#security">Security</a>
           </nav>
           <div className="nx-header-actions">
-            <Link className="nx-header-login" to="/login">
-              Log in
-            </Link>
-            <Link className="nx-button nx-button-primary" to="/login">
+            {authStatus === "authenticated" ? (
+              <Link className="nx-header-login" to="/conversations">
+                My workspace
+              </Link>
+            ) : (
+              <Link className="nx-header-login" to="/login">
+                Log in
+              </Link>
+            )}
+            <Link className="nx-button nx-button-primary" to={workspaceDestination}>
               Open workspace <span aria-hidden="true">↗</span>
             </Link>
           </div>
@@ -493,7 +505,7 @@ export function HomePage() {
               <div className="nx-hero-actions">
                 <Link
                   className="nx-button nx-button-primary nx-button-large"
-                  to="/login"
+                  to={workspaceDestination}
                 >
                   Try the workspace <span aria-hidden="true">↗</span>
                 </Link>
@@ -809,7 +821,7 @@ export function HomePage() {
           </div>
           <Link
             className="nx-button nx-button-primary nx-button-large"
-            to="/login"
+            to={workspaceDestination}
           >
             Enter NEXUS <span aria-hidden="true">↗</span>
           </Link>

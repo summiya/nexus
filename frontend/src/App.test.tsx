@@ -88,6 +88,17 @@ describe("App", () => {
     expect(window.location.pathname).toBe("/");
   });
 
+  it("makes the homepage available to signed-in users through /explore", () => {
+    window.history.replaceState({}, "", "/explore");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("heading", { name: /Every idea.*Every model/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/explore");
+  });
+
   it("redirects unknown authenticated routes to conversations", async () => {
     window.history.replaceState({}, "", "/does-not-exist");
 
