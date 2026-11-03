@@ -186,6 +186,9 @@ assert all(m["annotations"]["org.opencontainers.image.version"] == "16.15-alpine
            for m in platforms.values())
 print("Verified pinned PostgreSQL 16.15 Alpine base: AMD64 and ARM64")
 PY
+    # BuildKit can cache FROM layers without loading the base into the daemon's
+    # image store. A clean CI runner needs it for inspect/run comparisons below.
+    docker pull "$base_image"
     docker build --tag "$custom_image" "$script_dir"
     docker build --tag "$project-backend" "$repo_root/backend"
     local image suffix
