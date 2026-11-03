@@ -476,7 +476,10 @@ export function HomePage({
                 Log in
               </Link>
             )}
-            <Link className="nx-button nx-button-primary" to={workspaceDestination}>
+            <Link
+              className="nx-button nx-button-primary"
+              to={workspaceDestination}
+            >
               Open workspace <span aria-hidden="true">↗</span>
             </Link>
           </div>
