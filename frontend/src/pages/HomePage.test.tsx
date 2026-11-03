@@ -52,10 +52,8 @@ describe("NEXUS public homepage", () => {
     await user.click(
       within(preview).getByRole("button", { name: /AI models/ }),
     );
-    await user.click(
-      within(preview).getByRole("button", { name: /GPT · example/i }),
-    );
-    await user.click(within(preview).getByRole("button", { name: /Chat/ }));
+    await user.click(within(preview).getByRole("button", { name: /^GPT/i }));
+    await user.click(within(preview).getByRole("button", { name: /New chat/ }));
 
     expect(
       within(preview).getByRole("combobox", { name: "Demo AI model" }),
@@ -66,16 +64,14 @@ describe("NEXUS public homepage", () => {
     const user = userEvent.setup();
     renderLanding();
 
-    await user.click(
-      screen.getByRole("button", { name: "Plan a product launch" }),
-    );
+    await user.click(screen.getByRole("button", { name: /Plan a project/ }));
     expect(screen.getByRole("textbox", { name: "Demo message" })).toHaveValue(
-      "Plan a product launch",
+      "Plan a product launch.",
     );
 
     await user.click(screen.getByRole("button", { name: "Send demo message" }));
     expect(
-      screen.getByText(/Claude · example · simulated/),
+      screen.getByText(/Claude Sonnet · simulated response/),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/Model responses are simulated/),
