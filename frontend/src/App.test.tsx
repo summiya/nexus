@@ -151,7 +151,9 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "AI Models" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("You do not have permission to view AI model configuration."),
+      screen.getByText(
+        "You do not have permission to view AI model configuration.",
+      ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByRole("navigation", { name: "Settings sections" }))
