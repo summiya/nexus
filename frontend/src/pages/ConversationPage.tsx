@@ -13,6 +13,42 @@ import {
   useChatModelsQuery,
 } from "../features/conversations";
 
+import "../styles/nexus-chat-experience.css";
+
+const SUGGESTED_PROMPTS = [
+  {
+    id: "plan",
+    icon: "▦",
+    title: "Plan a project",
+    description: "Break an idea into milestones",
+    prompt:
+      "Help me plan a project with goals, milestones, and a delivery checklist.",
+  },
+  {
+    id: "architecture",
+    icon: "⌘",
+    title: "Review architecture",
+    description: "Think through system trade-offs",
+    prompt:
+      "Help me review a software architecture for scalability, reliability, and security.",
+  },
+  {
+    id: "writing",
+    icon: "✧",
+    title: "Draft something",
+    description: "Turn a thought into a clear draft",
+    prompt: "Help me draft a concise professional project proposal.",
+  },
+  {
+    id: "ideas",
+    icon: "◇",
+    title: "Explore an idea",
+    description: "Go from question to direction",
+    prompt:
+      "Let's brainstorm three approaches to my idea and compare the trade-offs.",
+  },
+] as const;
+
 interface FirstMessageOperation {
   id: number;
 }
@@ -41,6 +77,11 @@ function ConversationWorkspace({
     kind: "conversation_creation_failed";
   } | null>(null);
   const [composerRevision, setComposerRevision] = useState(0);
+  const [suggestedPrompt, setSuggestedPrompt] = useState<{
+    revision: number;
+    text: string;
+  } | null>(null);
+  const nextSuggestionRevision = useRef(0);
   const [explicitModelPublicId, setExplicitModelPublicId] = useState<
     string | null
   >(null);
@@ -75,6 +116,7 @@ function ConversationWorkspace({
     setCreationFeedback(null);
     setExplicitModelPublicId(null);
     setComposerRevision((revision) => revision + 1);
+    setSuggestedPrompt(null);
     resetForConversationChange();
   }, [conversationPublicId, resetCreation, resetForConversationChange]);
 
@@ -196,6 +238,7 @@ function ConversationWorkspace({
       key={composerRevision}
       feedback={creationFeedback ?? feedback}
       modelSelector={modelSelector}
+      suggestedPrompt={suggestedPrompt}
       phase={effectivePhase}
       submissionDisabled={modelSubmissionDisabled}
       onStop={stop}
@@ -203,13 +246,71 @@ function ConversationWorkspace({
     />
   );
 
+  const workspaceHeader = (
+    <header className="conversation-workspace-topline">
+      <span className="conversation-workspace-location">
+        <span aria-hidden="true">✧</span> NEXUS
+        <span aria-hidden="true" className="conversation-breadcrumb-separator">
+          /
+        </span>
+        {conversationPublicId === undefined
+          ? "New conversation"
+          : "Conversation"}
+      </span>
+      <span className="conversation-workspace-private">
+        <span aria-hidden="true">◇</span> Organization workspace
+      </span>
+    </header>
+  );
+
   if (conversationPublicId === undefined) {
     return (
       <>
+        {workspaceHeader}
         <div className="conversation-workspace-placeholder">
-          <p className="eyebrow">NEXUS</p>
+          <div className="conversation-welcome-mark" aria-hidden="true">
+            ✧
+          </div>
+          <p className="eyebrow">YOUR INTELLIGENT WORKSPACE</p>
           <h2>Start a new conversation</h2>
-          <p>Choose a conversation from the sidebar or begin a new chat.</p>
+          <p>
+            Think, create and explore with your organization's configured
+            models. Everything starts with a great question.
+          </p>
+          <div
+            className="conversation-suggestion-grid"
+            aria-label="Suggested prompts"
+          >
+            {SUGGESTED_PROMPTS.map((suggestion) => (
+              <button
+                key={suggestion.id}
+                type="button"
+                className="conversation-suggestion-card"
+                onClick={() => {
+                  const revision = nextSuggestionRevision.current + 1;
+                  nextSuggestionRevision.current = revision;
+                  setSuggestedPrompt({ revision, text: suggestion.prompt });
+                }}
+              >
+                <span
+                  className="conversation-suggestion-icon"
+                  aria-hidden="true"
+                >
+                  {suggestion.icon}
+                </span>
+                <span className="conversation-suggestion-text">
+                  <strong>{suggestion.title}</strong>
+                  <small>{suggestion.description}</small>
+                </span>
+                <span
+                  className="conversation-suggestion-arrow"
+                  aria-hidden="true"
+                >
+                  ↗
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="conversation-input-panel">{composer}</div>
       </>
@@ -218,6 +319,7 @@ function ConversationWorkspace({
 
   return (
     <>
+      {workspaceHeader}
       <ConversationMessageHistory
         conversationPublicId={conversationPublicId}
         liveTurn={liveTurn}
