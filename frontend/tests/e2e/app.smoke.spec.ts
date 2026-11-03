@@ -232,6 +232,12 @@ test("configured models and defaults flow into the chat model selector", async (
 
   await page.getByRole("link", { name: "Conversations" }).click();
   await expect(page).toHaveURL(/\/conversations$/);
+  await expect(
+    page.getByRole("complementary", { name: "Workspace sidebar" }),
+  ).toBeVisible();
+  await expect(page.locator(".conversation-sidebar")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "New chat" })).toBeVisible();
+
 
   const modelSelector = page.getByRole("combobox", {
     name: "Model",

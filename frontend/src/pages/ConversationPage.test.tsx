@@ -65,7 +65,6 @@ vi.mock("../features/conversations", async () => {
 
   return {
     ...actual,
-    ConversationSidebar: () => <aside aria-label="Conversation sidebar" />,
     ConversationMessageHistory: ({
       conversationPublicId,
       liveTurn,
@@ -271,7 +270,7 @@ describe("ConversationPage", () => {
     expect(conversationMocks.submit).not.toHaveBeenCalled();
   });
 
-  it("renders selected history and the composer alongside the sidebar", () => {
+  it("renders selected history and the composer without a second sidebar", () => {
     renderPage(`/conversations/${firstConversationId}`);
 
     expect(screen.getByTestId("message-history")).toHaveTextContent(
@@ -279,7 +278,10 @@ describe("ConversationPage", () => {
     );
     expect(conversationMocks.history).toHaveBeenCalledWith(firstConversationId);
     expect(
-      screen.getByRole("complementary", { name: "Conversation sidebar" }),
+      screen.queryByRole("complementary", { name: "Conversation sidebar" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Conversation workspace" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: "Message" }),
@@ -460,13 +462,16 @@ describe("ConversationPage", () => {
   it.each([
     ["loading", "status"],
     ["error", "alert"],
-  ])("keeps the sidebar rendered during a history %s state", (state, role) => {
+  ])("keeps the conversation canvas during a history %s state", (state, role) => {
     conversationMocks.historyState = state;
     renderPage(`/conversations/${firstConversationId}`);
 
     expect(screen.getByRole(role)).toBeInTheDocument();
     expect(
-      screen.getByRole("complementary", { name: "Conversation sidebar" }),
+      screen.queryByRole("complementary", { name: "Conversation sidebar" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Conversation workspace" }),
     ).toBeInTheDocument();
   });
 

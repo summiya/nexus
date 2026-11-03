@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -9,6 +9,7 @@ import {
 
 import { env } from "../config/env";
 import { clearSession } from "../features/auth";
+import { RecentConversationsMenu } from "./dashboard/RecentConversationsMenu";
 import {
   DashboardIcon,
   type DashboardIconName,
@@ -97,13 +98,6 @@ const destinations: readonly Destination[] = [
     terms: "account profile",
   },
   {
-    label: "Usage",
-    path: "/settings/usage",
-    icon: "usage",
-    group: "Account",
-    terms: "token usage billing",
-  },
-  {
     label: "Appearance",
     path: "/settings/preferences",
     icon: "preferences",
@@ -148,12 +142,11 @@ function ActiveNavigation({
             .filter(
               (destination) =>
                 group !== "Account" ||
-                destination.label === "Settings" ||
-                destination.label === "Usage",
+                destination.label === "Settings",
             )
             .map((destination) => (
+              <Fragment key={destination.path}>
               <NavLink
-                key={destination.path}
                 to={destination.path}
                 end={destination.path !== "/conversations"}
                 className={({ isActive }) =>
@@ -177,6 +170,10 @@ function ActiveNavigation({
                   </span>
                 ) : null}
               </NavLink>
+              {destination.path === "/conversations" ? (
+                <RecentConversationsMenu closeSidebar={closeSidebar} />
+              ) : null}
+              </Fragment>
             ))}
         </div>
       ))}
@@ -205,7 +202,13 @@ export function AppLayout() {
   const paletteInputRef = useRef<HTMLInputElement>(null);
 
   const normalizedQuery = paletteQuery.trim().toLocaleLowerCase();
-  const results = destinations.filter(
+  const results = [...destinations, {
+    label: "Usage",
+    path: "/settings/usage",
+    icon: "usage" as const,
+    group: "Account",
+    terms: "token usage billing",
+  }].filter(
     (destination) =>
       normalizedQuery.length === 0 ||
       [destination.label, destination.group, destination.terms ?? ""]

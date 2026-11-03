@@ -822,3 +822,166 @@
     scroll-behavior: auto !important;
   }
 }
+
+
+/* The unified workspace sidebar owns all chat navigation. The five latest
+   conversations fit inside this scroll region, with older items available
+   without opening a second sidebar or browser tab. */
+.nexus-dashboard-shell .nx-dash-recents {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 3px 0 11px;
+  padding: 0 4px 0 19px;
+}
+
+.nexus-dashboard-shell .nx-dash-new-chat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  border: 1px solid rgba(151, 142, 242, 0.3);
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: rgba(105, 103, 222, 0.11);
+  color: #d8d5ff;
+  font-size: 11px;
+  font-weight: 760;
+  text-decoration: none;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.nexus-dashboard-shell .nx-dash-new-chat:hover,
+.nexus-dashboard-shell .nx-dash-new-chat.active {
+  border-color: rgba(176, 165, 255, 0.6);
+  background: rgba(113, 102, 225, 0.24);
+  color: #fff;
+}
+
+.nexus-dashboard-shell .nx-dash-new-chat > span {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.nexus-dashboard-shell .nx-dash-new-chat > svg {
+  margin-left: auto;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: #7e8cae;
+  font-size: 9px;
+  font-weight: 830;
+  letter-spacing: 0.12em;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-heading > span:last-child:not(:first-child) {
+  border-radius: 5px;
+  padding: 2px 5px;
+  background: rgba(173, 171, 244, 0.12);
+  color: #aeb9da;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-scroll {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  max-height: 190px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: #636b9a transparent;
+  scrollbar-width: thin;
+}
+
+.nexus-dashboard-shell .nx-dash-recent-chat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 35px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 8px;
+  color: #a4b2d0;
+  font-size: 11px;
+  line-height: 1.25;
+  text-decoration: none;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.nexus-dashboard-shell .nx-dash-recent-chat:hover,
+.nexus-dashboard-shell .nx-dash-recent-chat.active {
+  border-color: rgba(145, 136, 237, 0.16);
+  background: rgba(134, 121, 239, 0.18);
+  color: #f4f2ff;
+}
+
+.nexus-dashboard-shell .nx-dash-recent-chat-icon {
+  flex: 0 0 auto;
+  color: #8e99cd;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.nexus-dashboard-shell .nx-dash-recent-chat-title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-state {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 8px;
+  color: #96a4c2;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-state > p {
+  color: #c6a4ba;
+  font-size: inherit;
+}
+
+.nexus-dashboard-shell .nx-dash-recents-state > button {
+  justify-self: start;
+  border: 1px solid rgba(144, 150, 214, 0.36);
+  border-radius: 7px;
+  padding: 6px 9px;
+  background: rgba(141, 134, 227, 0.12);
+  color: #d8d4ff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+/* With the history in the persistent sidebar, chat itself has one column. */
+.nexus-dashboard-shell.app-shell-conversations
+  .content-panel-conversations > .conversation-shell {
+  display: flex;
+  grid-template-columns: none;
+  grid-template-rows: none;
+}
+
+.nexus-dashboard-shell.app-shell-conversations .conversation-workspace {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 790px) {
+  .nexus-dashboard-shell .nx-dash-recents {
+    padding-left: 13px;
+    padding-right: 3px;
+  }
+}

@@ -7,7 +7,6 @@ export {
 export { ConversationComposer } from "./ConversationComposer";
 export { ConversationMessageHistory } from "./ConversationMessageHistory";
 export { ConversationModelSelector } from "./ConversationModelSelector";
-export { ConversationSidebar } from "./ConversationSidebar";
 export {
   conversationKeys,
   useConversationMessagesQuery,
