@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { DashboardIcon } from "../../components/dashboard/DashboardIcon";
+
 import { FileDeleteButton } from "./FileDeleteButton";
 import { FileDownloadButton } from "./FileDownloadButton";
 import { FileStatusBadge } from "./FileStatusBadge";
@@ -43,8 +45,13 @@ function FileRow({ file }: { file: FileMetadata }) {
   return (
     <li className="file-library-row">
       <div className="file-library-name">
-        <strong title={file.originalName}>{file.originalName}</strong>
-        <span>{file.mimeType}</span>
+        <span className="nx-file-row-icon" aria-hidden="true">
+          <DashboardIcon name="files" size={19} />
+        </span>
+        <span className="nx-file-name-meta">
+          <strong title={file.originalName}>{file.originalName}</strong>
+          <span>{file.mimeType}</span>
+        </span>
       </div>
       <span className="file-library-size">
         {formatFileSize(file.sizeBytes)}
@@ -73,10 +80,20 @@ function FileRow({ file }: { file: FileMetadata }) {
 
 export function FileLibrary() {
   const [currentCursor, setCurrentCursor] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
   const files = useFilesQuery(currentCursor);
   const page = files.data;
   const items = page?.items ?? [];
+  const normalizedSearch = search.trim().toLocaleLowerCase();
+  const visibleItems = normalizedSearch
+    ? items.filter((file) =>
+        [file.originalName, file.mimeType, file.storageStatus]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(normalizedSearch),
+      )
+    : items;
   const navigating = files.isPlaceholderData;
 
   useEffect(() => {
@@ -126,6 +143,27 @@ export function FileLibrary() {
           </span>
         ) : null}
       </div>
+      <div className="nx-file-library-toolbar">
+        <div className="nx-ui-search-field">
+          <DashboardIcon name="search" size={18} />
+          <label
+            className="nx-ui-visually-hidden"
+            htmlFor="nx-file-library-filter"
+          >
+            Filter loaded files
+          </label>
+          <input
+            id="nx-file-library-filter"
+            aria-label="Filter loaded files"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Filter files on this page..."
+          />
+        </div>
+        <span className="nx-file-library-count">
+          {items.length} loaded on this page
+        </span>
+      </div>
 
       {files.isPending ? (
         <p className="file-library-state" role="status">
@@ -164,6 +202,35 @@ export function FileLibrary() {
         </div>
       ) : (
         <>
+          <div className="nx-file-mini-metrics">
+            <div>
+              <strong>{items.length}</strong>
+              <span>On this page</span>
+            </div>
+            <div>
+              <strong>
+                {
+                  items.filter((file) => file.storageStatus === "available")
+                    .length
+                }
+              </strong>
+              <span>Available</span>
+            </div>
+            <div>
+              <strong>
+                {
+                  items.filter((file) => file.storageStatus === "pending")
+                    .length
+                }
+              </strong>
+              <span>Pending verification</span>
+            </div>
+          </div>
+          {visibleItems.length === 0 ? (
+            <p className="nx-file-no-matches">
+              No matching files on this page.
+            </p>
+          ) : null}
           <div className="file-library-column-headings" aria-hidden="true">
             <span>File</span>
             <span>Size</span>
@@ -172,7 +239,7 @@ export function FileLibrary() {
             <span>Action</span>
           </div>
           <ul className="file-library-list">
-            {items.map((file) => (
+            {visibleItems.map((file) => (
               <FileRow key={file.publicId} file={file} />
             ))}
           </ul>

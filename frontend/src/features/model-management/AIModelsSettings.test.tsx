@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const providerApi = vi.hoisted(() => ({
@@ -67,7 +68,9 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <AIModelsSettings />
+      <MemoryRouter>
+        <AIModelsSettings />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }

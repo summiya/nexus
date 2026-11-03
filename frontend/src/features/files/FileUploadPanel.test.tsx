@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -79,6 +79,24 @@ describe("FileUploadPanel", () => {
     expect(hookMocks.reset).toHaveBeenCalledOnce();
 
     await user.click(screen.getByRole("button", { name: "Upload" }));
+    expect(hookMocks.startUpload).toHaveBeenCalledWith(file);
+  });
+
+  it("accepts a dropped file through the existing upload hook", async () => {
+    const user = userEvent.setup();
+    render(<FileUploadPanel />);
+    const file = fileWithSize(1_024);
+    const dropZone = screen
+      .getByText("Or drop a file into this area to select it.")
+      .closest(".nx-upload-zone");
+    expect(dropZone).not.toBeNull();
+
+    fireEvent.drop(dropZone as HTMLElement, {
+      dataTransfer: { files: { item: () => file } },
+    });
+    expect(screen.getByText("quarterly-report.pdf")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Upload" }));
+
     expect(hookMocks.startUpload).toHaveBeenCalledWith(file);
   });
 

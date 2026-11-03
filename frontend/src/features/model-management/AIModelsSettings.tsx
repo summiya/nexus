@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 import { ConfiguredModelCard } from "./ConfiguredModelCard";
 import {
   isProviderVisiblyReady,
@@ -114,6 +116,12 @@ export function AIModelsSettings() {
           Register provider models and choose organization defaults. Runtime
           requests revalidate model and provider eligibility.
         </p>
+        <Link
+          className="nx-ui-provider-models-link"
+          to="/settings/ai-providers"
+        >
+          ← Back to AI Providers
+        </Link>
       </header>
 
       <ModelDefaultsPanel

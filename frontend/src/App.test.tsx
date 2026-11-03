@@ -112,19 +112,19 @@ describe("App", () => {
     );
   });
 
-  it("redirects the settings index to the canonical AI Providers route", async () => {
+  it("redirects the settings index to the Profile section", async () => {
     window.history.replaceState({}, "", "/settings?tab=profile#security");
 
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Organization settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("link", { name: "AI Providers" }),
+      await screen.findByRole("link", { name: "Profile" }),
     ).toHaveAttribute("aria-current", "page");
     await waitFor(() =>
-      expect(window.location.pathname).toBe("/settings/ai-providers"),
+      expect(window.location.pathname).toBe("/settings/profile"),
     );
     expect(window.location.search).toBe("?tab=profile");
     expect(window.location.hash).toBe("#security");
@@ -150,10 +150,82 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "AI Models" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "AI Models" })).toHaveAttribute(
-      "aria-current",
-      "page",
+    expect(
+      screen.getByText(
+        "You do not have permission to view AI model configuration.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Settings sections" }),
+      ).queryByRole("link", { name: "AI Models" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a persistent sidebar and removes the old horizontal navigation", async () => {
+    window.history.replaceState({}, "", "/workspace");
+    const { container } = render(<App />);
+
+    const navigation = await screen.findByRole("navigation", {
+      name: "Main navigation",
+    });
+    expect(
+      within(navigation).getByRole("link", { name: /Knowledge bases/ }),
+    ).toHaveAttribute("href", "/knowledge-bases");
+    expect(
+      within(navigation).getByRole("link", { name: /MCP & tools/ }),
+    ).toHaveAttribute("href", "/tools");
+    expect(container.querySelector(".top-bar")).toBeNull();
+    expect(
+      (await screen.findAllByRole("button", { name: /Jump to anything/ }))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Open profile menu" }),
+    ).toHaveTextContent("S");
+  });
+
+  it("searches the command palette and opens preview destinations", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/workspace");
+    render(<App />);
+
+    await user.click(
+      (await screen.findAllByRole("button", { name: /Jump to anything/ }))[0],
     );
+    const dialog = screen.getByRole("dialog", { name: /Jump to anything/ });
+    await user.type(
+      within(dialog).getByRole("textbox", {
+        name: "Search NEXUS destinations",
+      }),
+      "incident",
+    );
+    await user.click(
+      within(dialog).getByRole("option", { name: /Incidents/i }),
+    );
+
+    expect(window.location.pathname).toBe("/incidents");
+    expect(
+      await screen.findByRole("heading", { name: "Incidents" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: /Jump to anything/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens Profile and Usage from the S account menu", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/workspace");
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Open profile menu" }),
+    );
+    await user.click(screen.getByRole("menuitem", { name: "Usage" }));
+
+    expect(window.location.pathname).toBe("/settings/usage");
+    expect(screen.getByRole("heading", { name: "Usage" })).toBeInTheDocument();
+    expect(screen.getByText("No token metering connected")).toBeInTheDocument();
   });
 
   it("renders the Files route inside the authenticated application shell", () => {
@@ -170,6 +242,81 @@ describe("App", () => {
         screen.getByRole("navigation", { name: "Main navigation" }),
       ).getByRole("link", { name: "Files" }),
     ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows Usage only within Settings, not in the global sidebar", async () => {
+    window.history.replaceState({}, "", "/settings/usage");
+    render(<App />);
+
+    const mainNavigation = await screen.findByRole("navigation", {
+      name: "Main navigation",
+    });
+    expect(
+      within(mainNavigation).queryByRole("link", { name: "Usage" }),
+    ).not.toBeInTheDocument();
+
+    const settingsNavigation = screen.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    expect(
+      within(settingsNavigation).getByRole("link", { name: "Usage" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens recent chats in the same workspace with no second sidebar", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/conversations");
+    const recentChatId = "44444444-4444-4444-8444-444444444444";
+
+    vi.mocked(globalThis.fetch).mockImplementation((input) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.endsWith("/conversations")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  public_id: recentChatId,
+                  title: "My latest design discussion",
+                  created_at: "2026-11-03T12:00:00Z",
+                  updated_at: "2026-11-04T00:00:00Z",
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(conversationListResponse());
+    });
+
+    const { container } = render(<App />);
+
+    const recentList = await screen.findByRole("navigation", {
+      name: "Recent chat list",
+    });
+    const recentLink = within(recentList).getByRole("link", {
+      name: "My latest design discussion",
+    });
+    expect(recentLink).not.toHaveAttribute("target");
+    await user.click(recentLink);
+
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/conversations/" + recentChatId),
+    );
+    expect(
+      screen.getByRole("complementary", { name: "Workspace sidebar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("complementary", { name: "Conversation sidebar" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Conversation workspace" }),
+    ).toBeInTheDocument();
+    expect(container.querySelectorAll(".nx-dash-sidebar")).toHaveLength(1);
   });
 
   it("keeps the Files route behind the existing authentication gate", async () => {

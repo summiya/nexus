@@ -5,7 +5,6 @@ import {
   ConversationComposer,
   ConversationMessageHistory,
   ConversationModelSelector,
-  ConversationSidebar,
   type CreatedConversation,
   type SubmissionResult,
   useCreateConversationMutation,
@@ -334,8 +333,6 @@ export function ConversationPage() {
 
   return (
     <section className="conversation-shell">
-      <ConversationSidebar />
-
       <section
         className="conversation-workspace"
         aria-label="Conversation workspace"
