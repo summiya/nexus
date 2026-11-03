@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 
 import { useConversationsQuery } from "./queries";
@@ -12,15 +12,12 @@ export function ConversationSidebar() {
   const items = conversations.data ?? [];
   const [search, setSearch] = useState("");
 
-  const filteredItems = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase();
-    if (!query) {
-      return items;
-    }
-    return items.filter((item) =>
-      conversationTitle(item.title).toLocaleLowerCase().includes(query),
-    );
-  }, [items, search]);
+  const query = search.trim().toLocaleLowerCase();
+  const filteredItems = query
+    ? items.filter((item) =>
+        conversationTitle(item.title).toLocaleLowerCase().includes(query),
+      )
+    : items;
 
   return (
     <aside
