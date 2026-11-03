@@ -88,7 +88,9 @@ describe("Workspace dashboard design", () => {
     expect(
       screen.getByRole("heading", { name: "Incidents" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Latency investigation").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Latency investigation").length).toBeGreaterThan(
+      0,
+    );
 
     rerender(
       <MemoryRouter>

@@ -156,8 +156,9 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole("navigation", { name: "Settings sections" }))
-        .queryByRole("link", { name: "AI Models" }),
+      within(
+        screen.getByRole("navigation", { name: "Settings sections" }),
+      ).queryByRole("link", { name: "AI Models" }),
     ).not.toBeInTheDocument();
   });
 
@@ -217,7 +218,9 @@ describe("App", () => {
     window.history.replaceState({}, "", "/workspace");
     render(<App />);
 
-    await user.click(await screen.findByRole("button", { name: "Open profile menu" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Open profile menu" }),
+    );
     await user.click(screen.getByRole("menuitem", { name: "Usage" }));
 
     expect(window.location.pathname).toBe("/settings/usage");
