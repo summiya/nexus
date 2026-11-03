@@ -161,23 +161,23 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows a persistent sidebar and removes the old horizontal navigation", () => {
+  it("shows a persistent sidebar and removes the old horizontal navigation", async () => {
     window.history.replaceState({}, "", "/workspace");
     const { container } = render(<App />);
 
+    const navigation = await screen.findByRole("navigation", {
+      name: "Main navigation",
+    });
     expect(
-      within(
-        screen.getByRole("navigation", { name: "Main navigation" }),
-      ).getByRole("link", { name: "Knowledge bases" }),
+      within(navigation).getByRole("link", { name: "Knowledge bases" }),
     ).toHaveAttribute("href", "/knowledge-bases");
     expect(
-      within(
-        screen.getByRole("navigation", { name: "Main navigation" }),
-      ).getByRole("link", { name: "MCP & tools" }),
+      within(navigation).getByRole("link", { name: "MCP & tools" }),
     ).toHaveAttribute("href", "/tools");
     expect(container.querySelector(".top-bar")).toBeNull();
     expect(
-      screen.getAllByRole("button", { name: "Jump to anything" }).length,
+      (await screen.findAllByRole("button", { name: "Jump to anything" }))
+        .length,
     ).toBeGreaterThan(0);
     expect(
       screen.getByRole("button", { name: "Open profile menu" }),
@@ -190,7 +190,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(
-      screen.getAllByRole("button", { name: "Jump to anything" })[0],
+      (await screen.findAllByRole("button", { name: "Jump to anything" }))[0],
     );
     const dialog = screen.getByRole("dialog", { name: "Jump to anything" });
     await user.type(
@@ -205,7 +205,7 @@ describe("App", () => {
 
     expect(window.location.pathname).toBe("/incidents");
     expect(
-      screen.getByRole("heading", { name: "Incidents" }),
+      await screen.findByRole("heading", { name: "Incidents" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Jump to anything" }),
@@ -217,7 +217,7 @@ describe("App", () => {
     window.history.replaceState({}, "", "/workspace");
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Open profile menu" }));
+    await user.click(await screen.findByRole("button", { name: "Open profile menu" }));
     await user.click(screen.getByRole("menuitem", { name: "Usage" }));
 
     expect(window.location.pathname).toBe("/settings/usage");
