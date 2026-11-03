@@ -145,6 +145,40 @@ describe("ConversationSidebar", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
+  it("filters recent conversations locally without changing the backend ordering", async () => {
+    const user = userEvent.setup();
+    queryMocks.useConversationsQuery.mockReturnValue(
+      queryResult({ data: [firstConversation, secondConversation, untitledConversation] }),
+    );
+    renderSidebar();
+
+    const search = screen.getByRole("searchbox", { name: "Search conversations" });
+    await user.type(search, "release");
+
+    const navigation = screen.getByRole("navigation", { name: "Conversation list" });
+    expect(within(navigation).getAllByRole("link")).toHaveLength(1);
+    expect(within(navigation).getByRole("link", { name: "Release planning" })).toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "Architecture notes" })).not.toBeInTheDocument();
+
+    await user.clear(search);
+    expect(
+      within(screen.getByRole("navigation", { name: "Conversation list" }))
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["Architecture notes", "Release planning", "New conversation"]);
+  });
+
+  it("shows a safe no-results state when the search matches nothing", async () => {
+    const user = userEvent.setup();
+    queryMocks.useConversationsQuery.mockReturnValue(
+      queryResult({ data: [firstConversation] }),
+    );
+    renderSidebar();
+    await user.type(screen.getByRole("searchbox", { name: "Search conversations" }), "not found");
+    expect(screen.getByText("No conversations match your search.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New chat" })).toBeInTheDocument();
+  });
+
   it("navigates to the selected Conversation", async () => {
     const user = userEvent.setup();
     queryMocks.useConversationsQuery.mockReturnValue(

@@ -2,6 +2,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
+  useEffect,
   useState,
 } from "react";
 
@@ -19,6 +20,7 @@ export type ConversationComposerFeedback =
 interface ConversationComposerProps {
   feedback: ConversationComposerFeedback | null;
   modelSelector?: ReactNode;
+  suggestedPrompt?: { revision: number; text: string } | null;
   phase: ConversationComposerPhase;
   onStop?: () => void;
   onSubmit: (content: string) => Promise<SubmissionResult>;
@@ -40,16 +42,26 @@ const feedbackMessages: Record<ConversationComposerFeedback["kind"], string> = {
 export function ConversationComposer({
   feedback,
   modelSelector,
+  suggestedPrompt = null,
   phase,
   onStop,
   onSubmit,
   submissionDisabled = false,
 }: ConversationComposerProps) {
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (suggestedPrompt !== null) {
+      setDraft(suggestedPrompt.text);
+    }
+  }, [suggestedPrompt]);
+
   const active = phase !== "idle";
   const stoppable = phase === "submitting" || phase === "generating";
   const normalizedDraft = draft.trim();
-  const placeholder = stoppable ? "Generating message…" : "Message Nexus";
+  const placeholder = stoppable
+    ? "Generating message…"
+    : "Ask NEXUS anything...";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -127,6 +139,10 @@ export function ConversationComposer({
             </button>
           )}
         </div>
+      </div>
+      <div className="conversation-composer-hint" aria-hidden="true">
+        <span>✧ Powered by your organization's configured AI models</span>
+        <span>Enter to send · Shift + Enter for a new line</span>
       </div>
       {phase === "creating" ? (
         <p className="conversation-submission-status" role="status">

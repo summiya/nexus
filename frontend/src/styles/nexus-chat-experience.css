@@ -1,0 +1,1156 @@
+/* Authenticated NEXUS chat experience.
+   The stylesheet is scoped to the conversation shell so Files, Settings,
+   authentication, and the public marketing site remain unchanged. */
+
+.app-shell.app-shell-conversations {
+  --chat-ink: #263350;
+  --chat-muted: #7a859e;
+  --chat-line: #e3e7f3;
+  --chat-accent: #6556e5;
+  display: flex;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f8f9ff;
+  color: var(--chat-ink);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app-shell-conversations * {
+  box-sizing: border-box;
+}
+
+.app-shell-conversations a:focus-visible,
+.app-shell-conversations button:focus-visible,
+.app-shell-conversations input:focus-visible,
+.app-shell-conversations select:focus-visible,
+.app-shell-conversations textarea:focus-visible {
+  outline: 2px solid #8c7bf6;
+  outline-offset: 2px;
+}
+
+.app-shell-conversations .top-bar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 72px;
+  flex: 0 0 auto;
+  border: 0;
+  border-bottom: 1px solid #e5e8f2;
+  border-radius: 0;
+  padding: 10px 28px;
+  background: #ffffff;
+  box-shadow: 0 2px 16px rgba(33, 44, 103, 0.045);
+}
+
+.app-shell-conversations .brand-mark {
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #3d77f4, #8c65ef);
+  box-shadow: 0 7px 17px rgba(93, 78, 222, 0.21);
+  color: white;
+  font-size: 22px;
+  font-weight: 850;
+  letter-spacing: -0.08em;
+  padding-right: 3px;
+}
+
+.app-shell-conversations .brand-copy {
+  gap: 3px;
+}
+
+.app-shell-conversations .brand-copy strong {
+  color: #1c2947;
+  font-size: 17px;
+  font-weight: 860;
+  line-height: 1;
+  letter-spacing: 0.12em;
+}
+
+.app-shell-conversations .brand-copy small {
+  color: #9aa3b8;
+  font-size: 10px;
+  font-weight: 690;
+  letter-spacing: 0.02em;
+}
+
+.app-shell-conversations .main-nav {
+  align-items: center;
+  gap: 6px;
+}
+
+.app-shell-conversations .main-nav a,
+.app-shell-conversations .main-nav button {
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 15px;
+  background: transparent;
+  color: #6c7692;
+  font-size: 12px;
+  font-weight: 710;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.app-shell-conversations .main-nav a:hover,
+.app-shell-conversations .main-nav a.active,
+.app-shell-conversations .main-nav button:hover {
+  background: #f1efff;
+  color: #5d51d1;
+}
+
+.app-shell-conversations .main-nav a.active {
+  box-shadow: inset 0 0 0 1px #e4e0ff;
+}
+
+.app-shell-conversations .main-nav button:last-child {
+  border: 1px solid #e3e6f2;
+  margin-left: 8px;
+  background: #fafbff;
+}
+
+.app-shell-conversations .content-panel.content-panel-conversations {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: #ffffff;
+}
+
+.app-shell-conversations .content-panel-conversations > .conversation-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 272px minmax(0, 1fr);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.app-shell-conversations .conversation-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #272e57;
+  background:
+    radial-gradient(ellipse at -25% 105%, rgba(115, 91, 230, 0.2), transparent 54%),
+    linear-gradient(170deg, #141d3c, #1c2348);
+  color: #e7eafa;
+}
+
+.app-shell-conversations .conversation-sidebar-header {
+  display: grid;
+  gap: 14px;
+  border-bottom: 1px solid rgba(205, 211, 255, 0.09);
+  padding: 28px 18px 21px;
+}
+
+.app-shell-conversations .conversation-sidebar-eyebrow,
+.app-shell-conversations .conversation-list-heading {
+  color: #8290bc;
+  font-size: 10px;
+  font-weight: 840;
+  letter-spacing: 0.12em;
+}
+
+.app-shell-conversations .conversation-sidebar-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.app-shell-conversations .conversation-sidebar-header h1 {
+  margin: 0;
+  color: #f2f4ff;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+}
+
+.app-shell-conversations .conversation-sidebar-title-icon {
+  display: grid;
+  width: 33px;
+  height: 33px;
+  place-items: center;
+  border: 1px solid rgba(193, 182, 255, 0.21);
+  border-radius: 10px;
+  background: rgba(137, 114, 242, 0.12);
+  color: #b4a7ff;
+  font-size: 19px;
+}
+
+.app-shell-conversations .new-chat-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 43px;
+  border: 1px solid rgba(169, 150, 255, 0.31);
+  border-radius: 11px;
+  padding: 10px 13px;
+  background: linear-gradient(110deg, #5264e9, #7c5fe9);
+  box-shadow: 0 11px 22px rgba(13, 15, 54, 0.24);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 780;
+  text-align: left;
+  text-decoration: none;
+}
+
+.app-shell-conversations .new-chat-link:hover,
+.app-shell-conversations .new-chat-link.active {
+  border-color: rgba(190, 176, 255, 0.62);
+  background: linear-gradient(110deg, #5269f3, #825ff0);
+  color: white;
+}
+
+.app-shell-conversations .new-chat-link > span:first-child {
+  font-size: 20px;
+  line-height: 0.5;
+}
+
+.app-shell-conversations .conversation-new-chat-arrow {
+  margin-left: auto;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.app-shell-conversations .conversation-search {
+  display: flex;
+  align-items: center;
+  min-height: 39px;
+  border: 1px solid rgba(158, 165, 213, 0.19);
+  border-radius: 9px;
+  padding: 0 11px;
+  background: rgba(11, 16, 40, 0.29);
+}
+
+.app-shell-conversations .conversation-search:focus-within {
+  border-color: rgba(171, 159, 255, 0.68);
+}
+
+.app-shell-conversations .conversation-search label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.app-shell-conversations .conversation-search-icon {
+  color: #94a0c7;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.app-shell-conversations .conversation-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 9px 0 9px 6px;
+  background: transparent;
+  color: #f2f3ff;
+  font-size: 11px;
+}
+
+.app-shell-conversations .conversation-search input::placeholder {
+  color: #7f8cac;
+}
+
+.app-shell-conversations .conversation-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-shell-conversations .conversation-sidebar-content {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+  overflow-y: auto;
+  padding: 19px 13px;
+  scrollbar-color: #4d5787 transparent;
+  scrollbar-width: thin;
+}
+
+.app-shell-conversations .conversation-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 0 7px;
+}
+
+.app-shell-conversations .conversation-list-heading > span:last-child:not(:first-child) {
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(188, 182, 248, 0.12);
+  color: #bcc4e6;
+  font-size: 10px;
+}
+
+.app-shell-conversations .conversation-list {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+}
+
+.app-shell-conversations .conversation-list-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 43px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 9px;
+  color: #aebada;
+  font-size: 12px;
+  text-decoration: none;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.app-shell-conversations .conversation-list-link:hover,
+.app-shell-conversations .conversation-list-link.active {
+  border-color: rgba(178, 167, 252, 0.12);
+  background: rgba(152, 133, 248, 0.14);
+  color: #f1f2ff;
+}
+
+.app-shell-conversations .conversation-list-symbol {
+  flex: 0 0 auto;
+  color: #a8a3e5;
+  font-size: 17px;
+}
+
+.app-shell-conversations .conversation-list-symbol::before {
+  content: "◫";
+}
+
+.app-shell-conversations .conversation-list-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell-conversations .conversation-list-status {
+  padding: 8px;
+  color: #94a1c6;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.app-shell-conversations .conversation-list-error {
+  padding: 7px;
+}
+
+.app-shell-conversations .conversation-list-error p {
+  color: #f0a5b4;
+  font-size: 12px;
+}
+
+.app-shell-conversations .conversation-sidebar-shortcuts {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid rgba(205, 211, 255, 0.1);
+  padding: 18px 13px 12px;
+}
+
+.app-shell-conversations .conversation-sidebar-shortcuts nav {
+  display: grid;
+  gap: 3px;
+}
+
+.app-shell-conversations .conversation-sidebar-shortcuts nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 9px;
+  padding: 10px;
+  color: #aebada;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.app-shell-conversations .conversation-sidebar-shortcuts nav a:hover {
+  background: rgba(152, 133, 248, 0.14);
+  color: white;
+}
+
+.app-shell-conversations .conversation-sidebar-shortcuts nav a > span:first-child {
+  color: #9d9ce5;
+  font-size: 18px;
+}
+
+.app-shell-conversations .conversation-shortcut-arrow {
+  margin-left: auto;
+  color: #707eaa;
+}
+
+.app-shell-conversations .conversation-sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid rgba(205, 211, 255, 0.11);
+  margin-top: 9px;
+  padding: 16px 8px 2px;
+}
+
+.app-shell-conversations .conversation-org-avatar {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(193, 182, 255, 0.22);
+  border-radius: 11px;
+  background: rgba(137, 114, 242, 0.2);
+  color: #ded6ff;
+  font-size: 16px;
+  font-weight: 830;
+}
+
+.app-shell-conversations .conversation-sidebar-footer > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.app-shell-conversations .conversation-sidebar-footer strong {
+  color: #edf0fc;
+  font-size: 11px;
+}
+
+.app-shell-conversations .conversation-sidebar-footer small {
+  color: #8290b6;
+  font-size: 10px;
+}
+
+.app-shell-conversations .conversation-sidebar-footer > span:last-child {
+  color: #968fda;
+}
+
+.app-shell-conversations .conversation-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse 640px 330px at 60% 30%, rgba(241, 241, 255, 0.53), transparent),
+    #ffffff;
+}
+
+.app-shell-conversations .conversation-workspace-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 61px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid #edf0f7;
+  padding: 12px 32px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.app-shell-conversations .conversation-workspace-location {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: #56627f;
+  font-size: 12px;
+  font-weight: 790;
+}
+
+.app-shell-conversations .conversation-workspace-location > span:first-child {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 8px;
+  background: #efeaff;
+  color: #6d5bd8;
+  font-size: 16px;
+}
+
+.app-shell-conversations .conversation-breadcrumb-separator {
+  color: #c5c8d8;
+}
+
+.app-shell-conversations .conversation-workspace-private {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #e1dffc;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: #f8f7ff;
+  color: #7e74b2;
+  font-size: 10px;
+  font-weight: 730;
+  white-space: nowrap;
+}
+
+.app-shell-conversations .conversation-workspace-private > span {
+  font-size: 15px;
+}
+
+.app-shell-conversations .conversation-workspace-placeholder {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 13px;
+  overflow-y: auto;
+  padding: 27px 24px;
+  text-align: center;
+}
+
+.app-shell-conversations .conversation-welcome-mark {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #e2dbff;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #eff2ff, #f2edff);
+  box-shadow: 0 12px 32px rgba(101, 89, 200, 0.12);
+  color: #7464df;
+  font-size: 35px;
+  line-height: 1;
+}
+
+.app-shell-conversations .conversation-workspace-placeholder .eyebrow {
+  margin: 0;
+  color: #7867dd;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.15em;
+}
+
+.app-shell-conversations .conversation-workspace-placeholder h2 {
+  margin: 0;
+  color: #202c49;
+  font-size: clamp(29px, 3vw, 45px);
+  font-weight: 850;
+  line-height: 1.1;
+  letter-spacing: -0.055em;
+}
+
+.app-shell-conversations .conversation-workspace-placeholder > p:not(.eyebrow) {
+  max-width: 540px;
+  margin: 0 0 10px;
+  color: #8590a9;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.app-shell-conversations .conversation-suggestion-grid {
+  display: grid;
+  width: min(100%, 670px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 9px 0 0;
+}
+
+.app-shell-conversations .conversation-suggestion-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 83px;
+  border: 1px solid #e3e7f3;
+  border-radius: 14px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 23px rgba(52, 60, 117, 0.045);
+  color: #303d5e;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.app-shell-conversations .conversation-suggestion-card:hover {
+  transform: translateY(-3px);
+  border-color: #c0b6f8;
+  box-shadow: 0 15px 30px rgba(52, 60, 117, 0.09);
+}
+
+.app-shell-conversations .conversation-suggestion-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #f0eeff;
+  color: #6f60d9;
+  font-size: 23px;
+}
+
+.app-shell-conversations .conversation-suggestion-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.app-shell-conversations .conversation-suggestion-text strong {
+  color: #303b58;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.app-shell-conversations .conversation-suggestion-text small {
+  color: #909bb1;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.app-shell-conversations .conversation-suggestion-arrow {
+  color: #a29acc;
+  font-size: 17px;
+}
+
+.app-shell-conversations .conversation-input-panel {
+  min-height: 0;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 7px 26px 15px;
+  background: #ffffff;
+}
+
+.app-shell-conversations .conversation-composer {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding: 0;
+}
+
+.app-shell-conversations .conversation-composer > label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.app-shell-conversations .conversation-composer-controls {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid #d9dff1;
+  border-radius: 17px;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 13px 34px rgba(53, 57, 112, 0.075);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.app-shell-conversations .conversation-composer-controls:focus-within {
+  border-color: #a59cf1;
+  box-shadow: 0 14px 34px rgba(104, 88, 225, 0.11);
+}
+
+.app-shell-conversations .conversation-message-input {
+  display: block;
+  width: 100%;
+  min-height: 55px;
+  max-height: 140px;
+  border: 0;
+  border-radius: 0;
+  padding: 1px 4px;
+  background: transparent;
+  color: #34405d;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.app-shell-conversations .conversation-message-input::placeholder {
+  color: #a0a9bc;
+}
+
+.app-shell-conversations .conversation-message-input:focus-visible {
+  outline: none;
+}
+
+.app-shell-conversations .conversation-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 1px;
+}
+
+.app-shell-conversations .conversation-model-selector {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-shell-conversations .conversation-model-selector::before {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  background: #f2f0ff;
+  color: #6e5fe0;
+  font-size: 18px;
+  content: "◈";
+}
+
+.app-shell-conversations .conversation-model-select {
+  width: auto;
+  min-width: min(200px, 46vw);
+  max-width: min(290px, 55vw);
+  border: 1px solid #e0dff4;
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #f7f6ff;
+  color: #574cc0;
+  color-scheme: light;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.app-shell-conversations .conversation-model-selector [role="status"],
+.app-shell-conversations .conversation-model-state {
+  color: #7d88a3;
+  font-size: 11px;
+}
+
+.app-shell-conversations .conversation-model-selector [role="alert"] p {
+  color: #bd3e57;
+}
+
+.app-shell-conversations .conversation-send-button.primary-button {
+  display: inline-flex;
+  width: auto;
+  min-width: 98px;
+  min-height: 39px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 18px;
+  background: linear-gradient(110deg, #5067f0, #795ee8);
+  box-shadow: 0 6px 14px rgba(87, 75, 221, 0.18);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 790;
+  cursor: pointer;
+}
+
+.app-shell-conversations .conversation-send-button.primary-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.app-shell-conversations .conversation-send-button.primary-button:disabled {
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.5;
+}
+
+.app-shell-conversations .conversation-composer-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 7px;
+  color: #98a1b5;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.app-shell-conversations .conversation-submission-status,
+.app-shell-conversations .conversation-submission-feedback {
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.app-shell-conversations .conversation-submission-status {
+  color: #7a86a0;
+}
+
+.app-shell-conversations .conversation-submission-feedback {
+  color: #ba3853;
+}
+
+.app-shell-conversations .conversation-message-history {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: clamp(22px, 4vw, 46px) 26px;
+  background: #ffffff;
+  scrollbar-color: #ced2e7 transparent;
+  scrollbar-width: thin;
+}
+
+.app-shell-conversations .conversation-message-list {
+  display: grid;
+  gap: 26px;
+  width: min(100%, 800px);
+  margin: 0 auto;
+}
+
+.app-shell-conversations .conversation-message article {
+  display: grid;
+  gap: 10px;
+  width: fit-content;
+  max-width: min(90%, 700px);
+  border: 1px solid #eceefa;
+  border-radius: 15px;
+  padding: 16px 19px;
+  background: #f8f9ff;
+  color: #364360;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.app-shell-conversations .conversation-message-user article {
+  border-color: #e0ddff;
+  background: linear-gradient(130deg, #efedff, #f8f8ff);
+}
+
+.app-shell-conversations .conversation-message-assistant article {
+  border-color: transparent;
+  background: #ffffff;
+}
+
+.app-shell-conversations .conversation-message-system article {
+  width: 100%;
+  max-width: 100%;
+  border: 1px dashed #e0e5f3;
+  background: #fbfbff;
+}
+
+.app-shell-conversations .conversation-message-role {
+  color: #6454d3;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.app-shell-conversations .conversation-message-system .conversation-message-role,
+.app-shell-conversations .conversation-message-system .conversation-message-content {
+  color: #8792a8;
+}
+
+.app-shell-conversations .conversation-generation-status {
+  color: #7c86a0;
+  font-size: 12px;
+}
+
+.app-shell-conversations .conversation-generation-status-failed,
+.app-shell-conversations .conversation-history-error p {
+  color: #bf3b5b;
+}
+
+.app-shell-conversations .conversation-history-state {
+  color: #8491a9;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .app-shell-conversations .content-panel-conversations > .conversation-shell {
+    grid-template-columns: 236px minmax(0, 1fr);
+  }
+
+  .app-shell-conversations .top-bar {
+    padding: 9px 18px;
+  }
+
+  .app-shell-conversations .main-nav a,
+  .app-shell-conversations .main-nav button {
+    padding: 9px 11px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-grid {
+    gap: 9px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-card {
+    padding: 11px;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell-conversations .top-bar {
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 10px 15px 8px;
+  }
+
+  .app-shell-conversations .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 18px;
+  }
+
+  .app-shell-conversations .brand-copy strong {
+    font-size: 14px;
+  }
+
+  .app-shell-conversations .brand-copy small {
+    font-size: 9px;
+  }
+
+  .app-shell-conversations .main-nav {
+    width: 100%;
+    justify-content: space-between;
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .app-shell-conversations .main-nav a,
+  .app-shell-conversations .main-nav button {
+    padding: 8px 9px;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .app-shell-conversations .content-panel-conversations > .conversation-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .app-shell-conversations .conversation-sidebar {
+    max-height: 219px;
+    border: 0;
+    border-bottom: 1px solid #262d54;
+  }
+
+  .app-shell-conversations .conversation-sidebar-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 11px;
+    padding: 10px 13px 8px;
+  }
+
+  .app-shell-conversations .conversation-sidebar-title-row {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .app-shell-conversations .conversation-sidebar-eyebrow,
+  .app-shell-conversations .conversation-sidebar-title-icon,
+  .app-shell-conversations .conversation-sidebar-shortcuts {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-sidebar-title-row h1 {
+    font-size: 14px;
+  }
+
+  .app-shell-conversations .new-chat-link {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 31px;
+    padding: 7px 9px;
+    font-size: 10px;
+  }
+
+  .app-shell-conversations .conversation-search {
+    grid-column: 1 / -1;
+    max-width: 100%;
+    min-height: 30px;
+  }
+
+  .app-shell-conversations .conversation-search input {
+    padding: 6px 0 6px 5px;
+    font-size: 10px;
+  }
+
+  .app-shell-conversations .conversation-sidebar-content {
+    display: flex;
+    align-items: center;
+    min-height: 0;
+    flex: 1;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 7px 13px 10px;
+  }
+
+  .app-shell-conversations .conversation-sidebar-content > .conversation-list-heading {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-sidebar-content nav,
+  .app-shell-conversations .conversation-list {
+    min-width: 0;
+  }
+
+  .app-shell-conversations .conversation-list {
+    display: flex;
+    gap: 5px;
+  }
+
+  .app-shell-conversations .conversation-list li {
+    flex: 0 0 auto;
+  }
+
+  .app-shell-conversations .conversation-list-link {
+    max-width: 175px;
+    min-height: 34px;
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+
+  .app-shell-conversations .conversation-workspace-topline {
+    min-height: 49px;
+    padding: 8px 14px;
+  }
+
+  .app-shell-conversations .conversation-workspace-private {
+    font-size: 9px;
+  }
+
+  .app-shell-conversations .conversation-workspace-placeholder {
+    padding: 18px 13px;
+  }
+
+  .app-shell-conversations .conversation-welcome-mark {
+    width: 43px;
+    height: 43px;
+    border-radius: 14px;
+    font-size: 27px;
+  }
+
+  .app-shell-conversations .conversation-workspace-placeholder h2 {
+    font-size: 29px;
+  }
+
+  .app-shell-conversations .conversation-workspace-placeholder > p:not(.eyebrow) {
+    font-size: 12px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-grid {
+    width: min(100%, 510px);
+    gap: 8px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-card {
+    min-height: 59px;
+    gap: 8px;
+    padding: 9px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-icon {
+    width: 29px;
+    height: 29px;
+    border-radius: 9px;
+    font-size: 17px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-text strong {
+    font-size: 10px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-text small {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-input-panel {
+    padding: 7px 11px 10px;
+  }
+
+  .app-shell-conversations .conversation-composer-controls {
+    border-radius: 12px;
+    padding: 12px;
+  }
+
+  .app-shell-conversations .conversation-model-select {
+    min-width: 0;
+    max-width: 190px;
+    font-size: 11px;
+  }
+
+  .app-shell-conversations .conversation-composer-hint span:first-child {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-message-history {
+    max-height: none;
+    padding: 20px 13px;
+  }
+}
+
+@media (max-width: 420px) {
+  .app-shell-conversations .conversation-workspace-private {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-suggestion-grid {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .app-shell-conversations .conversation-suggestion-card {
+    min-height: 45px;
+  }
+
+  .app-shell-conversations .conversation-welcome-mark {
+    display: none;
+  }
+
+  .app-shell-conversations .conversation-workspace-placeholder h2 {
+    font-size: 25px;
+  }
+
+  .app-shell-conversations .conversation-message-input {
+    min-height: 45px;
+  }
+
+  .app-shell-conversations .conversation-model-select {
+    max-width: 158px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-conversations *,
+  .app-shell-conversations *::before,
+  .app-shell-conversations *::after {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

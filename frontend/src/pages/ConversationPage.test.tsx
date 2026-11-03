@@ -251,6 +251,24 @@ describe("ConversationPage", () => {
     expect(conversationMocks.createConversation).not.toHaveBeenCalled();
   });
 
+  it("fills the real message composer from the new quick-start cards", async () => {
+    const user = userEvent.setup();
+    renderPage("/conversations");
+
+    await user.click(screen.getByRole("button", { name: /Plan a project/ }));
+
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(
+      "Help me plan a project with goals, milestones, and a delivery checklist.",
+    );
+    expect(conversationMocks.createConversation).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Review architecture/ }));
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(
+      "Help me review a software architecture for scalability, reliability, and security.",
+    );
+    expect(conversationMocks.submit).not.toHaveBeenCalled();
+  });
+
   it("renders selected history and the composer alongside the sidebar", () => {
     renderPage(`/conversations/${firstConversationId}`);
 
