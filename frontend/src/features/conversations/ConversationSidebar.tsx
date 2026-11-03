@@ -108,7 +108,10 @@ export function ConversationSidebar() {
                     end
                     to={"/conversations/" + conversation.publicId}
                   >
-                    <span aria-hidden="true" className="conversation-list-symbol" />
+                    <span
+                      aria-hidden="true"
+                      className="conversation-list-symbol"
+                    />
                     <span className="conversation-list-title">
                       {conversationTitle(conversation.title)}
                     </span>

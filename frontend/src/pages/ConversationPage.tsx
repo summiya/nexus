@@ -21,14 +21,16 @@ const SUGGESTED_PROMPTS = [
     icon: "▦",
     title: "Plan a project",
     description: "Break an idea into milestones",
-    prompt: "Help me plan a project with goals, milestones, and a delivery checklist.",
+    prompt:
+      "Help me plan a project with goals, milestones, and a delivery checklist.",
   },
   {
     id: "architecture",
     icon: "⌘",
     title: "Review architecture",
     description: "Think through system trade-offs",
-    prompt: "Help me review a software architecture for scalability, reliability, and security.",
+    prompt:
+      "Help me review a software architecture for scalability, reliability, and security.",
   },
   {
     id: "writing",
@@ -42,7 +44,8 @@ const SUGGESTED_PROMPTS = [
     icon: "◇",
     title: "Explore an idea",
     description: "Go from question to direction",
-    prompt: "Let's brainstorm three approaches to my idea and compare the trade-offs.",
+    prompt:
+      "Let's brainstorm three approaches to my idea and compare the trade-offs.",
   },
 ] as const;
 
@@ -250,7 +253,9 @@ function ConversationWorkspace({
         <span aria-hidden="true" className="conversation-breadcrumb-separator">
           /
         </span>
-        {conversationPublicId === undefined ? "New conversation" : "Conversation"}
+        {conversationPublicId === undefined
+          ? "New conversation"
+          : "Conversation"}
       </span>
       <span className="conversation-workspace-private">
         <span aria-hidden="true">◇</span> Organization workspace
@@ -269,10 +274,13 @@ function ConversationWorkspace({
           <p className="eyebrow">YOUR INTELLIGENT WORKSPACE</p>
           <h2>Start a new conversation</h2>
           <p>
-            Think, create and explore with your organization's configured models.
-            Everything starts with a great question.
+            Think, create and explore with your organization's configured
+            models. Everything starts with a great question.
           </p>
-          <div className="conversation-suggestion-grid" aria-label="Suggested prompts">
+          <div
+            className="conversation-suggestion-grid"
+            aria-label="Suggested prompts"
+          >
             {SUGGESTED_PROMPTS.map((suggestion) => (
               <button
                 key={suggestion.id}
@@ -284,14 +292,20 @@ function ConversationWorkspace({
                   setSuggestedPrompt({ revision, text: suggestion.prompt });
                 }}
               >
-                <span className="conversation-suggestion-icon" aria-hidden="true">
+                <span
+                  className="conversation-suggestion-icon"
+                  aria-hidden="true"
+                >
                   {suggestion.icon}
                 </span>
                 <span className="conversation-suggestion-text">
                   <strong>{suggestion.title}</strong>
                   <small>{suggestion.description}</small>
                 </span>
-                <span className="conversation-suggestion-arrow" aria-hidden="true">
+                <span
+                  className="conversation-suggestion-arrow"
+                  aria-hidden="true"
+                >
                   ↗
                 </span>
               </button>

@@ -148,17 +148,27 @@ describe("ConversationSidebar", () => {
   it("filters recent conversations locally without changing the backend ordering", async () => {
     const user = userEvent.setup();
     queryMocks.useConversationsQuery.mockReturnValue(
-      queryResult({ data: [firstConversation, secondConversation, untitledConversation] }),
+      queryResult({
+        data: [firstConversation, secondConversation, untitledConversation],
+      }),
     );
     renderSidebar();
 
-    const search = screen.getByRole("searchbox", { name: "Search conversations" });
+    const search = screen.getByRole("searchbox", {
+      name: "Search conversations",
+    });
     await user.type(search, "release");
 
-    const navigation = screen.getByRole("navigation", { name: "Conversation list" });
+    const navigation = screen.getByRole("navigation", {
+      name: "Conversation list",
+    });
     expect(within(navigation).getAllByRole("link")).toHaveLength(1);
-    expect(within(navigation).getByRole("link", { name: "Release planning" })).toBeInTheDocument();
-    expect(within(navigation).queryByRole("link", { name: "Architecture notes" })).not.toBeInTheDocument();
+    expect(
+      within(navigation).getByRole("link", { name: "Release planning" }),
+    ).toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole("link", { name: "Architecture notes" }),
+    ).not.toBeInTheDocument();
 
     await user.clear(search);
     expect(
@@ -174,8 +184,13 @@ describe("ConversationSidebar", () => {
       queryResult({ data: [firstConversation] }),
     );
     renderSidebar();
-    await user.type(screen.getByRole("searchbox", { name: "Search conversations" }), "not found");
-    expect(screen.getByText("No conversations match your search.")).toBeInTheDocument();
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search conversations" }),
+      "not found",
+    );
+    expect(
+      screen.getByText("No conversations match your search."),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New chat" })).toBeInTheDocument();
   });
 

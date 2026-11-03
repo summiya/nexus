@@ -262,7 +262,9 @@ describe("ConversationPage", () => {
     );
     expect(conversationMocks.createConversation).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: /Review architecture/ }));
+    await user.click(
+      screen.getByRole("button", { name: /Review architecture/ }),
+    );
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(
       "Help me review a software architecture for scalability, reliability, and security.",
     );
