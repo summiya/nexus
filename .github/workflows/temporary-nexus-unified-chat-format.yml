@@ -1,0 +1,58 @@
+name: Temporary NEXUS unified chat navigation formatter
+
+on:
+  push:
+    branches:
+      - feat/nexus-unified-workspace-dashboard
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Format sidebar and conversation changes
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/components/AppLayout.tsx \
+            src/components/dashboard/RecentConversationsMenu.tsx \
+            src/components/dashboard/RecentConversationsMenu.test.tsx \
+            src/pages/ConversationPage.tsx \
+            src/pages/ConversationPage.test.tsx \
+            src/features/conversations/index.ts \
+            src/styles/nexus-dashboard.css \
+            src/App.test.tsx \
+            tests/e2e/app.smoke.spec.ts
+      - name: Commit formatting
+        run: |
+          set -euo pipefail
+          git add frontend/src/components/AppLayout.tsx \
+            frontend/src/components/dashboard/RecentConversationsMenu.tsx \
+            frontend/src/components/dashboard/RecentConversationsMenu.test.tsx \
+            frontend/src/pages/ConversationPage.tsx \
+            frontend/src/pages/ConversationPage.test.tsx \
+            frontend/src/features/conversations/index.ts \
+            frontend/src/styles/nexus-dashboard.css \
+            frontend/src/App.test.tsx \
+            frontend/tests/e2e/app.smoke.spec.ts
+          if git diff --cached --quiet; then
+            echo 'Already formatted'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style(frontend): format unified chat sidebar'
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
