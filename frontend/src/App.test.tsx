@@ -151,8 +151,12 @@ describe("App", () => {
       await screen.findByRole("heading", { name: "AI Models" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /Back to AI Providers/i }),
-    ).toHaveAttribute("href", "/settings/ai-providers");
+      screen.getByText("You do not have permission to view AI model configuration."),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation", { name: "Settings sections" }))
+        .queryByRole("link", { name: "AI Models" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a persistent sidebar and removes the old horizontal navigation", () => {
