@@ -52,9 +52,7 @@ describe("NEXUS public homepage", () => {
     await user.click(
       within(preview).getByRole("button", { name: /AI models/ }),
     );
-    await user.click(
-      within(preview).getByRole("button", { name: /^GPT/i }),
-    );
+    await user.click(within(preview).getByRole("button", { name: /^GPT/i }));
     await user.click(within(preview).getByRole("button", { name: /New chat/ }));
 
     expect(
@@ -66,9 +64,7 @@ describe("NEXUS public homepage", () => {
     const user = userEvent.setup();
     renderLanding();
 
-    await user.click(
-      screen.getByRole("button", { name: /Plan a project/ }),
-    );
+    await user.click(screen.getByRole("button", { name: /Plan a project/ }));
     expect(screen.getByRole("textbox", { name: "Demo message" })).toHaveValue(
       "Plan a product launch.",
     );

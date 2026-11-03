@@ -11,7 +11,11 @@
 
 .nx-hero-preview.nx-hero-preview-next::before {
   inset: -45px -40px;
-  background: radial-gradient(ellipse at 54% 45%, rgba(110, 92, 236, 0.23), transparent 66%);
+  background: radial-gradient(
+    ellipse at 54% 45%,
+    rgba(110, 92, 236, 0.23),
+    transparent 66%
+  );
 }
 
 .nx-hero-grid.nx-hero-grid-next .nx-hero-copy h1 {
@@ -27,7 +31,9 @@
   border: 1px solid #dbe0f0;
   border-radius: 19px;
   background: white;
-  box-shadow: 0 29px 82px rgba(37, 40, 103, 0.22), 0 6px 18px rgba(37, 40, 103, 0.065);
+  box-shadow:
+    0 29px 82px rgba(37, 40, 103, 0.22),
+    0 6px 18px rgba(37, 40, 103, 0.065);
   color: #212d4d;
   font-size: 12px;
   line-height: 1.4;
@@ -147,7 +153,11 @@
   overflow: hidden;
   padding: 18px 10px 10px;
   background:
-    radial-gradient(circle at -15% 95%, rgba(105, 83, 229, 0.18), transparent 48%),
+    radial-gradient(
+      circle at -15% 95%,
+      rgba(105, 83, 229, 0.18),
+      transparent 48%
+    ),
     #151e3b;
   color: #e5eaf9;
 }
@@ -312,7 +322,9 @@
   color: #aebad9;
   font-size: 10px;
   text-align: left;
-  transition: background-color 130ms ease, color 130ms ease;
+  transition:
+    background-color 130ms ease,
+    color 130ms ease;
 }
 
 .nx-ws-recents button:hover,
@@ -443,7 +455,11 @@
   min-width: 0;
   min-height: 0;
   background:
-    radial-gradient(ellipse 330px 200px at 95% 8%, rgba(225, 222, 255, 0.21), transparent),
+    radial-gradient(
+      ellipse 330px 200px at 95% 8%,
+      rgba(225, 222, 255, 0.21),
+      transparent
+    ),
     #ffffff;
 }
 
@@ -578,7 +594,10 @@
   background: linear-gradient(155deg, #ffffff, #fbfbff);
   color: #3c4666;
   text-align: left;
-  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .nx-ws-suggestions button:hover {
