@@ -94,8 +94,8 @@ export function LoginPage() {
             <span>Limitless ways to think.</span>
           </h2>
           <p>
-            Bring your AI models, conversations and files into one place.
-            NEXUS starts with great conversations and grows with your work.
+            Bring your AI models, conversations and files into one place. NEXUS
+            starts with great conversations and grows with your work.
           </p>
           <div className="nx-auth-points">
             <span>✧ Model choice</span>

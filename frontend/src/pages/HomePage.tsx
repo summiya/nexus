@@ -39,7 +39,13 @@ const STARTER_MESSAGES: PreviewMessage[] = [
 
 const JOURNEYS: Record<
   JourneyView,
-  { label: string; status: string; title: string; description: string; steps: string[] }
+  {
+    label: string;
+    status: string;
+    title: string;
+    description: string;
+    steps: string[];
+  }
 > = {
   conversation: {
     label: "01 · Conversations",
@@ -47,7 +53,12 @@ const JOURNEYS: Record<
     title: "Move between models without moving your work.",
     description:
       "One conversation workspace with live streaming, history and organization-configured models.",
-    steps: ["Choose a model", "Ask a question", "Stream the answer", "Continue the conversation"],
+    steps: [
+      "Choose a model",
+      "Ask a question",
+      "Stream the answer",
+      "Continue the conversation",
+    ],
   },
   knowledge: {
     label: "02 · Knowledge + RAG",
@@ -55,7 +66,12 @@ const JOURNEYS: Record<
     title: "Answers grounded in your own knowledge.",
     description:
       "NEXUS is building a permission-aware retrieval layer that processes documents, finds relevant passages and provides sourced context to the AI model.",
-    steps: ["Bring your files", "Process and embed", "Retrieve with permissions", "Generate with sources"],
+    steps: [
+      "Bring your files",
+      "Process and embed",
+      "Retrieve with permissions",
+      "Generate with sources",
+    ],
   },
   agents: {
     label: "03 · Agentic AI",
@@ -63,7 +79,12 @@ const JOURNEYS: Record<
     title: "From answers to actions, with you in control.",
     description:
       "A future execution layer for bounded multi-step tasks, connected tools, checkpoints and human approval when it matters.",
-    steps: ["Define the goal", "Plan the workflow", "Call authorized tools", "Review the result"],
+    steps: [
+      "Define the goal",
+      "Plan the workflow",
+      "Call authorized tools",
+      "Review the result",
+    ],
   },
 };
 
@@ -140,7 +161,10 @@ function PreviewWorkspace() {
   }
 
   return (
-    <div className="nx-product-window" aria-label="Interactive NEXUS product preview">
+    <div
+      className="nx-product-window"
+      aria-label="Interactive NEXUS product preview"
+    >
       <div className="nx-window-bar">
         <div className="nx-window-dots" aria-hidden="true">
           <i />
@@ -163,7 +187,9 @@ function PreviewWorkspace() {
             <button
               key={item}
               type="button"
-              className={"nx-preview-nav-item" + (view === item ? " is-selected" : "")}
+              className={
+                "nx-preview-nav-item" + (view === item ? " is-selected" : "")
+              }
               onClick={() => setView(item)}
               aria-pressed={view === item}
             >
@@ -171,7 +197,9 @@ function PreviewWorkspace() {
             </button>
           ))}
           <span className="nx-mini-caption nx-preview-recent">YOUR SPACE</span>
-          <span className="nx-preview-sidebar-detail">One place for work, knowledge and models.</span>
+          <span className="nx-preview-sidebar-detail">
+            One place for work, knowledge and models.
+          </span>
         </aside>
         <div className="nx-preview-main">
           {view === "chat" ? (
@@ -192,7 +220,11 @@ function PreviewWorkspace() {
                   </button>
                 ))}
               </div>
-              <div className="nx-preview-messages" aria-live="polite" aria-label="Sample messages">
+              <div
+                className="nx-preview-messages"
+                aria-live="polite"
+                aria-label="Sample messages"
+              >
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -206,7 +238,11 @@ function PreviewWorkspace() {
                 {attachment ? (
                   <div className="nx-attached-file">
                     <span>▤ {attachment.name}</span>
-                    <button type="button" onClick={clearFile} aria-label="Remove sample file">
+                    <button
+                      type="button"
+                      onClick={clearFile}
+                      aria-label="Remove sample file"
+                    >
                       ×
                     </button>
                   </div>
@@ -225,7 +261,9 @@ function PreviewWorkspace() {
                   <select
                     aria-label="Demo AI model"
                     value={modelId}
-                    onChange={(event) => setModelId(event.target.value as SampleModelId)}
+                    onChange={(event) =>
+                      setModelId(event.target.value as SampleModelId)
+                    }
                   >
                     {SAMPLE_MODELS.map((model) => (
                       <option key={model.id} value={model.id}>
@@ -249,7 +287,11 @@ function PreviewWorkspace() {
                     >
                       +
                     </button>
-                    <button type="submit" className="nx-send-button" aria-label="Send demo message">
+                    <button
+                      type="submit"
+                      className="nx-send-button"
+                      aria-label="Send demo message"
+                    >
                       ↗
                     </button>
                   </div>
@@ -260,12 +302,21 @@ function PreviewWorkspace() {
             <div className="nx-preview-subscreen">
               <span className="nx-preview-label">YOUR FILES</span>
               <h3>Knowledge starts with your files.</h3>
-              <p>Keep documents together and make them available to future knowledge workflows.</p>
+              <p>
+                Keep documents together and make them available to future
+                knowledge workflows.
+              </p>
               <div className="nx-demo-file-row">
                 <span aria-hidden="true">▤</span>
                 <span>
-                  <strong>{attachment ? attachment.name : "Product-brief.pdf"}</strong>
-                  <small>{attachment ? "Selected locally · not uploaded" : "Illustrative file"}</small>
+                  <strong>
+                    {attachment ? attachment.name : "Product-brief.pdf"}
+                  </strong>
+                  <small>
+                    {attachment
+                      ? "Selected locally · not uploaded"
+                      : "Illustrative file"}
+                  </small>
                 </span>
               </div>
               <button
@@ -287,7 +338,9 @@ function PreviewWorkspace() {
             <div className="nx-preview-subscreen">
               <span className="nx-preview-label">MODEL CONTROL</span>
               <h3>Your models, your choice.</h3>
-              <p>Switch the sample model here and continue in the chat preview.</p>
+              <p>
+                Switch the sample model here and continue in the chat preview.
+              </p>
               <div className="nx-model-options">
                 {SAMPLE_MODELS.map((model) => (
                   <button
@@ -302,11 +355,17 @@ function PreviewWorkspace() {
                       <strong>{model.name}</strong>
                       <small>{model.provider}</small>
                     </span>
-                    <span aria-hidden="true">{modelId === model.id ? "✓" : "↗"}</span>
+                    <span aria-hidden="true">
+                      {modelId === model.id ? "✓" : "↗"}
+                    </span>
                   </button>
                 ))}
               </div>
-              <button type="button" className="nx-mini-action" onClick={() => setView("chat")}>
+              <button
+                type="button"
+                className="nx-mini-action"
+                onClick={() => setView("chat")}
+              >
                 Back to chat ↗
               </button>
             </div>
@@ -314,7 +373,8 @@ function PreviewWorkspace() {
         </div>
       </div>
       <div className="nx-preview-disclaimer">
-        Interactive UI preview · Model responses are simulated · Files never leave your browser
+        Interactive UI preview · Model responses are simulated · Files never
+        leave your browser
       </div>
     </div>
   );
@@ -326,22 +386,29 @@ function JourneyExplorer() {
 
   return (
     <div className="nx-journey-explorer">
-      <div className="nx-journey-tabs" role="tablist" aria-label="Explore platform workflows">
-        {(Object.entries(JOURNEYS) as [JourneyView, (typeof JOURNEYS)[JourneyView]][]).map(
-          ([key, value]) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={active === key}
-              aria-controls="nx-journey-panel"
-              id={"nx-journey-tab-" + key}
-              onClick={() => setActive(key)}
-            >
-              {value.label}
-            </button>
-          ),
-        )}
+      <div
+        className="nx-journey-tabs"
+        role="tablist"
+        aria-label="Explore platform workflows"
+      >
+        {(
+          Object.entries(JOURNEYS) as [
+            JourneyView,
+            (typeof JOURNEYS)[JourneyView],
+          ][]
+        ).map(([key, value]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={active === key}
+            aria-controls="nx-journey-panel"
+            id={"nx-journey-tab-" + key}
+            onClick={() => setActive(key)}
+          >
+            {value.label}
+          </button>
+        ))}
       </div>
       <div
         className="nx-journey-panel"
@@ -419,14 +486,21 @@ export function HomePage() {
                 <span>One intelligent space.</span>
               </h1>
               <p>
-                Your AI models, conversations and files—beautifully brought together.
-                Start with a question. Grow into knowledge-driven and agentic work.
+                Your AI models, conversations and files—beautifully brought
+                together. Start with a question. Grow into knowledge-driven and
+                agentic work.
               </p>
               <div className="nx-hero-actions">
-                <Link className="nx-button nx-button-primary nx-button-large" to="/login">
+                <Link
+                  className="nx-button nx-button-primary nx-button-large"
+                  to="/login"
+                >
                   Try the workspace <span aria-hidden="true">↗</span>
                 </Link>
-                <a className="nx-button nx-button-secondary nx-button-large" href="#knowledge">
+                <a
+                  className="nx-button nx-button-secondary nx-button-large"
+                  href="#knowledge"
+                >
                   Explore RAG &amp; agents <span aria-hidden="true">→</span>
                 </a>
               </div>
@@ -443,8 +517,12 @@ export function HomePage() {
             <div className="nx-hero-preview">
               <span className="nx-glow-orbit" aria-hidden="true" />
               <PreviewWorkspace />
-              <span className="nx-float-label nx-float-top">✦ Your models, your choice</span>
-              <span className="nx-float-label nx-float-bottom">◈ Files meet AI</span>
+              <span className="nx-float-label nx-float-top">
+                ✦ Your models, your choice
+              </span>
+              <span className="nx-float-label nx-float-bottom">
+                ◈ Files meet AI
+              </span>
             </div>
           </div>
         </section>
@@ -463,7 +541,11 @@ export function HomePage() {
         <section className="nx-section nx-container" id="platform">
           <div className="nx-section-heading">
             <span className="nx-kicker">THE PLATFORM</span>
-            <h2>Everything in its place.<br />Nothing in your way.</h2>
+            <h2>
+              Everything in its place.
+              <br />
+              Nothing in your way.
+            </h2>
             <p>
               A single workspace for today’s AI conversations and tomorrow’s
               knowledge-powered, tool-enabled experiences.
@@ -474,37 +556,61 @@ export function HomePage() {
               <span className="nx-feature-icon">✧</span>
               <span className="nx-feature-status">Available now</span>
               <h3>One home for every model</h3>
-              <p>Choose from your organization’s configured AI models while keeping a consistent conversation experience.</p>
+              <p>
+                Choose from your organization’s configured AI models while
+                keeping a consistent conversation experience.
+              </p>
             </article>
             <article className="nx-feature-card">
               <span className="nx-feature-icon">▤</span>
               <span className="nx-feature-status">Available now</span>
               <h3>Conversations and files</h3>
-              <p>Keep conversation history and manage uploaded files in a connected, purposeful workspace.</p>
+              <p>
+                Keep conversation history and manage uploaded files in a
+                connected, purposeful workspace.
+              </p>
             </article>
             <article className="nx-feature-card">
               <span className="nx-feature-icon">◈</span>
-              <span className="nx-feature-status nx-status-building">In development</span>
+              <span className="nx-feature-status nx-status-building">
+                In development
+              </span>
               <h3>Knowledge that answers back</h3>
-              <p>RAG will ground responses in relevant company documents, with source context and permission checks.</p>
+              <p>
+                RAG will ground responses in relevant company documents, with
+                source context and permission checks.
+              </p>
             </article>
             <article className="nx-feature-card">
               <span className="nx-feature-icon">⌁</span>
-              <span className="nx-feature-status nx-status-planned">Planned</span>
+              <span className="nx-feature-status nx-status-planned">
+                Planned
+              </span>
               <h3>Agents that do the work</h3>
-              <p>Multi-step execution, authorized tools and human approval for consequential actions.</p>
+              <p>
+                Multi-step execution, authorized tools and human approval for
+                consequential actions.
+              </p>
             </article>
             <article className="nx-feature-card">
               <span className="nx-feature-icon">◇</span>
               <span className="nx-feature-status">Foundation available</span>
               <h3>Enterprise-minded security</h3>
-              <p>Organization-aware identity, roles and permissions, with sensitive provider credentials handled separately.</p>
+              <p>
+                Organization-aware identity, roles and permissions, with
+                sensitive provider credentials handled separately.
+              </p>
             </article>
             <article className="nx-feature-card">
               <span className="nx-feature-icon">↗</span>
-              <span className="nx-feature-status nx-status-planned">Expanding</span>
+              <span className="nx-feature-status nx-status-planned">
+                Expanding
+              </span>
               <h3>Integrations and developer tools</h3>
-              <p>Extensible APIs and future tool connections designed to bring NEXUS into existing products and workflows.</p>
+              <p>
+                Extensible APIs and future tool connections designed to bring
+                NEXUS into existing products and workflows.
+              </p>
             </article>
           </div>
         </section>
@@ -513,94 +619,198 @@ export function HomePage() {
           <div className="nx-container">
             <div className="nx-section-heading">
               <span className="nx-kicker">SEE THE BIGGER PICTURE</span>
-              <h2>From a simple question<br />to an intelligent workflow.</h2>
-              <p>Explore how the platform is evolving. Choose a capability to see its flow and current status.</p>
+              <h2>
+                From a simple question
+                <br />
+                to an intelligent workflow.
+              </h2>
+              <p>
+                Explore how the platform is evolving. Choose a capability to see
+                its flow and current status.
+              </p>
             </div>
             <JourneyExplorer />
           </div>
         </section>
 
-        <section className="nx-section nx-container nx-knowledge-section" id="knowledge">
+        <section
+          className="nx-section nx-container nx-knowledge-section"
+          id="knowledge"
+        >
           <div className="nx-knowledge-copy">
             <span className="nx-kicker">KNOWLEDGE + RAG · IN DEVELOPMENT</span>
-            <h2>Your knowledge.<br /><span>Smarter answers.</span></h2>
+            <h2>
+              Your knowledge.
+              <br />
+              <span>Smarter answers.</span>
+            </h2>
             <p>
               Retrieval-augmented generation (RAG) finds relevant information in
               your documents and adds it as context to an AI response. NEXUS is
-              building this on a tenant-safe retrieval foundation—not by treating
-              the language model as your document database.
+              building this on a tenant-safe retrieval foundation—not by
+              treating the language model as your document database.
             </p>
             <div className="nx-knowledge-points">
-              <div><span>01</span><strong>Process documents and create embeddings</strong></div>
-              <div><span>02</span><strong>Search relevant, authorized content</strong></div>
-              <div><span>03</span><strong>Answer using grounded context and citations</strong></div>
+              <div>
+                <span>01</span>
+                <strong>Process documents and create embeddings</strong>
+              </div>
+              <div>
+                <span>02</span>
+                <strong>Search relevant, authorized content</strong>
+              </div>
+              <div>
+                <span>03</span>
+                <strong>Answer using grounded context and citations</strong>
+              </div>
             </div>
           </div>
-          <div className="nx-rag-diagram" aria-label="Illustrative future retrieval workflow">
-            <span className="nx-diagram-caption">RAG WORKFLOW · CONCEPT PREVIEW</span>
+          <div
+            className="nx-rag-diagram"
+            aria-label="Illustrative future retrieval workflow"
+          >
+            <span className="nx-diagram-caption">
+              RAG WORKFLOW · CONCEPT PREVIEW
+            </span>
             <div className="nx-rag-card nx-rag-source">
               <span aria-hidden="true">▤</span>
-              <div><strong>Company knowledge</strong><small>Documents &amp; files</small></div>
+              <div>
+                <strong>Company knowledge</strong>
+                <small>Documents &amp; files</small>
+              </div>
             </div>
-            <div className="nx-rag-connector" aria-hidden="true">↓</div>
+            <div className="nx-rag-connector" aria-hidden="true">
+              ↓
+            </div>
             <div className="nx-rag-card">
               <span aria-hidden="true">◈</span>
-              <div><strong>Embedding + retrieval</strong><small>Relevant passages</small></div>
+              <div>
+                <strong>Embedding + retrieval</strong>
+                <small>Relevant passages</small>
+              </div>
             </div>
-            <div className="nx-rag-connector" aria-hidden="true">↓</div>
+            <div className="nx-rag-connector" aria-hidden="true">
+              ↓
+            </div>
             <div className="nx-rag-card nx-rag-output">
               <span aria-hidden="true">✧</span>
-              <div><strong>Grounded AI answer</strong><small>Context and source references</small></div>
+              <div>
+                <strong>Grounded AI answer</strong>
+                <small>Context and source references</small>
+              </div>
             </div>
-            <div className="nx-rag-policy">◉ Tenant and document authorization boundary</div>
+            <div className="nx-rag-policy">
+              ◉ Tenant and document authorization boundary
+            </div>
           </div>
         </section>
 
         <section className="nx-agent-section">
           <div className="nx-container nx-agent-grid">
             <div>
-              <span className="nx-agent-label">AGENTIC AI · PRODUCT ROADMAP</span>
-              <h2>Go beyond answers.<br /><span>Make progress.</span></h2>
+              <span className="nx-agent-label">
+                AGENTIC AI · PRODUCT ROADMAP
+              </span>
+              <h2>
+                Go beyond answers.
+                <br />
+                <span>Make progress.</span>
+              </h2>
               <p>
                 The future NEXUS agent layer is designed to turn goals into
                 controlled execution: plan work, use approved tools, request
                 human confirmation and report what happened.
               </p>
-              <a href="#security" className="nx-agent-link">Built with guardrails in mind →</a>
+              <a href="#security" className="nx-agent-link">
+                Built with guardrails in mind →
+              </a>
             </div>
             <div className="nx-agent-board" aria-label="Planned agent workflow">
-              <div className="nx-agent-board-title"><span>✧</span> Agent execution preview <small>ROADMAP</small></div>
-              <div className="nx-agent-step"><span>01</span><strong>Understand the objective</strong><i>Goal</i></div>
-              <div className="nx-agent-step"><span>02</span><strong>Plan and select tools</strong><i>Plan</i></div>
-              <div className="nx-agent-step"><span>03</span><strong>Request human approval</strong><i>Review</i></div>
-              <div className="nx-agent-step"><span>04</span><strong>Execute and verify</strong><i>Result</i></div>
+              <div className="nx-agent-board-title">
+                <span>✧</span> Agent execution preview <small>ROADMAP</small>
+              </div>
+              <div className="nx-agent-step">
+                <span>01</span>
+                <strong>Understand the objective</strong>
+                <i>Goal</i>
+              </div>
+              <div className="nx-agent-step">
+                <span>02</span>
+                <strong>Plan and select tools</strong>
+                <i>Plan</i>
+              </div>
+              <div className="nx-agent-step">
+                <span>03</span>
+                <strong>Request human approval</strong>
+                <i>Review</i>
+              </div>
+              <div className="nx-agent-step">
+                <span>04</span>
+                <strong>Execute and verify</strong>
+                <i>Result</i>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="nx-section nx-container nx-security-section" id="security">
+        <section
+          className="nx-section nx-container nx-security-section"
+          id="security"
+        >
           <div className="nx-section-heading">
             <span className="nx-kicker">DESIGNED WITH BOUNDARIES</span>
-            <h2>Intelligence that respects<br />your workspace.</h2>
+            <h2>
+              Intelligence that respects
+              <br />
+              your workspace.
+            </h2>
             <p>
-              NEXUS separates organizations, validates permissions and gives teams
-              control over model-provider configuration. Retrieval and agent
-              permissions are being expanded as those features are built.
+              NEXUS separates organizations, validates permissions and gives
+              teams control over model-provider configuration. Retrieval and
+              agent permissions are being expanded as those features are built.
             </p>
           </div>
           <div className="nx-security-grid">
-            <div><span>01 /</span><h3>Organization separation</h3><p>Tenant-linked records and authorization checks establish the data boundary.</p></div>
-            <div><span>02 /</span><h3>Roles &amp; permissions</h3><p>Access decisions are connected to authenticated users and current roles.</p></div>
-            <div><span>03 /</span><h3>Your provider credentials</h3><p>Configure supported model providers without exposing their secrets in the UI.</p></div>
+            <div>
+              <span>01 /</span>
+              <h3>Organization separation</h3>
+              <p>
+                Tenant-linked records and authorization checks establish the
+                data boundary.
+              </p>
+            </div>
+            <div>
+              <span>02 /</span>
+              <h3>Roles &amp; permissions</h3>
+              <p>
+                Access decisions are connected to authenticated users and
+                current roles.
+              </p>
+            </div>
+            <div>
+              <span>03 /</span>
+              <h3>Your provider credentials</h3>
+              <p>
+                Configure supported model providers without exposing their
+                secrets in the UI.
+              </p>
+            </div>
           </div>
         </section>
 
         <section className="nx-container nx-final-cta">
           <div>
             <span className="nx-kicker">START WITH NEXUS</span>
-            <h2>Ideas move faster<br />when everything connects.</h2>
+            <h2>
+              Ideas move faster
+              <br />
+              when everything connects.
+            </h2>
           </div>
-          <Link className="nx-button nx-button-primary nx-button-large" to="/login">
+          <Link
+            className="nx-button nx-button-primary nx-button-large"
+            to="/login"
+          >
             Enter NEXUS <span aria-hidden="true">↗</span>
           </Link>
         </section>

@@ -65,7 +65,9 @@ describe("NEXUS public homepage", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Send demo message" }));
-    expect(screen.getByText(/Claude · example · simulated/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Claude · example · simulated/),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Model responses are simulated/),
     ).toBeInTheDocument();
@@ -80,7 +82,9 @@ describe("NEXUS public homepage", () => {
     });
     await user.upload(screen.getByLabelText("Choose a sample file"), file);
     expect(screen.getByText(/project-notes.txt/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Remove sample file" }));
+    await user.click(
+      screen.getByRole("button", { name: "Remove sample file" }),
+    );
     expect(screen.queryByText(/project-notes.txt/)).not.toBeInTheDocument();
   });
 

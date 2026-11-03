@@ -11,7 +11,11 @@
   --nx-page: #f3f5fd;
   color: var(--nx-ink);
   font-family:
-    Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -199,8 +203,16 @@
 .nx-hero {
   padding: 80px 0 114px;
   background:
-    radial-gradient(ellipse 700px 440px at 89% 10%, rgba(180, 179, 251, 0.35), transparent 77%),
-    radial-gradient(ellipse 670px 420px at 8% 26%, rgba(175, 212, 255, 0.26), transparent 78%),
+    radial-gradient(
+      ellipse 700px 440px at 89% 10%,
+      rgba(180, 179, 251, 0.35),
+      transparent 77%
+    ),
+    radial-gradient(
+      ellipse 670px 420px at 8% 26%,
+      rgba(175, 212, 255, 0.26),
+      transparent 78%
+    ),
     linear-gradient(145deg, #eff3ff 0%, #f7f7ff 64%, #eef1fc 100%);
 }
 
@@ -321,7 +333,11 @@
   position: absolute;
   z-index: 0;
   inset: -54px -35px -35px;
-  background: radial-gradient(ellipse, rgba(113, 109, 229, 0.23), transparent 70%);
+  background: radial-gradient(
+    ellipse,
+    rgba(113, 109, 229, 0.23),
+    transparent 70%
+  );
   content: "";
   pointer-events: none;
 }
@@ -1090,7 +1106,11 @@
   border-radius: 25px;
   padding: 40px 30px;
   background:
-    radial-gradient(circle at 20% 15%, rgba(163, 169, 245, 0.2), transparent 45%),
+    radial-gradient(
+      circle at 20% 15%,
+      rgba(163, 169, 245, 0.2),
+      transparent 45%
+    ),
     #fff;
   box-shadow: 0 20px 65px rgba(61, 71, 144, 0.09);
 }
@@ -1169,7 +1189,11 @@
 .nx-agent-section {
   padding: 95px 0;
   background:
-    radial-gradient(ellipse 570px 470px at 84% 10%, rgba(104, 91, 224, 0.31), transparent 74%),
+    radial-gradient(
+      ellipse 570px 470px at 84% 10%,
+      rgba(104, 91, 224, 0.31),
+      transparent 74%
+    ),
     linear-gradient(130deg, #18234b, #202054 75%, #302965);
   color: #f8f8ff;
 }
@@ -1310,7 +1334,11 @@
   margin-bottom: 80px;
   padding: 45px 55px;
   background:
-    radial-gradient(ellipse at 80% 20%, rgba(155, 154, 248, 0.21), transparent 45%),
+    radial-gradient(
+      ellipse at 80% 20%,
+      rgba(155, 154, 248, 0.21),
+      transparent 45%
+    ),
     #ffffff;
 }
 
@@ -1386,7 +1414,11 @@
   justify-content: space-between;
   padding: 40px clamp(30px, 6vw, 92px);
   background:
-    radial-gradient(circle at 70% 18%, rgba(149, 137, 243, 0.18), transparent 42%),
+    radial-gradient(
+      circle at 70% 18%,
+      rgba(149, 137, 243, 0.18),
+      transparent 42%
+    ),
     linear-gradient(145deg, #1a2752, #282461);
   color: white;
 }
@@ -1456,7 +1488,11 @@
   place-items: center;
   padding: 60px 32px;
   background:
-    radial-gradient(circle at 80% 12%, rgba(183, 184, 255, 0.24), transparent 40%),
+    radial-gradient(
+      circle at 80% 12%,
+      rgba(183, 184, 255, 0.24),
+      transparent 40%
+    ),
     #f8f9ff;
 }
 
