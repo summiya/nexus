@@ -68,7 +68,11 @@ describe("RecentConversationsMenu", () => {
 
     const links = within(recent).getAllByRole("link");
     expect(links).toHaveLength(7);
-    expect(links.map((link) => link.textContent)).toEqual([
+    expect(
+      links.map((link) =>
+        link.querySelector(".nx-dash-recent-chat-title")?.textContent,
+      ),
+    ).toEqual([
       "Chat 7",
       "Chat 6",
       "Chat 5",
