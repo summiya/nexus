@@ -25,11 +25,11 @@ export function AppLayout() {
         </div>
         <div className="brand-copy">
           <strong>{env.appName}</strong>
-          <small>Web application foundation</small>
+          <small>Your AI workspace</small>
         </div>
 
         <nav className="main-nav" aria-label="Main navigation">
-          <NavLink to="/" end>
+          <NavLink to="/explore" end>
             Home
           </NavLink>
           <NavLink to="/conversations">Conversations</NavLink>

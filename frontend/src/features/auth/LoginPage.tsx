@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { AuthStatusView } from "./AuthStatusView";
 import { EmailLoginStep } from "./EmailLoginStep";
@@ -7,6 +7,8 @@ import { OtpVerificationStep } from "./OtpVerificationStep";
 import { establishSession } from "./session";
 import { useAuthStore } from "./store";
 import type { SessionTokens } from "./types";
+
+import "../../styles/nexus-experience.css";
 
 const DEFAULT_AUTHENTICATED_DESTINATION = "/conversations";
 
@@ -73,26 +75,63 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login-page">
-      <section className="auth-card" aria-labelledby="login-title">
-        <div className="login-brand" aria-hidden="true">
-          N
+    <main className="login-page nexus-auth-page">
+      <aside className="nx-auth-aside">
+        <Link to="/" className="nx-brand" aria-label="NEXUS homepage">
+          <span className="nx-brand-mark" aria-hidden="true">
+            N
+          </span>
+          <span className="nx-brand-text">
+            <strong>NEXUS</strong>
+            <small>AI WORKSPACE</small>
+          </span>
+        </Link>
+        <div className="nx-auth-aside-content">
+          <span>YOUR IDEAS, CONNECTED</span>
+          <h2>
+            One workspace.
+            <br />
+            <span>Limitless ways to think.</span>
+          </h2>
+          <p>
+            Bring your AI models, conversations and files into one place. NEXUS
+            starts with great conversations and grows with your work.
+          </p>
+          <div className="nx-auth-points">
+            <span>✧ Model choice</span>
+            <span>◈ File workspace</span>
+            <span>◇ Organization-aware access</span>
+          </div>
         </div>
-        <p className="eyebrow">NEXUS</p>
-
-        {submittedEmail ? (
-          <OtpVerificationStep
-            email={submittedEmail}
-            onVerified={completeLogin}
-            onChangeEmail={() => setSubmittedEmail(null)}
-          />
-        ) : (
-          <EmailLoginStep
-            initialEmail={emailDraft}
-            onOtpRequested={otpRequested}
-          />
-        )}
-      </section>
+        <span className="nx-auth-aside-footer">
+          NEXUS · Built for a more intelligent way to work
+        </span>
+      </aside>
+      <div className="nx-auth-right">
+        <div className="nx-auth-content">
+          <section className="auth-card" aria-labelledby="login-title">
+            <div className="nx-auth-card-intro">
+              <span aria-hidden="true">✧</span>
+              <span>SECURE PASSWORDLESS ACCESS</span>
+            </div>
+            {submittedEmail ? (
+              <OtpVerificationStep
+                email={submittedEmail}
+                onVerified={completeLogin}
+                onChangeEmail={() => setSubmittedEmail(null)}
+              />
+            ) : (
+              <EmailLoginStep
+                initialEmail={emailDraft}
+                onOtpRequested={otpRequested}
+              />
+            )}
+          </section>
+          <p className="nx-auth-below">
+            Want to learn more? <Link to="/">Explore the NEXUS platform</Link>
+          </p>
+        </div>
+      </div>
     </main>
   );
 }
