@@ -1,0 +1,806 @@
+/* Unified NEXUS dashboard shell. The public marketing pages are unaffected. */
+.nexus-dashboard-shell.app-shell,
+.nexus-dashboard-shell.app-shell.app-shell-conversations {
+  display: grid;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  min-height: 0;
+  grid-template-columns: 242px minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #f7f9fd;
+  color: #202d4b;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.nexus-dashboard-shell *,
+.nexus-dashboard-shell *::before,
+.nexus-dashboard-shell *::after {
+  box-sizing: border-box;
+}
+
+.nexus-dashboard-shell button,
+.nexus-dashboard-shell input,
+.nexus-dashboard-shell select,
+.nexus-dashboard-shell textarea {
+  font: inherit;
+}
+
+.nexus-dashboard-shell button:focus-visible,
+.nexus-dashboard-shell a:focus-visible,
+.nexus-dashboard-shell input:focus-visible,
+.nexus-dashboard-shell select:focus-visible,
+.nexus-dashboard-shell textarea:focus-visible {
+  outline: 2px solid #8076f2;
+  outline-offset: 2px;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar {
+  position: relative;
+  z-index: 11;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid rgba(155, 169, 213, 0.11);
+  padding: 26px 12px 13px;
+  background:
+    radial-gradient(ellipse at 9% 92%, rgba(82, 69, 168, 0.18), transparent 50%),
+    #0e172b;
+  color: #eaf0fc;
+}
+
+.nexus-dashboard-shell .nx-dash-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 10px 25px;
+  color: #f8f9ff;
+  text-decoration: none;
+}
+
+.nexus-dashboard-shell .nx-dash-logo {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(186, 194, 255, 0.35);
+  border-radius: 13px;
+  background: linear-gradient(138deg, #4a79e8, #916bf0);
+  box-shadow: 0 7px 22px rgba(43, 44, 143, 0.29);
+  color: white;
+  font-size: 27px;
+  line-height: 1;
+}
+
+.nexus-dashboard-shell .nx-dash-brand-words {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.nexus-dashboard-shell .nx-dash-brand-words strong {
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0.075em;
+}
+
+.nexus-dashboard-shell .nx-dash-brand-words small {
+  color: #8594b3;
+  font-size: 8px;
+  font-weight: 780;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-search {
+  margin-bottom: 22px;
+  padding: 0 4px;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-search button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 39px;
+  border: 1px solid rgba(146, 160, 213, 0.21);
+  border-radius: 9px;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #a8b4d0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-search button:hover {
+  border-color: rgba(157, 153, 252, 0.39);
+  background: rgba(140, 136, 250, 0.10);
+  color: white;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-search button span {
+  flex: 1;
+  font-size: 10px;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-search kbd,
+.nexus-dashboard-shell .nx-dash-jump kbd {
+  border: 1px solid rgba(176, 181, 233, 0.22);
+  border-radius: 5px;
+  padding: 2px 5px;
+  color: #8796bd;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.nexus-dashboard-shell .nx-dash-navigation {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 21px;
+  overflow-y: auto;
+  padding: 0 2px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #49516e transparent;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-group {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-label {
+  margin-bottom: 9px;
+  padding-left: 12px;
+  color: #788bae;
+  font-size: 10px;
+  font-weight: 830;
+  letter-spacing: 0.13em;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-link,
+.nexus-dashboard-shell .nx-dash-signout {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 39px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: transparent;
+  color: #adbad5;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 630;
+  text-align: left;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-link > svg,
+.nexus-dashboard-shell .nx-dash-signout > svg {
+  flex: 0 0 auto;
+  color: #8a9abf;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-link:hover,
+.nexus-dashboard-shell .nx-dash-nav-link.active,
+.nexus-dashboard-shell .nx-dash-signout:hover {
+  border-color: rgba(141, 164, 241, 0.14);
+  background: rgba(105, 120, 206, 0.15);
+  color: #f8f9ff;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-link.active {
+  border-color: rgba(130, 116, 244, 0.35);
+  background: linear-gradient(90deg, rgba(88, 119, 218, 0.27), rgba(111, 87, 224, 0.11));
+  box-shadow: inset 2px 0 #8c7cff;
+  font-weight: 750;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-link.active > svg {
+  color: #b4afff;
+}
+
+.nexus-dashboard-shell .nx-dash-nav-preview {
+  margin-left: auto;
+  color: #64769f;
+  font-size: 18px;
+  line-height: 0;
+}
+
+.nexus-dashboard-shell .nx-dash-signout {
+  margin-top: auto;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid rgba(183, 195, 233, 0.12);
+  margin-top: 10px;
+  padding: 16px 5px 4px;
+}
+
+.nexus-dashboard-shell .nx-dash-org-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(178, 183, 242, 0.22);
+  border-radius: 11px;
+  background: rgba(111, 96, 213, 0.16);
+  color: #d5ccff;
+  font-size: 16px;
+  font-weight: 820;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-footer > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-footer strong {
+  overflow: hidden;
+  color: #d5ddf2;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-footer small {
+  color: #7d8bae;
+  font-size: 9px;
+}
+
+.nexus-dashboard-shell .nx-dash-sidebar-footer > svg {
+  color: #9d92db;
+}
+
+.nexus-dashboard-shell .nx-dash-right {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f8faff;
+}
+
+.nexus-dashboard-shell .nx-dash-header {
+  position: relative;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 68px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid #e5eaf3;
+  padding: 11px clamp(18px, 3vw, 42px);
+  background: #ffffff;
+  box-shadow: 0 2px 16px rgba(26, 41, 89, 0.025);
+}
+
+.nexus-dashboard-shell .nx-dash-breadcrumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+  color: #8793af;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.nexus-dashboard-shell .nx-dash-breadcrumbs > a {
+  color: #7c89a6;
+  text-decoration: none;
+}
+
+.nexus-dashboard-shell .nx-dash-breadcrumbs > a:hover {
+  color: #5c54ca;
+}
+
+.nexus-dashboard-shell .nx-dash-breadcrumbs > span {
+  color: #c3cbdc;
+}
+
+.nexus-dashboard-shell .nx-dash-breadcrumbs > strong {
+  overflow: hidden;
+  color: #283653;
+  font-weight: 770;
+  text-overflow: ellipsis;
+}
+
+.nexus-dashboard-shell .nx-dash-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.nexus-dashboard-shell .nx-dash-jump {
+  display: flex;
+  width: clamp(210px, 25vw, 320px);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dfe4f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f8faff;
+  color: #7e8ba6;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 590;
+  text-align: left;
+}
+
+.nexus-dashboard-shell .nx-dash-jump:hover {
+  border-color: #aea8ed;
+  background: #f2f1ff;
+  color: #5a55be;
+}
+
+.nexus-dashboard-shell .nx-dash-jump > span {
+  flex: 1;
+}
+
+.nexus-dashboard-shell .nx-dash-jump kbd {
+  border-color: #dce1f0;
+  color: #8c96ae;
+}
+
+.nexus-dashboard-shell .nx-dash-workspace-label {
+  border: 1px solid #e7e0f6;
+  border-radius: 999px;
+  padding: 8px 10px;
+  background: #f8f6ff;
+  color: #7866b1;
+  font-size: 9px;
+  font-weight: 820;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-wrap {
+  position: relative;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-button {
+  display: grid;
+  width: 37px;
+  height: 37px;
+  place-items: center;
+  border: 1px solid #b8a9f6;
+  border-radius: 12px;
+  background: linear-gradient(138deg, #8d6fe3, #6153bd);
+  box-shadow: 0 4px 12px rgba(87, 72, 195, 0.2);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-button:hover {
+  filter: brightness(1.09);
+}
+
+.nexus-dashboard-shell .nx-dash-profile-popover {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% + 12px);
+  right: 0;
+  display: grid;
+  width: 245px;
+  gap: 3px;
+  border: 1px solid #e0e4f1;
+  border-radius: 14px;
+  padding: 8px;
+  background: #ffffff;
+  box-shadow: 0 19px 48px rgba(30, 43, 93, 0.18);
+}
+
+.nexus-dashboard-shell .nx-dash-profile-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #eef0f6;
+  margin: 2px 1px 7px;
+  padding: 7px 6px 13px;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-title > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 12px;
+  background: #eeeaff;
+  color: #6353be;
+  font-weight: 850;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-title > div {
+  display: grid;
+  gap: 4px;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-title strong {
+  color: #27334f;
+  font-size: 12px;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-title small {
+  color: #8893aa;
+  font-size: 10px;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-popover > a,
+.nexus-dashboard-shell .nx-dash-profile-popover > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #ffffff;
+  color: #46536e;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-popover > a:hover,
+.nexus-dashboard-shell .nx-dash-profile-popover > button:hover {
+  background: #f3f1ff;
+  color: #584bca;
+}
+
+.nexus-dashboard-shell .nx-dash-profile-popover > button {
+  border-top: 1px solid #eff0f6;
+  margin-top: 2px;
+}
+
+.nexus-dashboard-shell .nx-dash-mobile-menu {
+  display: none;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: #3e4b69;
+}
+
+.nexus-dashboard-shell .content-panel.nx-dash-content,
+.nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+  padding: clamp(22px, 2.6vw, 38px);
+  background: #f8faff;
+  color: #24334e;
+}
+
+.nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+  overflow: hidden;
+  padding: 0;
+  background: #ffffff;
+}
+
+.nexus-dashboard-shell.app-shell-conversations .content-panel-conversations > .conversation-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.nexus-dashboard-shell .nx-dash-content p {
+  color: #7786a1;
+}
+
+.nexus-dashboard-shell .nx-dash-content h1,
+.nexus-dashboard-shell .nx-dash-content h2,
+.nexus-dashboard-shell .nx-dash-content h3,
+.nexus-dashboard-shell .nx-dash-content h4 {
+  color: #233250;
+}
+
+.nexus-dashboard-shell .nx-dash-content .eyebrow {
+  color: #7565d9;
+  font-size: 10px;
+  font-weight: 820;
+  letter-spacing: 0.14em;
+}
+
+.nexus-dashboard-shell .nx-dash-content input,
+.nexus-dashboard-shell .nx-dash-content select,
+.nexus-dashboard-shell .nx-dash-content textarea {
+  color-scheme: light;
+}
+
+.nexus-dashboard-shell .nx-dash-content .text-button {
+  color: #5c53c8;
+  font-weight: 740;
+}
+
+.nexus-dashboard-shell .nx-dash-content .text-button:hover {
+  color: #463ac5;
+}
+
+.nexus-dashboard-shell .nx-dash-content .primary-button {
+  background: linear-gradient(110deg, #5774ef, #7661e5);
+  box-shadow: 0 7px 16px rgba(88, 77, 205, 0.13);
+  color: #ffffff;
+  font-weight: 750;
+}
+
+.nexus-dashboard-shell .nx-dash-content [role="alert"] {
+  color: #ba3d57;
+}
+
+.nx-dash-command-layer {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(18vh, 155px) 18px 22px;
+}
+
+.nx-dash-command-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: rgba(9, 17, 40, 0.54);
+  cursor: default;
+  backdrop-filter: blur(4px);
+}
+
+.nx-dash-command {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(580px, 100%);
+  max-height: min(74vh, 610px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e7e7f4;
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 28px 88px rgba(14, 23, 58, 0.3);
+}
+
+.nx-dash-command-search {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid #e7eaf4;
+  padding: 16px 17px;
+  color: #7d73cc;
+}
+
+.nx-dash-command-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #283451;
+  font-size: 14px;
+}
+
+.nx-dash-command-search input::placeholder {
+  color: #9ba3ba;
+}
+
+.nx-dash-command-search button {
+  border: 1px solid #e1e4ed;
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: #f7f8fc;
+  color: #8f98aa;
+  font-size: 10px;
+}
+
+.nx-dash-command-results {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.nx-dash-command-results > p {
+  padding: 25px;
+  color: #818ba5;
+  font-size: 13px;
+  text-align: center;
+}
+
+.nx-dash-command-results > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px;
+  background: white;
+  color: #394763;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nx-dash-command-results > button:hover,
+.nx-dash-command-results > button.is-current {
+  background: #f0efff;
+  color: #5e53ca;
+}
+
+.nx-dash-command-icon {
+  display: grid;
+  width: 37px;
+  height: 37px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #e5e4f6;
+  border-radius: 10px;
+  background: #faf9ff;
+  color: #6857ce;
+}
+
+.nx-dash-command-results > button > span:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+}
+
+.nx-dash-command-results strong {
+  font-size: 12px;
+}
+
+.nx-dash-command-results small {
+  color: #929ab1;
+  font-size: 10px;
+}
+
+.nx-dash-command-results > button > svg {
+  color: #9b97cd;
+}
+
+.nx-dash-command-footer {
+  display: flex;
+  gap: 17px;
+  border-top: 1px solid #e8eaf3;
+  padding: 11px 18px;
+  background: #fafbff;
+  color: #8e97ac;
+  font-size: 10px;
+}
+
+.nx-dash-mobile-overlay {
+  display: none;
+}
+
+@media (max-width: 1120px) {
+  .nexus-dashboard-shell.app-shell,
+  .nexus-dashboard-shell.app-shell.app-shell-conversations {
+    grid-template-columns: 218px minmax(0, 1fr);
+  }
+
+  .nexus-dashboard-shell .nx-dash-workspace-label {
+    display: none;
+  }
+}
+
+@media (max-width: 790px) {
+  .nexus-dashboard-shell.app-shell,
+  .nexus-dashboard-shell.app-shell.app-shell-conversations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nexus-dashboard-shell .nx-dash-sidebar {
+    position: fixed;
+    z-index: 51;
+    inset: 0 auto 0 0;
+    width: min(260px, 82vw);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    box-shadow: 12px 0 40px rgba(8, 16, 37, 0.2);
+  }
+
+  .nexus-dashboard-shell .nx-dash-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .nexus-dashboard-shell .nx-dash-mobile-overlay {
+    position: fixed;
+    z-index: 49;
+    inset: 0;
+    display: block;
+    width: 100%;
+    border: 0;
+    background: rgba(9, 18, 44, 0.5);
+  }
+
+  .nexus-dashboard-shell .nx-dash-mobile-menu {
+    display: grid;
+    place-items: center;
+  }
+
+  .nexus-dashboard-shell .nx-dash-header {
+    min-height: 62px;
+    padding: 10px 15px;
+  }
+
+  .nexus-dashboard-shell .nx-dash-breadcrumbs {
+    gap: 7px;
+    font-size: 11px;
+  }
+
+  .nexus-dashboard-shell .nx-dash-jump {
+    width: 40px;
+    height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .nexus-dashboard-shell .nx-dash-jump > span,
+  .nexus-dashboard-shell .nx-dash-jump kbd {
+    display: none;
+  }
+
+  .nexus-dashboard-shell .content-panel.nx-dash-content {
+    padding: 18px 13px;
+  }
+
+  .nexus-dashboard-shell.app-shell-conversations .content-panel.content-panel-conversations {
+    padding: 0;
+  }
+}
+
+@media (max-width: 460px) {
+  .nexus-dashboard-shell .nx-dash-breadcrumbs > a {
+    display: none;
+  }
+
+  .nexus-dashboard-shell .nx-dash-breadcrumbs > span {
+    display: none;
+  }
+
+  .nexus-dashboard-shell .nx-dash-profile-button {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-dashboard-shell *,
+  .nx-dash-command-layer * {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,4 +1,6 @@
-import { type FormEvent, useState } from "react";
+import { type DragEvent, type FormEvent, useState } from "react";
+
+import { DashboardIcon } from "../../components/dashboard/DashboardIcon";
 
 import { MAX_FILE_SIZE_BYTES } from "./types";
 import {
@@ -50,9 +52,20 @@ export function FileUploadPanel() {
     void startUpload(selectedFile);
   }
 
+  function handleFileDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    if (active) return;
+    const file = event.dataTransfer.files.item(0);
+    if (file) {
+      setSelectedFile(file);
+      reset();
+    }
+  }
+
   return (
     <section className="file-upload-card" aria-labelledby="file-upload-heading">
       <div className="file-upload-copy">
+        <span className="nx-upload-illustration" aria-hidden="true"><DashboardIcon name="files" size={27} /></span>
         <p className="eyebrow">Files</p>
         <h1 id="file-upload-heading">Upload a file</h1>
         <p>
@@ -62,17 +75,25 @@ export function FileUploadPanel() {
       </div>
 
       <form className="file-upload-form" onSubmit={handleSubmit}>
-        <div className="form-field">
-          <label htmlFor="file-upload-input">Choose a file</label>
-          <input
-            id="file-upload-input"
-            disabled={active}
-            type="file"
-            onChange={(event) => {
-              setSelectedFile(event.target.files?.item(0) ?? null);
-              reset();
-            }}
-          />
+        <div
+          className="nx-upload-zone"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={handleFileDrop}
+        >
+          <span className="nx-upload-zone-icon" aria-hidden="true"><DashboardIcon name="files" size={24} /></span>
+          <div className="form-field">
+            <label htmlFor="file-upload-input">Choose a file</label>
+            <input
+              id="file-upload-input"
+              disabled={active}
+              type="file"
+              onChange={(event) => {
+                setSelectedFile(event.target.files?.item(0) ?? null);
+                reset();
+              }}
+            />
+          </div>
+          <p className="nx-upload-zone-caption">Or drop a file into this area to select it.</p>
           <p className="file-upload-limit">Maximum file size: 512 MB.</p>
         </div>
 

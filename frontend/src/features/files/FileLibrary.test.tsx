@@ -168,6 +168,32 @@ describe("FileLibrary", () => {
     expect(await screen.findByText("report.pdf")).toBeInTheDocument();
   });
 
+  it("filters only the loaded page without changing the file API request", async () => {
+    const user = userEvent.setup();
+    apiMocks.listFiles.mockResolvedValue({
+      items: [
+        firstPage.items[0],
+        {
+          ...firstPage.items[0],
+          publicId: "33333333-3333-4333-8333-333333333333",
+          originalName: "other-notes.md",
+        },
+      ],
+      nextCursor: null,
+    });
+    renderLibrary();
+
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    await user.type(
+      screen.getByRole("textbox", { name: "Filter loaded files" }),
+      "other",
+    );
+
+    expect(screen.getByText("other-notes.md")).toBeInTheDocument();
+    expect(screen.queryByText("report.pdf")).not.toBeInTheDocument();
+    expect(apiMocks.listFiles).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the first-page loading state", () => {
     apiMocks.listFiles.mockReturnValue(new Promise(() => undefined));
     renderLibrary();

@@ -112,19 +112,19 @@ describe("App", () => {
     );
   });
 
-  it("redirects the settings index to the canonical AI Providers route", async () => {
+  it("redirects the settings index to the Profile section", async () => {
     window.history.replaceState({}, "", "/settings?tab=profile#security");
 
     render(<App />);
 
     expect(
-      screen.getByRole("heading", { name: "Organization settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("link", { name: "AI Providers" }),
+      await screen.findByRole("link", { name: "Profile" }),
     ).toHaveAttribute("aria-current", "page");
     await waitFor(() =>
-      expect(window.location.pathname).toBe("/settings/ai-providers"),
+      expect(window.location.pathname).toBe("/settings/profile"),
     );
     expect(window.location.search).toBe("?tab=profile");
     expect(window.location.hash).toBe("#security");
@@ -150,10 +150,58 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: "AI Models" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "AI Models" })).toHaveAttribute(
-      "aria-current",
-      "page",
+    expect(screen.getByRole("link", { name: /Back to AI Providers/i })).toHaveAttribute(
+      "href",
+      "/settings/ai-providers",
     );
+  });
+
+  it("shows a persistent sidebar and removes the old horizontal navigation", () => {
+    window.history.replaceState({}, "", "/workspace");
+    const { container } = render(<App />);
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Main navigation" }))
+        .getByRole("link", { name: "Knowledge bases" }),
+    ).toHaveAttribute("href", "/knowledge-bases");
+    expect(
+      within(screen.getByRole("navigation", { name: "Main navigation" }))
+        .getByRole("link", { name: "MCP & tools" }),
+    ).toHaveAttribute("href", "/tools");
+    expect(container.querySelector(".top-bar")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Jump to anything" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Open profile menu" })).toHaveTextContent("S");
+  });
+
+  it("searches the command palette and opens preview destinations", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/workspace");
+    render(<App />);
+
+    await user.click(screen.getAllByRole("button", { name: "Jump to anything" })[0]);
+    const dialog = screen.getByRole("dialog", { name: "Jump to anything" });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Search NEXUS destinations" }),
+      "incident",
+    );
+    await user.click(within(dialog).getByRole("option", { name: /Incidents/i }));
+
+    expect(window.location.pathname).toBe("/incidents");
+    expect(screen.getByRole("heading", { name: "Incidents" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Jump to anything" })).not.toBeInTheDocument();
+  });
+
+  it("opens Profile and Usage from the S account menu", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/workspace");
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Open profile menu" }));
+    await user.click(screen.getByRole("menuitem", { name: "Usage" }));
+
+    expect(window.location.pathname).toBe("/settings/usage");
+    expect(screen.getByRole("heading", { name: "Usage" })).toBeInTheDocument();
+    expect(screen.getByText("No token metering connected")).toBeInTheDocument();
   });
 
   it("renders the Files route inside the authenticated application shell", () => {

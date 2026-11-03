@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { ProviderCard } from "./ProviderCard";
 import { ProviderConfigurationForm } from "./ProviderConfigurationForm";
@@ -80,6 +81,9 @@ export function AIProvidersSettings() {
           Configure the AI providers available to this organization. Credentials
           are write-only and are never shown again.
         </p>
+        <Link className="nx-ui-provider-models-link" to="/settings/ai-models">
+          Manage registered models and defaults <span aria-hidden="true">→</span>
+        </Link>
       </header>
 
       <div className="provider-groups">
@@ -143,15 +147,16 @@ function ProviderGroup({
       aria-labelledby={`provider-${catalogItem.providerType}`}
     >
       <div className="provider-group-heading">
-        <div>
-          <h3 id={`provider-${catalogItem.providerType}`}>
-            {catalogItem.displayName}
-          </h3>
-          <p>
-            {items.length === 0
-              ? "Not configured"
-              : `${items.length} configured`}
-          </p>
+        <div className="nx-provider-title">
+          <span className="nx-provider-title-mark" aria-hidden="true">
+            {catalogItem.displayName.charAt(0)}
+          </span>
+          <div>
+            <h3 id={"provider-" + catalogItem.providerType}>
+              {catalogItem.displayName}
+            </h3>
+            <p>{items.length === 0 ? "Not configured" : items.length + " configured"}</p>
+          </div>
         </div>
         {canManage && !creating ? (
           <button
