@@ -76,6 +76,9 @@ class DocumentChunk(Base):
         UniqueConstraint(
             "document_id", "chunk_index", name="uq_document_chunks_document_index"
         ),
+        UniqueConstraint(
+            "id", "organization_id", name="uq_document_chunks_id_organization_id"
+        ),
         CheckConstraint("chunk_index >= 0", name="ck_document_chunks_index"),
         CheckConstraint("text ~ '\\S'", name="ck_document_chunks_text"),
         CheckConstraint(

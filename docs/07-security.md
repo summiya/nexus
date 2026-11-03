@@ -814,6 +814,45 @@ Cross-tenant vector/database searches must be prevented.
 
 Embeddings and vector stores must preserve tenant/project boundaries.
 
+### RF-04 embedding ownership and the future retrieval boundary
+
+`chunk_embeddings.organization_id` is mandatory and database-enforced. Composite
+foreign keys bind each vector to a same-tenant authoritative DocumentChunk and an
+embedding-type configured model. Existing composite keys bind the chunk through
+its chunk set and Document to its source File. These are integrity and tenant
+boundaries, not resource permission grants. Vectors contain neither `user_id`
+ownership nor copies of Roles, Permissions, membership lists or ACL decisions.
+File creator relationships remain unchanged and are not automatically read grants.
+
+Current File read use cases check organization-scoped `files.read` through
+`PermissionChecker`, then fetch tenant-owned Files. The implemented schema has no
+document-level access policy/grants. It is unsafe to infer permission to retrieve
+every document from `files.read`, tenant membership, File creation or a
+`RetrievalScope`. RF-04 does not add an ACL system or broaden existing access.
+
+Before retrieval can be activated, an approved resource policy must define which
+Files/Documents the authenticated user may read. Future retrieval must use the
+existing Users, Roles, Permissions and `PermissionChecker` for capability checks,
+and apply current authoritative RBAC/resource predicates **inside the retrieval
+query before final ordering/Top-K**, alongside trusted tenant scope, active
+identity checks, File availability, Document eligibility and compatible embedding
+model/generation. A separate earlier capability check alone cannot protect
+against revocation between that check and the retrieval query. Undefined policy
+or authorization failure must fail closed. Do not take a global candidate Top-K
+and filter unauthorized results in the application afterward.
+
+Role, permission and resource-access changes must affect subsequent authorized
+queries without re-embedding. Keep authorization state out of vector metadata and
+do not persist per-user copies of the same embedding. Future authorization tests
+must cover foreign and same-tenant denied resources, unauthorized nearest chunks,
+revocation and disabled/deleted identities/resources before final Top-K. ANN's
+physical candidate filtering can underfill results; iterative scanning or an
+authorized exact-search strategy needs separate retrieval-phase review.
+
+The vector's provider/model/dimension fields are declared historical invocation
+snapshots. Their CHECK constraints are not cross-table identity verification; the
+future trusted writer must bind them to the resolved target actually invoked.
+
 ---
 
 # 22. Data Leakage Protection

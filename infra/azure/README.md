@@ -1,5 +1,50 @@
 # Nexus File Upload Event Routing
 
+## RF-04 PostgreSQL / pgvector prerequisites
+
+Compose and CI pin PostgreSQL 16 with pgvector 0.8.7 to the same official
+`pgvector/pgvector:0.8.7-pg16-bookworm` multi-architecture image digest. The existing
+`postgres-data` volume declaration and `/var/lib/postgresql/data` mount are retained;
+no reset, volume deletion or PostgreSQL-major upgrade is part of this change.
+
+**Existing Alpine PG16 clusters require a reviewed cutover before using the new
+Debian image.** Do not run a default `docker compose up` or `make backend-check`
+against an unreviewed existing cluster after switching images. An unchanged PG
+major version does not guarantee libc/locale/collation compatibility. Take and
+verify a logical backup (including roles/ownership), restore into a new PG16
+pgvector volume, and validate row counts, constraints, privileges, sequences,
+encoding and collations/indexes before switching the application. Keep the old
+volume and backup untouched for rollback. Do not use `docker compose down -v`,
+`docker volume prune`, a physical data-directory copy across distributions or an
+automatic collation-version refresh as a substitute for that validation.
+
+For local/CI verification, use a separate Compose project with fresh volumes and
+an override that removes published dependency ports if the existing stack is
+running. Keep its database URL pointed at its own `postgres` service. Only remove
+that explicitly identified disposable project's resources afterward; never target
+the existing Nexus project. This exercises the standard Makefile targets without
+mounting or migrating existing user data.
+
+This repository currently has no PostgreSQL-server deployment template. For an
+existing Azure Database for PostgreSQL Flexible Server, operators must confirm
+PostgreSQL 16 and an available compatible pgvector version, add `vector` to
+`azure.extensions` **without replacing other allowlisted extensions**, and verify
+the migration role can create it in the target database. Azure's supported version
+need not equal the local image's version, but the vector type and `vector_norm`
+must be available and migration tests must pass on that deployed version. Do not
+grant extension-management or superuser privileges to the application role.
+
+Migration `20261103_0020` runs `CREATE EXTENSION IF NOT EXISTS vector`; it fails if
+the extension is unavailable or not permitted. Schedule the new parent unique-key
+build for an appropriate lock window and take a database backup before migration.
+There is no embedding backfill or HNSW index build. A schema downgrade drops new
+embedding data but preserves all source tables and the shared extension. After
+the new database accepts writes, failback requires a data-reconciliation plan;
+simply starting the old volume can lose newly committed writes.
+
+References: [pgvector Docker images](https://github.com/pgvector/pgvector#docker),
+[Azure extension prerequisites](https://learn.microsoft.com/en-us/azure/postgresql/extensions/how-to-use-pgvector).
+
 ## Provider credential Key Vault
 
 `provider-credentials.bicep` deploys the dedicated model-provider credential
