@@ -462,18 +462,21 @@ describe("ConversationPage", () => {
   it.each([
     ["loading", "status"],
     ["error", "alert"],
-  ])("keeps the conversation canvas during a history %s state", (state, role) => {
-    conversationMocks.historyState = state;
-    renderPage(`/conversations/${firstConversationId}`);
+  ])(
+    "keeps the conversation canvas during a history %s state",
+    (state, role) => {
+      conversationMocks.historyState = state;
+      renderPage(`/conversations/${firstConversationId}`);
 
-    expect(screen.getByRole(role)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("complementary", { name: "Conversation sidebar" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Conversation workspace" }),
-    ).toBeInTheDocument();
-  });
+      expect(screen.getByRole(role)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("complementary", { name: "Conversation sidebar" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Conversation workspace" }),
+      ).toBeInTheDocument();
+    },
+  );
 
   it("keeps the submission owner mounted and resets selected UI on A to B", async () => {
     const user = userEvent.setup();

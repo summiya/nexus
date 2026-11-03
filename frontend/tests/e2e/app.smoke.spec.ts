@@ -238,7 +238,6 @@ test("configured models and defaults flow into the chat model selector", async (
   await expect(page.locator(".conversation-sidebar")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "New chat" })).toBeVisible();
 
-
   const modelSelector = page.getByRole("combobox", {
     name: "Model",
     exact: true,

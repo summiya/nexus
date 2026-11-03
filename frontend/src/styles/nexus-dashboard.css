@@ -823,7 +823,6 @@
   }
 }
 
-
 /* The unified workspace sidebar owns all chat navigation. The five latest
    conversations fit inside this scroll region, with older items available
    without opening a second sidebar or browser tab. */
@@ -848,7 +847,9 @@
   font-size: 11px;
   font-weight: 760;
   text-decoration: none;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
 }
 
 .nexus-dashboard-shell .nx-dash-new-chat:hover,
@@ -879,7 +880,9 @@
   letter-spacing: 0.12em;
 }
 
-.nexus-dashboard-shell .nx-dash-recents-heading > span:last-child:not(:first-child) {
+.nexus-dashboard-shell
+  .nx-dash-recents-heading
+  > span:last-child:not(:first-child) {
   border-radius: 5px;
   padding: 2px 5px;
   background: rgba(173, 171, 244, 0.12);
@@ -913,7 +916,9 @@
   font-size: 11px;
   line-height: 1.25;
   text-decoration: none;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 
 .nexus-dashboard-shell .nx-dash-recent-chat:hover,
@@ -965,7 +970,8 @@
 
 /* With the history in the persistent sidebar, chat itself has one column. */
 .nexus-dashboard-shell.app-shell-conversations
-  .content-panel-conversations > .conversation-shell {
+  .content-panel-conversations
+  > .conversation-shell {
   display: flex;
   grid-template-columns: none;
   grid-template-rows: none;

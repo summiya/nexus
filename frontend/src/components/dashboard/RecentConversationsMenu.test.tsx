@@ -40,10 +40,7 @@ function LocationProbe() {
   return <span data-testid="current-location">{location.pathname}</span>;
 }
 
-function renderRecent(
-  initialPath = "/conversations",
-  closeSidebar = vi.fn(),
-) {
+function renderRecent(initialPath = "/conversations", closeSidebar = vi.fn()) {
   return {
     closeSidebar,
     ...render(
@@ -156,7 +153,9 @@ describe("RecentConversationsMenu", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Chats are temporarily unavailable.",
     );
-    expect(screen.queryByText("private backend details")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("private backend details"),
+    ).not.toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Retry" }));

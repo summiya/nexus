@@ -1,4 +1,10 @@
-import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Link,
   NavLink,
@@ -141,38 +147,37 @@ function ActiveNavigation({
             .filter((destination) => destination.group === group)
             .filter(
               (destination) =>
-                group !== "Account" ||
-                destination.label === "Settings",
+                group !== "Account" || destination.label === "Settings",
             )
             .map((destination) => (
               <Fragment key={destination.path}>
-              <NavLink
-                to={destination.path}
-                end={destination.path !== "/conversations"}
-                className={({ isActive }) =>
-                  "nx-dash-nav-link" + (isActive ? " active" : "")
-                }
-                onClick={closeSidebar}
-              >
-                <DashboardIcon name={destination.icon} />
-                <span>{destination.label}</span>
-                {destination.label === "Projects" ||
-                destination.label === "Knowledge bases" ||
-                destination.label === "Agents" ||
-                destination.label === "MCP & tools" ||
-                destination.label === "Artifacts" ||
-                destination.label === "Incidents" ? (
-                  <span
-                    className="nx-dash-nav-preview"
-                    aria-label="Design preview"
-                  >
-                    ·
-                  </span>
+                <NavLink
+                  to={destination.path}
+                  end={destination.path !== "/conversations"}
+                  className={({ isActive }) =>
+                    "nx-dash-nav-link" + (isActive ? " active" : "")
+                  }
+                  onClick={closeSidebar}
+                >
+                  <DashboardIcon name={destination.icon} />
+                  <span>{destination.label}</span>
+                  {destination.label === "Projects" ||
+                  destination.label === "Knowledge bases" ||
+                  destination.label === "Agents" ||
+                  destination.label === "MCP & tools" ||
+                  destination.label === "Artifacts" ||
+                  destination.label === "Incidents" ? (
+                    <span
+                      className="nx-dash-nav-preview"
+                      aria-label="Design preview"
+                    >
+                      ·
+                    </span>
+                  ) : null}
+                </NavLink>
+                {destination.path === "/conversations" ? (
+                  <RecentConversationsMenu closeSidebar={closeSidebar} />
                 ) : null}
-              </NavLink>
-              {destination.path === "/conversations" ? (
-                <RecentConversationsMenu closeSidebar={closeSidebar} />
-              ) : null}
               </Fragment>
             ))}
         </div>
@@ -202,13 +207,16 @@ export function AppLayout() {
   const paletteInputRef = useRef<HTMLInputElement>(null);
 
   const normalizedQuery = paletteQuery.trim().toLocaleLowerCase();
-  const results = [...destinations, {
-    label: "Usage",
-    path: "/settings/usage",
-    icon: "usage" as const,
-    group: "Account",
-    terms: "token usage billing",
-  }].filter(
+  const results = [
+    ...destinations,
+    {
+      label: "Usage",
+      path: "/settings/usage",
+      icon: "usage" as const,
+      group: "Account",
+      terms: "token usage billing",
+    },
+  ].filter(
     (destination) =>
       normalizedQuery.length === 0 ||
       [destination.label, destination.group, destination.terms ?? ""]

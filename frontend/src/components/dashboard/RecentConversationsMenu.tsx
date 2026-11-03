@@ -4,10 +4,11 @@ import { useConversationsQuery } from "../../features/conversations/queries";
 import type { ConversationSummary } from "../../features/conversations/types";
 import { DashboardIcon } from "./DashboardIcon";
 
-function newestFirst(items: readonly ConversationSummary[]): ConversationSummary[] {
+function newestFirst(
+  items: readonly ConversationSummary[],
+): ConversationSummary[] {
   return [...items].sort(
-    (left, right) =>
-      Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+    (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
   );
 }
 
@@ -20,10 +21,7 @@ export function RecentConversationsMenu({
   const items = newestFirst(conversations.data ?? []);
 
   return (
-    <section
-      className="nx-dash-recents"
-      aria-label="Recent conversations"
-    >
+    <section className="nx-dash-recents" aria-label="Recent conversations">
       <NavLink
         to="/conversations"
         end
@@ -39,9 +37,7 @@ export function RecentConversationsMenu({
 
       <div className="nx-dash-recents-heading">
         <span>RECENT CHATS</span>
-        {conversations.isSuccess ? (
-          <span>{items.length}</span>
-        ) : null}
+        {conversations.isSuccess ? <span>{items.length}</span> : null}
       </div>
 
       {conversations.isPending ? (
@@ -62,10 +58,7 @@ export function RecentConversationsMenu({
       ) : items.length === 0 ? (
         <p className="nx-dash-recents-state">No conversations yet.</p>
       ) : (
-        <nav
-          className="nx-dash-recents-scroll"
-          aria-label="Recent chat list"
-        >
+        <nav className="nx-dash-recents-scroll" aria-label="Recent chat list">
           {items.map((conversation) => (
             <NavLink
               key={conversation.publicId}
