@@ -632,7 +632,9 @@ export function HomePage({
           </div>
         </section>
 
-        <NexusCapabilityExplorer authenticated={authStatus === "authenticated"} />
+        <NexusCapabilityExplorer
+          authenticated={authStatus === "authenticated"}
+        />
 
         <section className="nx-section nx-process-section" id="how-it-works">
           <div className="nx-container">
