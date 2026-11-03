@@ -43,8 +43,8 @@ jobs:
             src/features/files/FileLibrary.test.tsx \
             src/app/router.tsx \
             src/App.test.tsx \
-            styles/nexus-dashboard.css \
-            styles/nexus-dashboard-pages.css \
+            src/styles/nexus-dashboard.css \
+            src/styles/nexus-dashboard-pages.css \
             tests/e2e/app.smoke.spec.ts
       - name: Commit formatting
         run: |
