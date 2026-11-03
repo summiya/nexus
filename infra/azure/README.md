@@ -2,28 +2,179 @@
 
 ## RF-04 PostgreSQL / pgvector prerequisites
 
-Compose and CI pin PostgreSQL 16 with pgvector 0.8.7 to the same official
-`pgvector/pgvector:0.8.7-pg16-bookworm` multi-architecture image digest. The existing
-`postgres-data` volume declaration and `/var/lib/postgresql/data` mount are retained;
-no reset, volume deletion or PostgreSQL-major upgrade is part of this change.
+`infra/postgres/Dockerfile` adds pgvector 0.8.7 to the exact existing PostgreSQL
+16.15 / Alpine 3.24.1 base, pinned by multi-architecture digest
+`sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685`.
+Both AMD64 and ARM64 manifests identify the same PostgreSQL/Alpine release. The
+source is pinned to upstream commit `f37c13f68b57d2c3472b2214fbcff699d6d34876`
+and archive SHA-256 `83d673c3b287cddbf3879f86215f043f2c2b56c69d37b2a77504910db1ed6e56`.
+Compilation uses that base's `/usr/local/bin/pg_config`, headers and PGXS with
+`OPTFLAGS=""`; no second Alpine PostgreSQL installation is introduced.
 
-**Existing Alpine PG16 clusters require a reviewed cutover before using the new
-Debian image.** Do not run a default `docker compose up` or `make backend-check`
-against an unreviewed existing cluster after switching images. An unchanged PG
-major version does not guarantee libc/locale/collation compatibility. Take and
-verify a logical backup (including roles/ownership), restore into a new PG16
-pgvector volume, and validate row counts, constraints, privileges, sequences,
-encoding and collations/indexes before switching the application. Keep the old
-volume and backup untouched for rollback. Do not use `docker compose down -v`,
-`docker volume prune`, a physical data-directory copy across distributions or an
-automatic collation-version refresh as a substitute for that validation.
+Build tools exist only in the builder. The final stage starts from the identical
+pinned base and copies only extension artifacts, preserving PostgreSQL binaries,
+runtime libc/ICU, configuration, UID/GID, entrypoint and PGDATA. The existing
+Compose `postgres-data` mapping to `/var/lib/postgresql/data` is unchanged. There
+are no added startup SQL/init scripts or automatic migrations. As with the
+original upstream entrypoint, an empty directory would initialize a new cluster:
+the operator must therefore verify the existing volume and cluster identity
+before starting a replacement. Never substitute an empty volume or run initdb,
+pg_upgrade, a collation refresh, volume deletion/pruning or a data-directory reset.
 
-For local/CI verification, use a separate Compose project with fresh volumes and
-an override that removes published dependency ports if the existing stack is
-running. Keep its database URL pointed at its own `postgres` service. Only remove
-that explicitly identified disposable project's resources afterward; never target
-the existing Nexus project. This exercises the standard Makefile targets without
-mounting or migrating existing user data.
+### Automated validation never uses the existing database
+
+```bash
+make postgres-check
+make backend-integration-check
+make backend-check
+make docker-check
+pre-commit run --all-files
+```
+
+`test-image.sh` generates a fresh `nexus-rf04-test-*` project. Backend/integration
+checks use only the standalone `infra/postgres/compose.test.yml`, `.env.example`,
+literal test database endpoints and anonymous volumes; root `.env`, inherited
+Compose project/file defaults, host data mounts, external/named volumes and
+published ports cannot select the existing database. No production Compose
+service is started. The image test allocates its own labeled network/volumes,
+applies the pre-RF-04 schema, and seeds synthetic Users, Files, Documents and RBAC.
+It checks a clean base-to-custom image replacement on that synthetic cluster,
+verified logical backup/restore, ownership/grants/constraints/sequences and RF-04
+vector functionality. The base PostgreSQL/libc/ICU/entrypoint hashes must match.
+
+Test scripts only stop their own resources and retain containers, disposable
+volumes and protected temporary artifacts for inspection; they do not run Docker
+removal, down or prune commands. CI first checks out the code and builds/tests the
+image, then explicitly launches a health-checked PostgreSQL container with a new
+anonymous volume. It does not attempt to use a not-yet-built job service image.
+
+### Manual backup and verified restore (operator authorization required)
+
+The following procedure is documentation, **not an automatic test or deployment**.
+Image correction approval does not authorize a live backup, restart or migration.
+Use PostgreSQL 16.15 client tools, authenticated libpq service entries outside
+source control, and a maintenance window. `nexus-live` must identify the reviewed
+existing server/application database; `nexus-restore` must identify a fresh,
+non-public disposable server, database `postgres`, and a bootstrap superuser name
+absent from the source role list. Confirm these identities before any restore.
+Inventory all databases, non-default tablespaces, locale/collation settings,
+installed extensions, volume mapping, image ID, migration revision, roles and
+writers. Non-default tablespaces require a reviewed restore-path mapping first.
+
+1. Quiesce all application/worker/external writers and role changes. Keep the
+   source server running to take the final consistent logical backups. Verify
+   the writer shutdown; an idle-session check alone is not a write fence.
+2. Capture backups with owners and grants intact. Repeat the custom dump for
+   every application database in the inventory. Protect/encrypt the directory
+   and keep a verified off-host copy: globals can contain credential hashes.
+
+```bash
+set -euo pipefail
+umask 077
+NEXUS_BACKUP_DIR=/secure/backups/nexus/REVIEWED_UTC_TIMESTAMP
+mkdir -p "$NEXUS_BACKUP_DIR"
+PGSERVICE=nexus-live psql -X -v ON_ERROR_STOP=1 -Atc \
+  'SELECT system_identifier FROM pg_control_system()' > "$NEXUS_BACKUP_DIR/source-cluster-id"
+PGSERVICE=nexus-live pg_dumpall --globals-only --file="$NEXUS_BACKUP_DIR/globals.sql"
+PGSERVICE=nexus-live pg_dump --format=custom --dbname=nexus --file="$NEXUS_BACKUP_DIR/nexus.dump"
+pg_restore --list "$NEXUS_BACKUP_DIR/nexus.dump" > "$NEXUS_BACKUP_DIR/archive-list.txt"
+openssl dgst -sha256 "$NEXUS_BACKUP_DIR/globals.sql" "$NEXUS_BACKUP_DIR/nexus.dump" \
+  > "$NEXUS_BACKUP_DIR/backup.sha256"
+```
+
+3. Verify restore-target identity is different from the live cluster and that
+   application database `nexus` does not already exist. Do not use `--clean`,
+   `--no-owner` or `--no-acl` to suppress errors. A non-colliding bootstrap role
+   permits fail-fast restoration of the original SQL roles.
+
+```bash
+PGSERVICE=nexus-restore psql -X -v ON_ERROR_STOP=1 -Atc \
+  'SELECT system_identifier FROM pg_control_system()' > "$NEXUS_BACKUP_DIR/restore-cluster-id"
+if cmp -s "$NEXUS_BACKUP_DIR/source-cluster-id" "$NEXUS_BACKUP_DIR/restore-cluster-id"; then
+  echo 'Refusing to restore onto the source cluster' >&2; exit 1
+fi
+test "$(PGSERVICE=nexus-restore psql -X -v ON_ERROR_STOP=1 -Atc \
+  "SELECT count(*) FROM pg_database WHERE datname='nexus'")" = 0
+PGSERVICE=nexus-restore psql -X -v ON_ERROR_STOP=1 --file="$NEXUS_BACKUP_DIR/globals.sql"
+PGSERVICE=nexus-restore pg_restore --exit-on-error --create --dbname=postgres \
+  "$NEXUS_BACKUP_DIR/nexus.dump"
+```
+
+4. Point a separate service `nexus-restored` at the restored `nexus` database.
+   Compare **all** public table contents, not only counts. The following hashes
+   stream canonical sorted rows without printing private values. Keep writers
+   fenced throughout the comparison; review any mismatch before proceeding.
+
+```bash
+fingerprint_tables() {
+  local service="$1" tables table
+  tables=$(PGSERVICE="$service" psql -X -v ON_ERROR_STOP=1 -Atc \
+    "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
+  test -n "$tables"
+  while IFS= read -r table; do
+    case "$table" in ''|*[!a-z0-9_]*) echo 'Review nonstandard table name' >&2; return 1;; esac
+    printf '%s\n' "$table"
+    PGSERVICE="$service" PGOPTIONS='-c timezone=UTC -c datestyle=ISO,MDY' \
+      psql -X -q -v ON_ERROR_STOP=1 -c \
+      "COPY (SELECT to_jsonb(t) FROM public.\"$table\" t ORDER BY to_jsonb(t)::text) TO STDOUT" \
+      | openssl dgst -sha256
+  done <<< "$tables"
+}
+fingerprint_tables nexus-live > "$NEXUS_BACKUP_DIR/source-tables.sha256"
+fingerprint_tables nexus-restored > "$NEXUS_BACKUP_DIR/restored-tables.sha256"
+cmp "$NEXUS_BACKUP_DIR/source-tables.sha256" "$NEXUS_BACKUP_DIR/restored-tables.sha256"
+```
+
+   Also compare SQL role attributes/memberships, table/schema/sequence owners,
+   grants/default privileges, PK/FK/unique/CHECK definitions and validation flags,
+   sequence `last_value`/`is_called`, and database locale/encoding/collation. Use
+   `pg_dump --data-only` to retain sequence setval state and a schema-only dump
+   for ownership/privileges. Logical restores may normalize CHECK-expression
+   cast syntax; review semantic differences rather than ignoring constraints.
+   Exercise allowed/denied File/RBAC operations and tenant FK failures on the
+   **restored disposable** database, and verify sequence continuation there.
+   Do not restore into, run destructive probes on, or mount the live data volume
+   to perform these checks. Actual successful restoration, checksums and semantic
+   checks are required; `pg_restore --list` alone is not restore verification.
+
+### Operator-controlled image replacement and separate migration
+
+After the verified backup/restore and explicit deployment approval, record the
+old image ID and the tested custom image ID/digest. Verify the target is the
+reviewed existing `nexus` Compose project, the `nexus_postgres-data` volume and
+the same `/var/lib/postgresql/data` mapping. Keep writers fenced. Cleanly stop
+only the old PostgreSQL process, and ensure it has exited before starting the
+replacement; never run two servers against one data directory.
+
+The reviewed operator commands, from the deployed repository/configuration, are:
+
+```bash
+docker compose --project-name nexus --file docker-compose.yml stop postgres
+docker compose --project-name nexus --file docker-compose.yml up -d --no-deps --no-build postgres
+```
+
+Verify readiness, PostgreSQL/Alpine version, unchanged cluster system identifier,
+existing data, locale/collation, permissions and that initialization was skipped.
+Abort if the volume mapping, cluster identity, version or expected data differs.
+The replacement image makes the extension **available**, not enabled. Do not use
+init scripts or an automatic startup migration. With writers still fenced,
+extension privileges/availability reviewed and a DDL lock window scheduled, apply
+only the approved migration `alembic upgrade 20261103_0020` as a separate explicit
+operator step. Verify extension version 0.8.7, schema constraints and source data
+before reopening writers. Do not upgrade/relabel existing vectors or begin RF-05.
+
+### Rollback boundaries
+
+Before extension/schema activation, an image-only rollback can cleanly stop the
+replacement and restart the recorded old image on the same intact data volume.
+Once `vector` objects exist, the original image lacks their library: do not assume
+it is a functional rollback. Prefer a tested extension-capable image, or execute
+an approved schema/recovery plan. RF-04 downgrade discards new embedding rows and
+preserves the shared extension; never apply it blindly. A backup recovery must
+restore into separate recovery storage, retain the original volume, and reconcile
+any writes committed after the backup before routing users to recovered data.
+No reset, volume deletion/pruning, unclean directory copy or automatic downgrade
+is part of this procedure.
 
 This repository currently has no PostgreSQL-server deployment template. For an
 existing Azure Database for PostgreSQL Flexible Server, operators must confirm
@@ -42,7 +193,9 @@ embedding data but preserves all source tables and the shared extension. After
 the new database accepts writes, failback requires a data-reconciliation plan;
 simply starting the old volume can lose newly committed writes.
 
-References: [pgvector Docker images](https://github.com/pgvector/pgvector#docker),
+References: [pgvector build settings](https://github.com/pgvector/pgvector/blob/v0.8.7/Makefile),
+[PostgreSQL logical backups](https://www.postgresql.org/docs/16/backup-dump.html),
+[global-role backups](https://www.postgresql.org/docs/16/app-pg-dumpall.html),
 [Azure extension prerequisites](https://learn.microsoft.com/en-us/azure/postgresql/extensions/how-to-use-pgvector).
 
 ## Provider credential Key Vault

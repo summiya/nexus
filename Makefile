@@ -3,7 +3,7 @@ SHELL := /bin/bash
 -include .env
 export VITE_API_BASE_URL
 
-.PHONY: check backend-check frontend-check infra-check docker-check
+.PHONY: check backend-check backend-integration-check postgres-check frontend-check infra-check docker-check
 
 check: backend-check frontend-check infra-check docker-check
 	@echo ""
@@ -16,13 +16,13 @@ backend-check:
 	@echo "========================================"
 	@echo "1/4 BACKEND QUALITY"
 	@echo "========================================"
-	docker compose build backend
-	docker compose run --rm backend pytest tests/unit -q
-	docker compose run --rm backend pytest tests/api -q
-	docker compose run --rm -e NEXUS_REQUIRE_POSTGRES_TESTS=true backend pytest tests/integration -q
-	docker compose run --rm -e NEXUS_REQUIRE_POSTGRES_TESTS=true backend pytest tests --cov=nexus --cov-branch --cov-report=term-missing -q
-	docker compose run --rm backend ruff check src tests
-	docker compose run --rm backend mypy src
+	./infra/postgres/test-image.sh backend-check
+
+backend-integration-check:
+	./infra/postgres/test-image.sh integration-check
+
+postgres-check:
+	./infra/postgres/test-image.sh image-check
 
 frontend-check:
 	@echo ""
@@ -75,4 +75,4 @@ docker-check:
 	@echo "========================================"
 	@echo "4/4 DOCKER BUILD"
 	@echo "========================================"
-	docker compose build --no-cache
+	./infra/postgres/test-image.sh docker-check

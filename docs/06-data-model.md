@@ -1126,9 +1126,10 @@ though RF-03's gateway supports other dimensions and `text-embedding-3-large`.
 Future model/dimension changes require an explicit migration and compatible
 versioned storage; existing vectors must never be relabeled or reinterpreted.
 Role/permission changes do not rewrite embeddings. Disabling a configured model
-does not delete its history. Referenced models cannot be deleted: before future
-write activation, register the new model FK in the existing model-provider error
-classification so administrative deletion reports a safe reference conflict.
+does not delete its history. Referenced models cannot be deleted: the embedding
+model FK is registered in the existing model-provider error classification, so
+administrative deletion reports the existing safe reference conflict instead of
+a persistence/service failure.
 
 Migration `20261103_0020` follows `20261007_0019`, enables the `vector` extension,
 adds the chunk tenant key and creates the empty embedding table atomically. It

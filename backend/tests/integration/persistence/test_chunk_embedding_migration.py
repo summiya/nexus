@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 from tests.integration.helpers import seed_file
 
 from nexus.infrastructure.persistence.authorization import SqlAlchemyPermissionChecker
+from nexus.infrastructure.persistence.model_provider import (
+    SqlAlchemyModelProviderPersistence,
+)
 from nexus.infrastructure.persistence.models import (
     ChunkEmbedding,
     ConfiguredModel,
@@ -28,6 +31,8 @@ from nexus.infrastructure.persistence.models import (
     User,
     UserRole,
 )
+from nexus.model_providers.domain import ConfiguredModelId
+from nexus.model_providers.ports import ModelProviderDeleteRestrictedError
 
 PREVIOUS = "20261007_0019"
 NOW = datetime(2026, 11, 3, tzinfo=UTC)
@@ -452,6 +457,31 @@ def test_referenced_parents_cannot_be_deleted(context, parent):
     }[parent]
     with pytest.raises(IntegrityError), context.engine.begin() as connection:
         connection.execute(delete(parent).where(parent.id == identity))
+
+
+def test_embedding_reference_maps_model_deletion_to_existing_safe_conflict(
+    context,
+    persistence_async_session_factory,
+):
+    identity = write(context)
+    with Session(context.engine) as session:
+        organization = session.get(Organization, context.tenant.organization_id)
+        model = session.get(ConfiguredModel, context.tenant.model_id)
+        assert organization is not None and model is not None
+        organization_public_id = organization.public_id
+        model_id = ConfiguredModelId(model.public_id)
+    persistence = SqlAlchemyModelProviderPersistence(persistence_async_session_factory)
+    with pytest.raises(ModelProviderDeleteRestrictedError) as captured:
+        asyncio.run(
+            persistence.delete_model(
+                organization_public_id=organization_public_id,
+                model_id=model_id,
+            )
+        )
+    assert str(captured.value) == "Model provider configuration is still referenced"
+    with Session(context.engine) as session:
+        assert session.get(ConfiguredModel, context.tenant.model_id) is not None
+        assert session.get(ChunkEmbedding, identity) is not None
 
 
 @pytest.mark.parametrize(
