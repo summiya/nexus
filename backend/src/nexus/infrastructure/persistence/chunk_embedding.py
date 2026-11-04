@@ -156,10 +156,7 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                             or previous.provider_type != batch.provider_type
                             or previous.provider_model_name != batch.provider_model_name
                             or previous.embedding_dimension != batch.embedding_dimension
-                            or _to_float32(
-                                tuple(float(value) for value in previous.embedding)
-                            )
-                            != values
+                            or _to_float32(tuple(previous.embedding)) != values
                         ):
                             raise ChunkEmbeddingConflictError()
                         continue
