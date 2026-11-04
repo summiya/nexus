@@ -17,8 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from nexus.documents.domain import DocumentStatus
 from nexus.infrastructure.persistence import _chunk_embedding_queries as queries
-from nexus.infrastructure.persistence import _document_chunk_queries
-from nexus.infrastructure.persistence import _document_queries
+from nexus.infrastructure.persistence import _document_chunk_queries, _document_queries
 from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
 from nexus.retrieval.domain.chunk_embeddings import (
     ChunkEmbeddingBatch,
@@ -96,7 +95,14 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                 )
                 if model is None:
                     raise ChunkEmbeddingConflictError()
-                model_id, provider_type, provider_name, dimension, model_enabled, provider_enabled = model
+                (
+                    model_id,
+                    provider_type,
+                    provider_name,
+                    dimension,
+                    model_enabled,
+                    provider_enabled,
+                ) = model
                 if (
                     provider_type != batch.provider_type
                     or provider_name != batch.provider_model_name
@@ -147,7 +153,8 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                             or previous.provider_type != batch.provider_type
                             or previous.provider_model_name != batch.provider_model_name
                             or previous.embedding_dimension != batch.embedding_dimension
-                            or tuple(float(value) for value in previous.embedding) != values
+                            or tuple(float(value) for value in previous.embedding)
+                            != values
                         ):
                             raise ChunkEmbeddingConflictError()
                         continue

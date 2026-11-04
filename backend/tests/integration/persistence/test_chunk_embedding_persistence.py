@@ -124,7 +124,9 @@ def batch(
     vectors: tuple[tuple[float, ...], ...] | None = None,
 ) -> ChunkEmbeddingBatch:
     if vectors is None:
-        vectors = tuple(FIRST_VECTOR if index == 0 else SECOND_VECTOR for index in indexes)
+        vectors = tuple(
+            FIRST_VECTOR if index == 0 else SECOND_VECTOR for index in indexes
+        )
     return ChunkEmbeddingBatch(
         organization_public_id=tenant.organization_public_id,
         document_public_id=tenant.document_public_id,
@@ -200,7 +202,9 @@ def test_identical_chunk_generation_conflicts_on_changed_vector(context):
     value = batch(context.current)
     write(context, value)
     changed = batch(context.current, vectors=(SECOND_VECTOR, SECOND_VECTOR))
-    with pytest.raises(ChunkEmbeddingConflictError, match="^Chunk embedding persistence conflict$"):
+    with pytest.raises(
+        ChunkEmbeddingConflictError, match="^Chunk embedding persistence conflict$"
+    ):
         write(context, changed)
     assert row_count(context) == 2
     assert read(context, value).vectors[0].values == FIRST_VECTOR
@@ -238,9 +242,13 @@ def test_wrong_tenant_document_and_model_are_indistinguishable(context):
         replace(value, organization_public_id=context.other.organization_public_id),
         replace(value, document_public_id=context.other.document_public_id),
         replace(value, document_public_id=uuid4()),
-        replace(value, configured_model_public_id=context.other.configured_model_public_id),
+        replace(
+            value, configured_model_public_id=context.other.configured_model_public_id
+        ),
     ):
-        with pytest.raises(ChunkEmbeddingConflictError, match="^Chunk embedding persistence conflict$"):
+        with pytest.raises(
+            ChunkEmbeddingConflictError, match="^Chunk embedding persistence conflict$"
+        ):
             write(context, forged)
         assert read(context, forged) is None
     assert row_count(context) == 1
@@ -297,7 +305,9 @@ def test_float32_overflow_and_underflow_fail_before_database_writes(context):
         (1e100,) + (0.0,) * 1535,
         (1e-100,) + (0.0,) * 1535,
     ):
-        with pytest.raises(ChunkEmbeddingPersistenceError, match="^Chunk embedding persistence failed$"):
+        with pytest.raises(
+            ChunkEmbeddingPersistenceError, match="^Chunk embedding persistence failed$"
+        ):
             write(context, batch(context.current, indexes=(0,), vectors=(vector,)))
     assert row_count(context) == 0
 
@@ -370,16 +380,22 @@ def test_concurrent_writers_serialize_and_duplicate_idempotently(context, monkey
         await asyncio.sleep(0)
         assert not second.done()
         try:
-            assert await persistence.read_batch(
-                organization_public_id=value.organization_public_id,
-                document_public_id=value.document_public_id,
-                configured_model_public_id=value.configured_model_public_id,
-                embedding_generation=1,
-                chunk_indices=(0,),
-            ) is None
+            assert (
+                await persistence.read_batch(
+                    organization_public_id=value.organization_public_id,
+                    document_public_id=value.document_public_id,
+                    configured_model_public_id=value.configured_model_public_id,
+                    embedding_generation=1,
+                    chunk_indices=(0,),
+                )
+                is None
+            )
         finally:
             release.set()
-        assert await asyncio.gather(first, second, return_exceptions=True) == [None, None]
+        assert await asyncio.gather(first, second, return_exceptions=True) == [
+            None,
+            None,
+        ]
 
     asyncio.run(asyncio.wait_for(scenario(), 10))
     assert row_count(context) == 1
@@ -409,13 +425,16 @@ def test_cancellation_waits_for_transaction_settlement_and_retry_is_safe(
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert await persistence.read_batch(
-            organization_public_id=value.organization_public_id,
-            document_public_id=value.document_public_id,
-            configured_model_public_id=value.configured_model_public_id,
-            embedding_generation=1,
-            chunk_indices=(0,),
-        ) is not None
+        assert (
+            await persistence.read_batch(
+                organization_public_id=value.organization_public_id,
+                document_public_id=value.document_public_id,
+                configured_model_public_id=value.configured_model_public_id,
+                embedding_generation=1,
+                chunk_indices=(0,),
+            )
+            is not None
+        )
         await persistence.persist_batch(value)
 
     asyncio.run(asyncio.wait_for(scenario(), 10))

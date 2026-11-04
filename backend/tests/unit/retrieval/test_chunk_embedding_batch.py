@@ -101,7 +101,8 @@ def test_batches_are_bounded_but_support_partial_document_generations():
     with pytest.raises(ValueError):
         replace(
             sample,
-            vectors=vectors + (ChunkEmbeddingVector(chunk_index=128, values=BASE_VECTOR),),
+            vectors=vectors
+            + (ChunkEmbeddingVector(chunk_index=128, values=BASE_VECTOR),),
         )
 
 

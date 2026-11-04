@@ -48,9 +48,14 @@ class ChunkEmbeddingVector:
     def __post_init__(self) -> None:
         if type(self.chunk_index) is not int or self.chunk_index < 0:
             raise ValueError("Chunk index must be a nonnegative integer")
-        if not isinstance(self.values, tuple) or len(self.values) != V1_EMBEDDING_DIMENSION:
+        if (
+            not isinstance(self.values, tuple)
+            or len(self.values) != V1_EMBEDDING_DIMENSION
+        ):
             raise ValueError("V1 chunk embedding must contain 1536 values")
-        if any(type(value) is not float or not isfinite(value) for value in self.values):
+        if any(
+            type(value) is not float or not isfinite(value) for value in self.values
+        ):
             raise ValueError("Chunk embedding requires finite float values")
         if not any(self.values):
             raise ValueError("Chunk embedding vector cannot be zero")
@@ -96,9 +101,8 @@ class ChunkEmbeddingBatch:
             or self.embedding_dimension != V1_EMBEDDING_DIMENSION
         ):
             raise ValueError("Unsupported V1 embedding model snapshot")
-        if (
-            not isinstance(self.vectors, tuple)
-            or any(not isinstance(v, ChunkEmbeddingVector) for v in self.vectors)
+        if not isinstance(self.vectors, tuple) or any(
+            not isinstance(v, ChunkEmbeddingVector) for v in self.vectors
         ):
             raise ValueError("Embedding batch requires immutable chunk vectors")
         require_chunk_indices(tuple(v.chunk_index for v in self.vectors))

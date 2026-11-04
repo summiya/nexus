@@ -96,7 +96,10 @@ async def generation_snapshots(
         .distinct()
         .limit(2)
     )
-    return [(version, provider, model, dimension) for version, provider, model, dimension in result.all()]
+    return [
+        (version, provider, model, dimension)
+        for version, provider, model, dimension in result.all()
+    ]
 
 
 async def existing_embeddings(
