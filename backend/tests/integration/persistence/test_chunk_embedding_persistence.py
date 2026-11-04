@@ -271,6 +271,28 @@ def test_non_authoritative_chunk_and_incomplete_document_rejected(context):
     assert row_count(context) == 0
 
 
+def test_rejects_ghost_chunk_outside_authoritative_set_count(context):
+    with Session(context.engine) as session:
+        previous = session.get(DocumentChunk, context.current.first_chunk_id)
+        assert previous is not None
+        session.add(
+            DocumentChunk(
+                document_id=context.current.document_id,
+                organization_id=context.current.organization_id,
+                chunk_index=2,
+                text="Inconsistent out-of-band chunk",
+                kind="text",
+                section_path=[],
+                contributions=previous.contributions,
+            )
+        )
+        session.commit()
+
+    with pytest.raises(ChunkEmbeddingConflictError):
+        write(context, batch(context.current, indexes=(2,)))
+    assert row_count(context) == 0
+
+
 def test_disabled_model_and_provider_allow_exact_retry_but_reject_new_row(context):
     value = batch(context.current, indexes=(0,))
     write(context, value)

@@ -116,7 +116,10 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                     document_id=document.id,
                     chunk_indices=batch.chunk_indices,
                 )
-                if len(chunk_ids) != len(batch.vectors):
+                if (
+                    len(chunk_ids) != len(batch.vectors)
+                    or batch.chunk_indices[-1] >= chunk_set.chunk_count
+                ):
                     raise ChunkEmbeddingConflictError()
 
                 expected_header = (
