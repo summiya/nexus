@@ -7,9 +7,11 @@ worker orchestration, indexing and similarity retrieval are out of scope.
 from __future__ import annotations
 
 import asyncio
+from math import isfinite
+from struct import error as StructError
+from struct import pack, unpack
 from uuid import UUID
 
-import numpy as np
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -64,7 +66,7 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
             raise
 
     async def _persist(
-        self, batch: ChunkEmbeddingBatch, canonical: dict[int, np.ndarray]
+        self, batch: ChunkEmbeddingBatch, canonical: dict[int, tuple[float, ...]]
     ) -> None:
         try:
             async with self._sessions.begin() as session:
@@ -145,7 +147,7 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                             or previous.provider_type != batch.provider_type
                             or previous.provider_model_name != batch.provider_model_name
                             or previous.embedding_dimension != batch.embedding_dimension
-                            or not np.array_equal(previous.embedding, values)
+                            or tuple(float(value) for value in previous.embedding) != values
                         ):
                             raise ChunkEmbeddingConflictError()
                         continue
@@ -161,7 +163,7 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                             "embedding_dimension": batch.embedding_dimension,
                             "embedding_generation": batch.embedding_generation,
                             "embedding_version": batch.embedding_version,
-                            "embedding": values.tolist(),
+                            "embedding": list(values),
                         }
                     )
 
@@ -253,10 +255,14 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
             raise ChunkEmbeddingPersistenceError() from exc
 
 
-def _to_float32(values: tuple[float, ...]) -> np.ndarray:
-    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
-        canonical = np.asarray(values, dtype=np.float32)
-    if not np.isfinite(canonical).all() or not np.any(canonical):
+def _to_float32(values: tuple[float, ...]) -> tuple[float, ...]:
+    """Round exactly as pgvector's float32 storage without optional NumPy."""
+    try:
+        format_string = f"!{len(values)}f"
+        canonical = unpack(format_string, pack(format_string, *values))
+    except (OverflowError, StructError) as exc:
+        raise ValueError("Invalid float32 chunk embedding") from exc
+    if not all(isfinite(value) for value in canonical) or not any(canonical):
         raise ValueError("Invalid float32 chunk embedding")
     return canonical
 
