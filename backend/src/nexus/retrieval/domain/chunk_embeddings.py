@@ -7,6 +7,7 @@ not execute providers, make authorization decisions, or perform retrieval.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from math import isfinite
 from uuid import UUID
 
@@ -33,7 +34,7 @@ def require_chunk_indices(value: object) -> None:
         raise ValueError("Chunk selection must contain 1 to 128 indexes")
     if any(type(index) is not int or index < 0 for index in value):
         raise ValueError("Chunk indexes must be nonnegative integers")
-    if any(left >= right for left, right in zip(value, value[1:])):
+    if any(left >= right for left, right in pairwise(value)):
         raise ValueError("Chunk indexes must be unique and ascending")
 
 
