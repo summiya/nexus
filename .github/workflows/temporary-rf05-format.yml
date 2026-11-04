@@ -25,12 +25,9 @@ jobs:
         run: |
           ruff check --fix src/nexus/retrieval/domain/chunk_embeddings.py src/nexus/retrieval/ports src/nexus/infrastructure/persistence/chunk_embedding.py src/nexus/infrastructure/persistence/_chunk_embedding_queries.py tests/unit/retrieval/test_chunk_embedding_batch.py tests/integration/persistence/test_chunk_embedding_persistence.py
           ruff format src/nexus/retrieval/domain/chunk_embeddings.py src/nexus/retrieval/ports src/nexus/infrastructure/persistence/chunk_embedding.py src/nexus/infrastructure/persistence/_chunk_embedding_queries.py tests/unit/retrieval/test_chunk_embedding_batch.py tests/integration/persistence/test_chunk_embedding_persistence.py
-      - name: Commit formatting
+      - name: Emit formatted source for safe commit
+        working-directory: backend
         run: |
-          set -euo pipefail
-          git add backend/src/nexus/retrieval/domain/chunk_embeddings.py backend/src/nexus/retrieval/ports backend/src/nexus/infrastructure/persistence/chunk_embedding.py backend/src/nexus/infrastructure/persistence/_chunk_embedding_queries.py backend/tests/unit/retrieval/test_chunk_embedding_batch.py backend/tests/integration/persistence/test_chunk_embedding_persistence.py
-          if git diff --cached --quiet; then exit 0; fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'style(retrieval): format RF-05 persistence and tests'
-          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          for path in src/nexus/retrieval/domain/chunk_embeddings.py src/nexus/retrieval/ports/chunk_embedding_persistence.py src/nexus/retrieval/ports/__init__.py src/nexus/infrastructure/persistence/_chunk_embedding_queries.py src/nexus/infrastructure/persistence/chunk_embedding.py tests/unit/retrieval/test_chunk_embedding_batch.py tests/integration/persistence/test_chunk_embedding_persistence.py; do
+            printf 'RF05_FORMAT_BLOB:%s:%s\n' "$path" "$(base64 -w0 "$path")"
+          done
