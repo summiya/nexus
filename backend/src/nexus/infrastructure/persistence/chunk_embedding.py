@@ -12,6 +12,7 @@ from struct import error as StructError
 from struct import pack, unpack
 from uuid import UUID
 
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,6 +20,10 @@ from nexus.documents.domain import DocumentStatus
 from nexus.infrastructure.persistence import _chunk_embedding_queries as queries
 from nexus.infrastructure.persistence import _document_chunk_queries, _document_queries
 from nexus.infrastructure.persistence._transaction import _settle_cancelled_transaction
+from nexus.infrastructure.persistence.models.indexing_generation import (
+    IndexingGeneration,
+)
+from nexus.infrastructure.persistence.models.model_provider import ConfiguredModel
 from nexus.retrieval.domain.chunk_embeddings import (
     ChunkEmbeddingBatch,
     ChunkEmbeddingVector,
@@ -26,6 +31,7 @@ from nexus.retrieval.domain.chunk_embeddings import (
     require_generation,
     require_public_uuid,
 )
+from nexus.retrieval.domain.indexing import IndexingStatus
 from nexus.retrieval.ports.chunk_embedding_persistence import (
     ChunkEmbeddingConflictError,
     ChunkEmbeddingPersistence,
@@ -80,6 +86,28 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                     raise ChunkEmbeddingConflictError()
                 document, _ = locked
 
+                # All RF-05 and RF-06 mutations take the Document lock first.
+                # Lock a tracked header before acquiring model/provider locks.
+                tracked = await session.scalar(
+                    select(IndexingGeneration)
+                    .join(
+                        ConfiguredModel,
+                        (ConfiguredModel.id == IndexingGeneration.configured_model_id)
+                        & (
+                            ConfiguredModel.organization_id
+                            == IndexingGeneration.organization_id
+                        ),
+                    )
+                    .where(
+                        IndexingGeneration.organization_id == document.organization_id,
+                        IndexingGeneration.document_id == document.id,
+                        ConfiguredModel.public_id == batch.configured_model_public_id,
+                        IndexingGeneration.embedding_generation
+                        == batch.embedding_generation,
+                    )
+                    .with_for_update(of=IndexingGeneration)
+                )
+
                 chunk_set = await _document_chunk_queries.get_set(
                     session,
                     document_id=document.id,
@@ -128,6 +156,17 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                     batch.provider_model_name,
                     batch.embedding_dimension,
                 )
+                if (
+                    tracked is not None
+                    and (
+                        tracked.embedding_version,
+                        tracked.provider_type,
+                        tracked.provider_model_name,
+                        tracked.embedding_dimension,
+                    )
+                    != expected_header
+                ):
+                    raise ChunkEmbeddingConflictError()
                 headers = await queries.generation_snapshots(
                     session,
                     organization_id=document.organization_id,
@@ -180,6 +219,23 @@ class SqlAlchemyChunkEmbeddingPersistence(ChunkEmbeddingPersistence):
                 # disabled. New writes must still use an enabled configuration.
                 if to_insert and (not model_enabled or not provider_enabled):
                     raise ChunkEmbeddingConflictError()
+                if to_insert:
+                    if tracked is not None:
+                        if tracked.status != IndexingStatus.PROCESSING.value:
+                            raise ChunkEmbeddingConflictError()
+                    elif not headers and await session.scalar(
+                        select(
+                            exists().where(
+                                IndexingGeneration.organization_id
+                                == document.organization_id,
+                                IndexingGeneration.document_id == document.id,
+                                IndexingGeneration.configured_model_id == model_id,
+                            )
+                        )
+                    ):
+                        # After tracking begins, only already-existing legacy
+                        # generations can continue receiving untracked batches.
+                        raise ChunkEmbeddingConflictError()
                 if to_insert:
                     await queries.insert_embeddings(session, to_insert)
                     await session.flush()
