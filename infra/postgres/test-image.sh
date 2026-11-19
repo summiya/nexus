@@ -114,6 +114,7 @@ dump_database() {
 dump_parent_data() {
     docker exec "$1" pg_dump -U nexus_test_admin -d nexus_test --data-only \
         --exclude-table=alembic_version --exclude-table='chunk_embeddings*' \
+        --exclude-table='indexing_generations' \
         --restrict-key=NexusRF04SyntheticOnly
 }
 check_reader() {

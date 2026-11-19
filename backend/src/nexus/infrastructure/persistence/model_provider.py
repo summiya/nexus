@@ -56,6 +56,7 @@ _REFERENCE_CONSTRAINTS = frozenset(
         "fk_organization_model_defaults_organization",
         "fk_organization_model_defaults_tenant_model",
         "fk_chunk_embeddings_tenant_embedding_model",
+        "fk_indexing_generations_tenant_embedding_model",
     }
 )
 

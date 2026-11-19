@@ -13,6 +13,9 @@ from nexus.infrastructure.persistence.models.document_processing_request import 
 )
 from nexus.infrastructure.persistence.models.file import File
 from nexus.infrastructure.persistence.models.generation import Generation
+from nexus.infrastructure.persistence.models.indexing_generation import (
+    IndexingGeneration,
+)
 from nexus.infrastructure.persistence.models.message import Message
 from nexus.infrastructure.persistence.models.model_provider import (
     ConfiguredModel,
@@ -38,6 +41,7 @@ __all__ = [
     "DocumentProcessingRequest",
     "File",
     "Generation",
+    "IndexingGeneration",
     "Message",
     "ModelProvider",
     "Organization",

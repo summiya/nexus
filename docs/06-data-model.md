@@ -1142,6 +1142,62 @@ See `infra/azure/README.md` for PG16 image cutover and Azure prerequisites.
 
 ---
 
+## RF-06: `indexing_generations`
+
+RF-06 adds durable indexing state independently from Document processing. The
+approved scope extension includes lifecycle persistence, not pipeline execution.
+
+```text
+organization_id             bigint, composite PK/FK tenant scope
+document_id                 bigint, composite PK/FK authoritative chunk set
+configured_model_id         bigint, composite PK/FK embedding-type model
+embedding_generation        positive bigint, composite PK
+model_type                  embedding
+provider_type               bounded historical snapshot
+provider_model_name         bounded historical invocation snapshot
+embedding_dimension         positive bigint historical snapshot
+embedding_version           bounded, nonblank input-format/processing version
+created_at                  required timestamptz
+status                      pending / processing / completed / failed
+started_at                  nullable timestamptz
+finished_at                 nullable timestamptz
+failure_code                nullable bounded safe uppercase code
+```
+
+Restrictive composite FKs reference `document_chunk_sets(document_id,
+organization_id)` and `configured_models(organization_id, model_type, id)`.
+The composite PK supports document/model/generation lookup. A partial unique
+B-tree on `(organization_id, document_id, configured_model_id)` permits only one
+pending/processing generation. CHECK constraints enforce positive values,
+nonblank trimmed snapshot strings, valid states, failure-code format and
+status-consistent chronological timestamps. These checks are model-neutral;
+the adapter separately enforces current RF-05 storage compatibility.
+
+Source COMPLETED eligibility, legal transitions, immutable metadata, generation
+allocation and exact durable chunk coverage are enforced by the transactional
+persistence boundary under the Document lock. FKs enforce ownership/type and
+chunk-set existence; they do not enforce these historical application rules or
+authenticate provider output. Direct SQL can bypass application transition rules.
+Source content/provenance, credentials, user ownership and ACLs are not copied.
+
+Lifecycle and legacy vector generation numbers share a document/model namespace.
+Reservation requires exactly `max(headers, existing vector generations) + 1`;
+an identical reservation can be replayed after its state advances. Existing
+untracked generations are never adopted, and remain ineligible as completed
+tracked generations. RF-05's vector table and public batch contract are unchanged.
+See [lifecycle and compatibility rules](domains/knowledge/architecture.md#rf-06-durable-indexing-lifecycle).
+
+Migration `20261104_0021` follows `20261103_0020` and creates an empty table/index
+without backfilling or rewriting vectors or source records. Deploy the migration
+before this application version because RF-05 writes consult the new table.
+Downgrade drops only lifecycle storage, losing its state/history while retaining
+vectors, source records and the vector extension. Rollback requires operator
+review; an older application does not enforce RF-06 tracking fences. Re-upgrade
+does not reconstruct lost completion claims. Referenced configured models use the
+existing safe deletion-conflict classification.
+
+---
+
 # 22. Entity: KnowledgeBase
 
 ## Purpose
